@@ -1,0 +1,29 @@
+[project]
+name = "hoopformer"
+version = "0.1.0"
+description = "Open-source deep-learning model of NBA lineups, on the court and beyond it"
+authors = [
+    { name = "marinelj", email = "168457909+marinelj@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "nba-api>=1.11.4",
+    "pandas>=3.0.6",
+    "pyarrow>=25.0.1",
+]
+
+[project.scripts]
+hoopformer = "hoopformer.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+addopts = "-v -rs -m 'not network'"
+markers = ["network: calls stats.nba.com; run on your Mac with `uv run pytest -m network`"]

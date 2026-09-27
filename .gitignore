@@ -1,0 +1,11 @@
+# Raw and derived NBA data stay on your machine; manifests/ records what was fetched.
+data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# macOS
+.DS_Store
