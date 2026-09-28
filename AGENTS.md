@@ -1,6 +1,6 @@
 # Working rules for AI teammates (Claude, ChatGPT/Codex)
 
-This repo is the project's shared memory: read `docs/DESIGN.md` before changing anything.
+This repo is the project's shared memory: read `docs/DESIGN.md` and `docs/STATUS.md` before changing anything, and update `docs/STATUS.md` when you finish a piece of work.
 
 - **Clean room.** Unicorn (uptownnickbrown/unicorn) and nba-lineup-model (EvanZ/nba-lineup-model) have no license. Never read, paste or adapt their code. Their public descriptions are credited in `docs/DESIGN.md`.
 - **Data.** Raw NBA responses live in `data/` (git-ignored). Fetch them only through `hoopformer fetch`, which records every file's SHA-256 in `manifests/raw.jsonl`. Never commit raw data.

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -63,7 +64,9 @@ def store_raw(data_dir: Path, manifest_path: Path, endpoint: str, key: str, text
     path = raw_path(data_dir, endpoint, key)
     path.parent.mkdir(parents=True, exist_ok=True)
     body = text.encode("utf-8")
-    path.write_bytes(body)
+    partial = path.with_suffix(".json.partial")
+    partial.write_bytes(body)
+    os.replace(partial, path)  # atomic: a killed download never leaves a half-written file
     record = {
         "path": path.relative_to(data_dir).as_posix(),
         "sha256": hashlib.sha256(body).hexdigest(),
