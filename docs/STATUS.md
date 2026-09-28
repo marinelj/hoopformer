@@ -34,6 +34,11 @@ caffeinate -i uv run hoopformer fetch --season 2025-26 2024-25 2023-24 2022-23 2
 3. The season simulator: team strength = player ratings × expected minutes; simulate the schedule thousands of times.
 4. Backtest the method on 2025-26, then pre-register the 2026-27 win totals and playoff odds: push them, and post their SHA-256 on X before opening night.
 
+## v0.2 (the transformer, due at the NBA Cup, Nov-Dec)
+
+- marinelj writes the model and training loop, following `docs/TRANSFORMER_GUIDE.md`.
+- Claude builds `hoopformer dataset` (possession-level Parquet) and `hoopformer evaluate` (locked splits, baselines B0-B2) by about Oct 3.
+
 ## Known limits
 
 - 0.12% of possession ends repeat the same team twice in a row. This is a lone free throw after which the fouled team keeps the ball.

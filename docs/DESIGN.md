@@ -47,7 +47,7 @@ Each row holds:
 **Encoder.** A standard transformer encoder. Start small: 4 layers, 4 heads, width 256, about 4M parameters. Scale up only when held-out loss improves.
 
 **Heads (trained together).**
-1. **Possession outcome:** probabilities for 0, 1, 2, 3 and 4+ points. These give expected points.
+1. **Possession outcome:** probabilities for 0, 1, 2, 3 and 4+ points (decided 2026-09-28). These give expected points.
 2. **Masked player:** in a copy of each batch, hide 1-2 of the 10 players and predict who they were, the way BERT predicts masked words. This forces each vector to encode a player's style, not just their value.
 
 Loss = outcome cross-entropy + λ × masked-player cross-entropy.
@@ -82,8 +82,10 @@ Loss = outcome cross-entropy + λ × masked-player cross-entropy.
 | v0.4 | Trade deadline (Feb) | Season-delta forecaster; trade simulator |
 | v0.5+ | Playoffs to draft | Series simulator, calibration vs. prediction markets, rookies |
 
-## 8. Open questions for marinelj
+## 8. Decisions
 
-1. Outcome classes: points (0-4+), or how the possession ended (made 2, made 3, free throws, turnover, empty)?
-2. First scope: the last 10 seasons, or all 30 from the start?
-3. Do you want to write any part yourself (e.g. the encoder's forward pass), with Claude reviewing?
+| Question | Decision (2026-09-28) |
+|---|---|
+| Outcome classes | Points scored: 0, 1, 2, 3, 4+ |
+| First scope | 10 seasons, 2016-17 to 2025-26 |
+| Who writes the transformer | marinelj writes the model and training loop (`docs/TRANSFORMER_GUIDE.md`). Claude builds the dataset and evaluation harness, and reviews. |
