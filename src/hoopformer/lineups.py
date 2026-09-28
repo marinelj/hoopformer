@@ -98,6 +98,7 @@ def team_rosters(box: dict) -> dict[int, list[dict]]:
                 "familyName": player["familyName"],
                 "nameI": player["nameI"],
                 "starter": bool(player["position"]),
+                "entered": bool(player["statistics"]["minutes"]),  # '0:00' entered, '' never did
                 "seconds": box_seconds(player["statistics"]["minutes"]),
             }
             for player in team["players"]
@@ -134,10 +135,11 @@ def name_match_strength(name: str, player: dict) -> int:
 def resolve_player(name: str, roster: list[dict], on_floor: set[int] | None = None) -> int:
     """personId of the player a substitution names as entering the game.
 
-    Only the strongest kind of name match counts. Players who never played can't
-    enter, and neither can anyone already on the floor.
+    Only the strongest kind of name match counts. Players who never entered the
+    game (blank minutes, not '0:00') can't come in, and neither can anyone
+    already on the floor.
     """
-    scored = [(name_match_strength(name, p), p) for p in roster if p["seconds"] > 0]
+    scored = [(name_match_strength(name, p), p) for p in roster if p["entered"]]
     best = max((strength for strength, _ in scored), default=0)
     candidates = [p for strength, p in scored if best and strength == best]
     if on_floor is not None and len(candidates) > 1:
@@ -232,7 +234,7 @@ def reconstruct_game(pbp: dict, box: dict) -> list[Stint]:
             starters[period, team] = found
             if len(found) < 5:
                 pool = sorted(p["personId"] for p in rosters[team]
-                              if p["seconds"] > 0 and p["personId"] not in found | subbed_in)
+                              if p["entered"] and p["personId"] not in found | subbed_in)
                 open_spots.append(((period, team), 5 - len(found), pool))
 
     if not open_spots:

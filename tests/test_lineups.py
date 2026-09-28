@@ -69,7 +69,15 @@ def test_team_rosters_reads_starters_and_minutes():
     starters = [p["nameI"] for p in okc if p["starter"]]
     print("OKC starters:", starters)
     assert len(starters) == 5 and "S. Gilgeous-Alexander" in starters
-    assert {"personId", "firstName", "familyName", "nameI", "starter", "seconds"} <= set(okc[0])
+    assert {"personId", "firstName", "familyName", "nameI", "starter", "entered", "seconds"} <= set(okc[0])
+
+
+def test_a_player_with_zero_official_seconds_can_still_enter():
+    pbp, box = load("0022500564")  # "SUB: Richards FOR Brooks"; Nick Richards is listed at 0:00
+    richards = next(p for r in team_rosters(box).values() for p in r if p["familyName"] == "Richards")
+    print("Richards:", richards)
+    assert richards["entered"] and richards["seconds"] == 0.0
+    assert audit_minutes(reconstruct_game(pbp, box), box) == []
 
 
 def test_plain_strips_accents():
@@ -93,8 +101,8 @@ def test_name_match_strength_ranks_initial_family_prefix_then_first_name():
 
 def test_resolve_player_prefers_a_family_name_over_a_first_name():
     roster = [
-        {"personId": 1, "firstName": "DeAndre", "familyName": "Jordan", "nameI": "D. Jordan", "seconds": 600.0},
-        {"personId": 2, "firstName": "Jordan", "familyName": "Poole", "nameI": "J. Poole", "seconds": 900.0},
+        {"personId": 1, "firstName": "DeAndre", "familyName": "Jordan", "nameI": "D. Jordan", "entered": True, "seconds": 600.0},
+        {"personId": 2, "firstName": "Jordan", "familyName": "Poole", "nameI": "J. Poole", "entered": True, "seconds": 900.0},
     ]
     assert resolve_player("Jordan", roster) == 1
 
