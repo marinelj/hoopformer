@@ -92,11 +92,31 @@ def test_name_match_strength_ranks_initial_family_prefix_then_first_name():
     yang = next(p for p in team_rosters(box67)[POR] if p["personId"] == YANG_HANSEN)
     jaylin, jalen = okc[JAYLIN_WILLIAMS], okc[JALEN_WILLIAMS]
     print("Jay. Williams ->", name_match_strength("Jay. Williams", jaylin), name_match_strength("Jay. Williams", jalen))
-    assert name_match_strength("J. Williams", jalen) == 4
-    assert name_match_strength("Williams", jalen) == 3
+    assert name_match_strength("J. Williams", jalen) > name_match_strength("Williams", jalen)
+    assert name_match_strength("Williams", jalen) > name_match_strength("Jal. Williams", jalen)
     assert name_match_strength("Jal. Williams", jalen) == 2 and name_match_strength("Jay. Williams", jalen) == 0
     assert name_match_strength("Hansen", yang) == 1, "the play-by-play names this player by first name"
     assert name_match_strength("Nobody", yang) == 0
+
+
+def test_historical_substitution_names_match_the_current_box_score_spellings():
+    cases = [
+        ("0021700015", "Kanter", 202683),       # box score now says Freedom
+        ("0021600133", "McClellan", 1627815),   # box score now says Mac
+        ("0021600007", "Marc Morris", 202694),  # feed abbreviates Marcus
+        ("0021600189", "Jones, Jr.", 1627884),  # feeds disagree about comma
+        ("0022201113", "Bullock", 203493),      # box score says Bullock Jr.
+        ("0022300343", "Boston Jr.", 1630527),  # box score omits Jr.
+        ("0022400005", "Pöltl", 1627751),       # box score spells it Poeltl
+    ]
+    resolved = []
+    for game_id, name, person_id in cases:
+        _, box = load(game_id)
+        roster = next(roster for roster in team_rosters(box).values()
+                      if any(player["personId"] == person_id for player in roster))
+        resolved.append((name, resolve_player(name, roster)))
+        assert resolve_player(name, roster) == person_id
+    print("historical substitution names:", resolved)
 
 
 def test_resolve_player_prefers_a_family_name_over_a_first_name():
@@ -132,6 +152,14 @@ def test_is_on_floor_event_ignores_technicals_and_other_teams_players():
     assert not is_on_floor_event(technical, {7}), "technicals can be called on a player on the bench"
     assert not is_on_floor_event(shot, {8})
 
+    pbp_timeout, _ = load("0021600655")
+    timeout = next(a for a in pbp_timeout["game"]["actions"] if a["description"] == "Williams Timeout:Short")
+    pbp_flop, _ = load("0022300512")
+    flopping = next(a for a in pbp_flop["game"]["actions"] if a["subType"] == "Flopping")
+    print("bench-compatible events:", timeout["description"], flopping["description"])
+    assert not is_on_floor_event(timeout, {timeout["personId"]})
+    assert not is_on_floor_event(flopping, {flopping["personId"]})
+
 
 def test_period_evidence_finds_four_of_okcs_first_overtime_five():
     pbp, box = load("0022500001")
@@ -141,6 +169,16 @@ def test_period_evidence_finds_four_of_okcs_first_overtime_five():
     print("proven on floor at OT1 start:", sorted(names[i] for i in found), "| subbed in:", sorted(names[i] for i in subbed_in))
     assert len(found) == 4, "Hartenstein played OT1 without a single event"
     assert HARTENSTEIN not in found
+
+
+def test_period_evidence_handles_an_event_listed_before_its_same_clock_substitution():
+    pbp, box = load("0021800920")
+    team = box["homeTeamId"]
+    third = [a for a in pbp["game"]["actions"] if a["period"] == 3]
+    found, subbed_in = period_evidence(third, team, team_rosters(box)[team])
+    print("2018-19 game 920 third-quarter evidence:", found, subbed_in)
+    assert 201147 not in found, "Brewer's jump ball is listed before his same-clock substitution"
+    assert 201147 in subbed_in
 
 
 def test_reconstruct_game_fills_the_silent_overtime_player_from_the_box_score():
@@ -154,6 +192,24 @@ def test_reconstruct_game_fills_the_silent_overtime_player_from_the_box_score():
     assert stints[0].start == 0.0 and stints[-1].end == 3480.0
     assert all(len(s.home) == 5 and len(s.away) == 5 for s in stints)
     assert sum(s.seconds for s in stints) == pytest.approx(3480.0), "stints must tile the game with no gaps"
+
+
+def test_reconstruct_game_uses_play_by_play_when_an_old_box_score_marks_too_many_starters():
+    pbp, box = load("0021600001")
+    cavaliers = team_rosters(box)[box["homeTeamId"]]
+    assert sum(player["starter"] for player in cavaliers) == 9
+    stints = reconstruct_game(pbp, box)
+    print("2016-17 opener starters:", stints[0].home, stints[0].away)
+    assert len(stints[0].home) == len(stints[0].away) == 5
+    assert audit_minutes(stints, box) == []
+
+
+@pytest.mark.parametrize("game_id", ["0022000853", "0022200234"])
+def test_reconstruct_game_ignores_a_duplicated_stale_substitution(game_id):
+    pbp, box = load(game_id)
+    stints = reconstruct_game(pbp, box)
+    print(game_id, "stints after ignoring duplicate substitution:", len(stints))
+    assert audit_minutes(stints, box) == []
 
 
 def test_replay_rejects_a_wrong_starting_lineup():

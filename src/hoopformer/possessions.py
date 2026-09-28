@@ -141,14 +141,19 @@ def stint_totals(pbp: dict, box: dict, stints: list[Stint]) -> list[StintTotals]
     scored: dict[int, list[tuple[int, int]]] = {home_id: [], away_id: []}  # (action index, points)
     home_score = away_score = 0
     for index, action in enumerate(actions):
-        if action["actionType"] not in SCORING_ACTIONS or (action["scoreHome"] == "" and action["scoreAway"] == ""):
+        if (action["actionType"] not in SCORING_ACTIONS or is_missed(action)
+                or (action["scoreHome"] == "" and action["scoreAway"] == "")):
             continue
         new_home, new_away = int(action["scoreHome"]), int(action["scoreAway"])
-        if new_home != home_score:
+        # Old feeds contain corrected/out-of-order rows whose score moves
+        # backward, and some late free throws carry a fresh 0-1 score.  A
+        # team's real running total is monotone, so only credit new highs.
+        if new_home > home_score:
             scored[home_id].append((index, new_home - home_score))
-        if new_away != away_score:
+            home_score = new_home
+        if new_away > away_score:
             scored[away_id].append((index, new_away - away_score))
-        home_score, away_score = new_home, new_away
+            away_score = new_away
 
     def credit(team: int, points: int, stint: int, possession: bool) -> None:
         if team == home_id:

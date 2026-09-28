@@ -90,6 +90,23 @@ def test_stale_scores_on_period_rows_are_ignored():
     assert audit_points(stint_totals(pbp, box, reconstruct_game(pbp, box)), box) == []
 
 
+def test_missed_free_throws_with_zero_scores_do_not_reset_an_old_running_score():
+    pbp, box = load("0021600015")
+    missed = [a for a in pbp["game"]["actions"]
+              if a["actionType"] == "Free Throw" and is_missed(a) and a["scoreHome"] == "0"]
+    print("2016-17 missed free throws carrying zero scores:", len(missed))
+    assert missed
+    assert audit_points(stint_totals(pbp, box, reconstruct_game(pbp, box)), box) == []
+
+
+@pytest.mark.parametrize("game_id", ["0021700020", "0021700025", "0022100016"])
+def test_running_score_regressions_do_not_remove_points(game_id):
+    pbp, box = load(game_id)
+    totals = stint_totals(pbp, box, reconstruct_game(pbp, box))
+    print(game_id, "score regression audit:", audit_points(totals, box))
+    assert audit_points(totals, box) == []
+
+
 def test_audit_points_reports_missing_points():
     pbp, box = load("0022500001")
     totals = stint_totals(pbp, box, reconstruct_game(pbp, box))

@@ -1,31 +1,35 @@
 # Status
 
-Updated 2026-09-28. v0.1 (data pipeline, RAPM, season simulator, pre-registered 2026-27 predictions) is due before opening night, around Oct 20.
+Updated 2026-09-29. v0.1 (data pipeline, RAPM, season simulator, pre-registered 2026-27 predictions) is due before opening night, around Oct 20.
 
 ## Done
 
 | Piece | Where | Checked how |
 |---|---|---|
 | Fetcher | `hoopformer fetch`, `src/hoopformer/fetch.py` | Rejects NBA's HTML block page; each file's SHA-256 goes into `manifests/raw.jsonl`; atomic writes; re-runs skip cached games |
-| Lineups | `src/hoopformer/lineups.py` | On all 664 games tested (2025-26), every player's rebuilt minutes match the official box score to the second |
-| Possessions and points per stint | `src/hoopformer/possessions.py` | Every tested game's points add up to the final score; possessions average 0.99 of the box-score estimate |
-| RAPM baseline | `hoopformer rapm --season 2025-26`, `src/hoopformer/rapm.py` | Ridge strength chosen on the latest 20% of games; league rate 114.6 per 100 matches the box scores |
+| Lineups | `src/hoopformer/lineups.py` | On all 11,979 games from 2016-17 through 2025-26, every player's rebuilt minutes match the official box score to the second |
+| Possessions and points per stint | `src/hoopformer/possessions.py` | All 11,979 games add up to the final score; 2,397,244 possession ends pass the alternation check |
+| RAPM baseline | `hoopformer rapm`, `src/hoopformer/rapm.py` | Ridge strength chosen on the latest 20% of games; 2025-26 league rate is 114.6 per 100 and 2024-25 is 113.6 |
 
-## In progress: the 10-season download (on the Mac Studio)
+## 10-season download complete (Mac Studio)
 
-A first download on the MacBook Air was stopped on purpose at 664 games of 2025-26. The Mac Studio starts its own copy. Run from the repo root on the Studio:
+The regular-season archive was downloaded from stats.nba.com and verified on 2026-09-29. Raw responses remain in the git-ignored `data/` directory; `manifests/raw.jsonl` commits 23,968 file records with their SHA-256 hashes.
 
-```bash
-caffeinate -i uv run hoopformer fetch --season 2025-26 2024-25 2023-24 2022-23 2021-22 2020-21 2019-20 2018-19 2017-18 2016-17
-```
+| Season | Games |
+|---|---:|
+| 2025-26 | 1,230 |
+| 2024-25 | 1,230 |
+| 2023-24 | 1,230 |
+| 2022-23 | 1,230 |
+| 2021-22 | 1,230 |
+| 2020-21 | 1,080 |
+| 2019-20 | 1,059 |
+| 2018-19 | 1,230 |
+| 2017-18 | 1,230 |
+| 2016-17 | 1,230 |
+| **Total** | **11,979** |
 
-- About 4.6 seconds per game: roughly 16 hours for 12,300 games and about 3 GB in `data/`, which git ignores.
-- Safe to stop and re-run: games already on disk are skipped.
-- It must run on a Mac at home. stats.nba.com doesn't answer cloud machines or sandboxed shells.
-- When it finishes:
-  1. Run `uv run pytest`. The lineup and points checks then run on every downloaded game, and older seasons have not been tested yet.
-  2. Fix or report any failing games.
-  3. Commit `manifests/raw.jsonl`. Never commit `data/`.
+The retry pass ended with `0 failed` for every season. `uv run pytest` reports `49 passed, 1 deselected`; the deselected test is the explicit stats.nba.com network smoke test. RAPM also completes for both 2025-26 and 2024-25.
 
 ## Next
 
@@ -41,5 +45,5 @@ caffeinate -i uv run hoopformer fetch --season 2025-26 2024-25 2023-24 2022-23 2
 
 ## Known limits
 
-- 0.12% of possession ends repeat the same team twice in a row. This is a lone free throw after which the fouled team keeps the ball.
-- The lineup and name-matching rules were built on 2025-26 data only.
+- 0.090% of possession ends repeat the same team twice in a row. This is usually a lone free throw after which the fouled team keeps the ball.
+- Lineup and historical-name rules are verified for 2016-17 onward. A pre-2016 backfill may expose additional legacy feed spellings or ordering quirks.

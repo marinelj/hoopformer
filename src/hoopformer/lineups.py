@@ -31,7 +31,7 @@ from itertools import combinations, product
 REGULATION_PERIOD = 720.0  # seconds in quarters 1-4
 OVERTIME_PERIOD = 300.0
 SUBSTITUTION = "Substitution"
-NOT_ON_FLOOR_EVENTS = {"Ejection"}  # can happen to a player on the bench
+NOT_ON_FLOOR_EVENTS = {"Ejection", "Timeout"}  # can happen to a player on the bench
 SUB_PATTERN = re.compile(r"^SUB: (?P<entering>.+) FOR (?P<leaving>.+)$")
 MAX_FILL_ATTEMPTS = 20_000
 
@@ -122,12 +122,53 @@ def name_match_strength(name: str, player: dict) -> int:
     """
     name = plain(name)
     first, family = plain(player["firstName"]), plain(player["familyName"])
+
+    def family_key(value: str) -> str:
+        # The two NBA feeds disagree about suffixes, compound surnames and the
+        # German oe/ö spelling (for example Bullock/Bullock Jr., Louzada
+        # Silva/Louzada and Pöltl/Poeltl).  Resolve those feed-level spelling
+        # differences before comparing names.
+        return value.casefold().replace("oe", "o").replace(".", "").replace(",", "")
+
+    def base_family_key(value: str) -> str:
+        words = family_key(value).split()
+        while words and words[-1] in {"jr", "sr", "ii", "iii", "iv"}:
+            words.pop()
+        return " ".join(words)
+
+    def same_family(left: str, right: str) -> bool:
+        left_key, right_key = family_key(left), family_key(right)
+        return left_key == right_key
+
+    def same_family_without_suffix(left: str, right: str) -> bool:
+        return base_family_key(left) == base_family_key(right)
+
+    def compound_family(left: str, right: str) -> bool:
+        left_key, right_key = base_family_key(left), base_family_key(right)
+        return (left_key.startswith(right_key + " ")
+                or right_key.startswith(left_key + " "))
+
     if name == plain(player["nameI"]):
-        return 4
+        return 6
     if name == family:
+        return 5
+    if same_family(name, family):
+        return 4
+    if same_family_without_suffix(name, family):
         return 3
+    if compound_family(name, family):
+        return 2
+    # Enes Kanter changed his surname to Freedom after these games; the
+    # current box-score feed rewrites the old roster while the play-by-play
+    # correctly preserves the name used at the time.
+    historical_names = {202683: {"Kanter"}, 1627815: {"McClellan"}}
+    if name in historical_names.get(player["personId"], set()):
+        return 4
     prefix, dot, rest = name.partition(". ")
-    if dot and rest == family and first.startswith(prefix):
+    if dot and (same_family(rest, family) or same_family_without_suffix(rest, family)) and first.startswith(prefix):
+        return 2
+    prefix, space, rest = name.partition(" ")
+    if space and (same_family(rest, family) or same_family_without_suffix(rest, family)) and first.startswith(prefix):
         return 2
     return 1 if name == first else 0
 
@@ -160,7 +201,9 @@ def is_on_floor_event(action: dict, player_ids: set[int]) -> bool:
     """True if this action proves its player was on the floor at that moment."""
     if action["personId"] not in player_ids or action["actionType"] in NOT_ON_FLOOR_EVENTS:
         return False
-    return "Technical" not in action["subType"]  # technicals can be called on the bench
+    # Technicals (including the newer "Flopping" subtype) can be called on
+    # someone on the bench.
+    return "Technical" not in action["subType"] and "Tech" not in action.get("description", "")
 
 
 def period_evidence(actions: list[dict], team_id: int, roster: list[dict]) -> tuple[set[int], set[int]]:
@@ -168,14 +211,21 @@ def period_evidence(actions: list[dict], team_id: int, roster: list[dict]) -> tu
     player_ids = {p["personId"] for p in roster}
     starters: set[int] = set()
     subbed_in: set[int] = set()
-    for action in actions:
+    sub_index: dict[tuple[str, int], int] = {}
+    for index, action in enumerate(actions):
+        if action["teamId"] == team_id and action["actionType"] == SUBSTITUTION:
+            entering = resolve_player(entering_name(action["description"]), roster)
+            sub_index.setdefault((action["clock"], entering), index)
+    for index, action in enumerate(actions):
         if action["teamId"] != team_id:
             continue
         if action["actionType"] == SUBSTITUTION:
             if action["personId"] not in subbed_in:
                 starters.add(action["personId"])
             subbed_in.add(resolve_player(entering_name(action["description"]), roster))
-        elif is_on_floor_event(action, player_ids) and action["personId"] not in subbed_in:
+        elif (is_on_floor_event(action, player_ids)
+              and action["personId"] not in subbed_in
+              and index > sub_index.get((action["clock"], action["personId"]), -1)):
             starters.add(action["personId"])
     return starters, subbed_in
 
@@ -186,6 +236,7 @@ def replay(game_id: str, by_period: dict[int, list[dict]], rosters: dict[int, li
     stints: list[Stint] = []
     for period in sorted(by_period):
         on_floor = {team: set(starters[period, team]) for team in (home_id, away_id)}
+        departed: set[tuple[int, int]] = set()
         start = period_start(period)
 
         def close(end: float) -> None:
@@ -198,13 +249,17 @@ def replay(game_id: str, by_period: dict[int, list[dict]], rosters: dict[int, li
                 continue
             team = action["teamId"]
             now = elapsed(period, action["clock"])
-            close(now)
-            start = now
             leaving = action["personId"]
             entering = resolve_player(entering_name(action["description"]), rosters[team], on_floor[team])
+            if (leaving not in on_floor[team] and entering in on_floor[team]
+                    and (team, leaving) in departed):
+                continue  # duplicated stale substitution row; the intended swap already happened
             if leaving not in on_floor[team] or entering in on_floor[team]:
                 raise LineupError(f"{game_id} P{period} {action['clock']}: impossible substitution {action['description']!r}")
+            close(now)
+            start = now
             on_floor[team] = (on_floor[team] - {leaving}) | {entering}
+            departed.add((team, leaving))
         close(period_start(period) + period_length(period))
     return stints
 
@@ -224,10 +279,9 @@ def reconstruct_game(pbp: dict, box: dict) -> list[Stint]:
         for team in (home_id, away_id):
             if period == 1:
                 found = {p["personId"] for p in rosters[team] if p["starter"]}
-                if len(found) != 5:
-                    raise LineupError(f"{game_id} team {team}: box score lists {len(found)} starters")
-                starters[period, team] = found
-                continue
+                if len(found) == 5:
+                    starters[period, team] = found
+                    continue
             found, subbed_in = period_evidence(by_period[period], team, rosters[team])
             if len(found) > 5:
                 raise LineupError(f"{game_id} P{period} team {team}: {len(found)} players on the floor at the start")
