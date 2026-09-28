@@ -102,3 +102,15 @@ def test_fetch_game_downloads_play_by_play_and_box_score(tmp_path):
     assert len(home["players"]) >= 8
     assert len(manifest.read_text().splitlines()) == 2
     assert fetch_game("0022500001", tmp_path, manifest) is False, "second call must come from the cache"
+
+
+def test_cli_fetch_serves_already_downloaded_games_from_the_cache(capsys):
+    if not raw_path(Path("data"), PLAY_BY_PLAY, "0022500020").exists():
+        pytest.skip("first 20 games not cached yet: run `uv run hoopformer fetch --season 2025-26 --limit 20`")
+    from hoopformer.cli import main
+
+    exit_code = main(["fetch", "--season", "2025-26", "--limit", "20"])
+    output = capsys.readouterr().out
+    print(output)
+    assert exit_code == 0
+    assert "2025-26 done: 0 fetched, 20 already cached, 0 failed" in output
