@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from hoopformer.fetch import fetch_season
+from hoopformer.rapm import choose_lambda, ratings, season_rows
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,6 +21,12 @@ def main(argv: list[str] | None = None) -> int:
     fetch.add_argument("--data-dir", type=Path, default=Path("data"))
     fetch.add_argument("--manifest", type=Path, default=Path("manifests/raw.jsonl"))
 
+    rapm = commands.add_parser("rapm", help="fit RAPM on a season's cached games and write the ratings")
+    rapm.add_argument("--season", required=True, help="e.g. 2025-26")
+    rapm.add_argument("--top", type=int, default=15, help="how many players to print from each end")
+    rapm.add_argument("--min-possessions", type=int, default=1500, help="only print players with this many")
+    rapm.add_argument("--data-dir", type=Path, default=Path("data"))
+
     args = parser.parse_args(argv)
     exit_code = 0
     if args.command == "fetch":
@@ -32,4 +39,19 @@ def main(argv: list[str] | None = None) -> int:
             if report.failed:
                 print(f"{season} failed game ids (re-run the same command to retry):", " ".join(report.failed))
                 exit_code = 1
+    if args.command == "rapm":
+        rows, names, dates = season_rows(args.data_dir, args.season)
+        print(f"{args.season}: {len(rows)} stint rows from {len({r.game_id for r in rows})} games")
+        lam, table = choose_lambda(rows, dates)
+        print("error on the latest 20% of games (points per 100, squared):")
+        print(table.to_string(index=False))
+        result = ratings(rows, names, lam)
+        out = args.data_dir / "derived" / f"rapm_{args.season}.csv"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        result.to_csv(out, index=False)
+        print(f"lambda {lam:g} | league average {result.attrs['league_average']:.1f} | home bonus {result.attrs['home_bonus']:+.2f} | wrote {out}")
+        shown = result[result.possessions >= args.min_possessions].round(2)
+        print(shown.head(args.top).to_string(index=False))
+        print("...")
+        print(shown.tail(args.top).to_string(index=False))
     return exit_code

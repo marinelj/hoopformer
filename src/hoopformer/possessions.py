@@ -138,20 +138,33 @@ def stint_totals(pbp: dict, box: dict, stints: list[Stint]) -> list[StintTotals]
                 current = position
         stint_at.append(current)
 
+    scored: dict[int, list[tuple[int, int]]] = {home_id: [], away_id: []}  # (action index, points)
     home_score = away_score = 0
     for index, action in enumerate(actions):
         if action["actionType"] not in SCORING_ACTIONS or (action["scoreHome"] == "" and action["scoreAway"] == ""):
             continue
         new_home, new_away = int(action["scoreHome"]), int(action["scoreAway"])
-        totals[stint_at[index]].home_points += new_home - home_score
-        totals[stint_at[index]].away_points += new_away - away_score
+        if new_home != home_score:
+            scored[home_id].append((index, new_home - home_score))
+        if new_away != away_score:
+            scored[away_id].append((index, new_away - away_score))
         home_score, away_score = new_home, new_away
 
-    for index, team in possession_ends(actions, {home_id, away_id}):
+    def credit(team: int, points: int, stint: int, possession: bool) -> None:
         if team == home_id:
-            totals[stint_at[index]].home_possessions += 1
+            totals[stint].home_points += points
+            totals[stint].home_possessions += possession
         else:
-            totals[stint_at[index]].away_possessions += 1
+            totals[stint].away_points += points
+            totals[stint].away_possessions += possession
+
+    for index, team in possession_ends(actions, {home_id, away_id}):
+        points = sum(p for i, p in scored[team] if i <= index)
+        scored[team] = [(i, p) for i, p in scored[team] if i > index]
+        credit(team, points, stint_at[index], True)
+    for team, leftovers in scored.items():  # e.g. a technical free throw after the team's last possession
+        if leftovers:
+            credit(team, sum(p for _, p in leftovers), stint_at[leftovers[-1][0]], False)
     return totals
 
 
