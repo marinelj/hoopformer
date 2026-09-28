@@ -21,7 +21,7 @@ from hoopformer.lineups import (
     elapsed,
     entering_name,
     is_on_floor_event,
-    name_matches,
+    name_match_strength,
     period_evidence,
     period_length,
     period_start,
@@ -77,16 +77,26 @@ def test_plain_strips_accents():
     assert plain("Jokić") == "Jokic"
 
 
-def test_name_matches_family_name_initial_first_name_prefix_and_first_name():
+def test_name_match_strength_ranks_initial_family_prefix_then_first_name():
     _, box75 = load("0022500075")
     okc = {p["personId"]: p for p in team_rosters(box75)[OKC]}
     _, box67 = load("0022500067")
     yang = next(p for p in team_rosters(box67)[POR] if p["personId"] == YANG_HANSEN)
-    assert name_matches("Jay. Williams", okc[JAYLIN_WILLIAMS])
-    assert not name_matches("Jay. Williams", okc[JALEN_WILLIAMS])
-    assert name_matches("Jal. Williams", okc[JALEN_WILLIAMS])
-    assert name_matches("J. Williams", okc[JALEN_WILLIAMS]) and name_matches("Williams", okc[JALEN_WILLIAMS])
-    assert name_matches("Hansen", yang), "the play-by-play names this player by first name"
+    jaylin, jalen = okc[JAYLIN_WILLIAMS], okc[JALEN_WILLIAMS]
+    print("Jay. Williams ->", name_match_strength("Jay. Williams", jaylin), name_match_strength("Jay. Williams", jalen))
+    assert name_match_strength("J. Williams", jalen) == 4
+    assert name_match_strength("Williams", jalen) == 3
+    assert name_match_strength("Jal. Williams", jalen) == 2 and name_match_strength("Jay. Williams", jalen) == 0
+    assert name_match_strength("Hansen", yang) == 1, "the play-by-play names this player by first name"
+    assert name_match_strength("Nobody", yang) == 0
+
+
+def test_resolve_player_prefers_a_family_name_over_a_first_name():
+    roster = [
+        {"personId": 1, "firstName": "DeAndre", "familyName": "Jordan", "nameI": "D. Jordan", "seconds": 600.0},
+        {"personId": 2, "firstName": "Jordan", "familyName": "Poole", "nameI": "J. Poole", "seconds": 900.0},
+    ]
+    assert resolve_player("Jordan", roster) == 1
 
 
 def test_resolve_player_rules_out_players_who_never_played_or_are_already_on():

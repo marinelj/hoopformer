@@ -110,27 +110,36 @@ def plain(name: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
 
 
-def name_matches(name: str, player: dict) -> bool:
-    """Does substitution text like 'Eason', 'J. Williams', 'Jay. Williams' or 'Hansen' name this player?
+def name_match_strength(name: str, player: dict) -> int:
+    """How well substitution text like 'Eason', 'J. Williams', 'Jay. Williams' or 'Hansen' names a player.
 
-    The play-by-play uses the family name; an initial ('J. Williams') or a longer
-    first-name prefix ('Jay. Williams') when teammates share it; and for a few
-    players the name they go by, which the box score stores as the first name.
+    0 means no match. Higher is stronger: the play-by-play uses the family name,
+    an initial ('J. Williams') or a longer first-name prefix ('Jay. Williams')
+    when teammates share it, and for a few players the name they go by, which the
+    box score stores as the first name. The first name is the weakest clue:
+    'Jordan' is far more often DeAndre Jordan than Jordan Poole.
     """
     name = plain(name)
     first, family = plain(player["firstName"]), plain(player["familyName"])
-    if name in (family, plain(player["nameI"]), first):
-        return True
+    if name == plain(player["nameI"]):
+        return 4
+    if name == family:
+        return 3
     prefix, dot, rest = name.partition(". ")
-    return bool(dot) and rest == family and first.startswith(prefix)
+    if dot and rest == family and first.startswith(prefix):
+        return 2
+    return 1 if name == first else 0
 
 
 def resolve_player(name: str, roster: list[dict], on_floor: set[int] | None = None) -> int:
     """personId of the player a substitution names as entering the game.
 
-    Players who never played can't enter, and neither can anyone already on the floor.
+    Only the strongest kind of name match counts. Players who never played can't
+    enter, and neither can anyone already on the floor.
     """
-    candidates = [p for p in roster if name_matches(name, p) and p["seconds"] > 0]
+    scored = [(name_match_strength(name, p), p) for p in roster if p["seconds"] > 0]
+    best = max((strength for strength, _ in scored), default=0)
+    candidates = [p for strength, p in scored if best and strength == best]
     if on_floor is not None and len(candidates) > 1:
         candidates = [p for p in candidates if p["personId"] not in on_floor]
     if len(candidates) != 1:
