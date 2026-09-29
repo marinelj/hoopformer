@@ -12,7 +12,17 @@ Measured on 134,426 possessions from 664 games of 2025-26:
 |---|---|---|---|---|---|
 | Share | 49.04% | 3.24% | 32.33% | 15.15% | 0.24% |
 
-Always predicting these shares gives a **log-loss of 1.1260 nats**: the floor any model must go below. Expect the good models to win by **1 to 5 millinats** (0.001 to 0.005). That isn't failure. One possession is mostly luck, and the whole game of player evaluation lives in that thin signal. Report every result in millinats (mnats) so small differences are readable.
+Always predicting these shares gives a **log-loss of 1.1260 nats** on this sample. Report every result in millinats (mnats, 0.001 nats) so small differences are readable.
+
+**The real bar**, measured on the whole validation season (2024-25, 246,541 possessions):
+
+| Model | Log-loss | mnats better than B0 |
+|---|---|---|
+| B0 shares | 1.12005 | 0 |
+| B1 situation (period, clock, margin) | 1.11452 | 5.54 |
+| **B2 linear lineup (players + situation)** | **1.11152** | **8.53** |
+
+The situation is worth more than the players (5.5 mnats against 3.0 more), so every model here must include the situation features. Beating B2 by 0.5 to 3 mnats would be a real result: one possession is mostly luck, and the whole game of player evaluation lives in that thin signal.
 
 ## 2. What you get from Claude (milestone 0)
 
@@ -78,7 +88,7 @@ Do them in order. Each one ends with a check that must pass before you move on.
 - **Checks:**
   - the loss at step 0 is about 1.126 with the bias trick
   - it can **overfit 256 possessions** to a loss near 0 (this proves the training loop works)
-  - it beats B0 on validation
+  - it beats B1 on validation (5.54 mnats vs B0), which proves the players add something, and then ideally B2 (8.53)
 
 ### M4: Training loop (`src/hoopformer/train.py`)
 - AdamW (lr 3e-4, weight decay 0.01, none on biases or LayerNorm), warmup over the first 2% of steps, then cosine decay.
