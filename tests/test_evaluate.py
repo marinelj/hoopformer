@@ -32,6 +32,9 @@ from hoopformer.evaluate import (
 DATASET = Path("data/derived/possessions.parquet")
 
 
+GAMES_PER_SPLIT = 30  # a real sample: fitting B2 on all 1.9M training rows takes minutes per fit
+
+
 @pytest.fixture(scope="module")
 def dataset():
     if not DATASET.exists():
@@ -39,7 +42,9 @@ def dataset():
     frame = pd.read_parquet(DATASET)
     if not {"train", "validation", "test"} <= set(frame.split):
         pytest.skip("the dataset needs train, validation and test rows")
-    return frame
+    sample = [frame[frame.split == split].game_id.drop_duplicates().sort_values().head(GAMES_PER_SPLIT)
+              for split in ("train", "validation", "test")]
+    return frame[frame.game_id.isin(pd.concat(sample))].reset_index(drop=True)
 
 
 def shares_predictions(dataset, split):
@@ -157,17 +162,20 @@ def test_the_test_season_is_locked_and_every_final_run_is_logged(dataset, tmp_pa
 def test_cli_evaluate_refuses_the_test_split_without_final(dataset, tmp_path):
     from hoopformer.cli import main
 
-    path = tmp_path / "predictions.parquet"
+    sample, path = tmp_path / "sample.parquet", tmp_path / "predictions.parquet"
+    dataset.to_parquet(sample)
     shares_predictions(dataset, "validation").to_parquet(path)
-    assert main(["evaluate", "--predictions", str(path), "--split", "validation", "--data-dir", str(tmp_path)]) == 0
+    assert main(["evaluate", "--predictions", str(path), "--split", "validation", "--dataset", str(sample), "--data-dir", str(tmp_path)]) == 0
     shares_predictions(dataset, "test").to_parquet(path)
-    assert main(["evaluate", "--predictions", str(path), "--split", "test", "--data-dir", str(tmp_path)]) == 1
+    assert main(["evaluate", "--predictions", str(path), "--split", "test", "--dataset", str(sample), "--data-dir", str(tmp_path)]) == 1
 
 
 def test_cli_baselines_prints_the_bar(dataset, tmp_path, capsys):
     from hoopformer.cli import main
 
-    assert main(["baselines", "--data-dir", str(tmp_path)]) == 0
+    sample = tmp_path / "sample.parquet"
+    dataset.to_parquet(sample)
+    assert main(["baselines", "--dataset", str(sample), "--data-dir", str(tmp_path)]) == 0
     output = capsys.readouterr().out
     print(output)
     assert "B2 linear lineup" in output and "mnats_vs_B0" in output
