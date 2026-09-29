@@ -12,3 +12,6 @@ __pycache__/
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# JupyterLab autosaves
+.ipynb_checkpoints/
