@@ -28,7 +28,8 @@ SPLITS = {
     "2025-26": "test",
 }
 MAX_POINTS = 4  # the top class means "4 or more"
-COLUMNS = (["game_id", "season", "split", "game_date", "period", "seconds_left", "start_margin", "offense_is_home"]
+KEY = ["game_id", "possession"]  # identifies one row; predictions are joined on it
+COLUMNS = (["game_id", "season", "split", "game_date", "possession", "period", "seconds_left", "start_margin", "offense_is_home"]
            + [f"off_{i}" for i in range(5)] + [f"def_{i}" for i in range(5)] + ["points"])
 
 
@@ -64,7 +65,7 @@ def possession_rows(pbp: dict, box: dict, season: str, game_date: str) -> list[d
     running = running_scores(actions, home_id, away_id)
 
     rows = []
-    for possession in possessions:
+    for number, possession in enumerate(possessions):
         offense = possession.team
         defense = away_id if offense == home_id else home_id
         stint = stints[stint_at[possession.end]]
@@ -75,6 +76,7 @@ def possession_rows(pbp: dict, box: dict, season: str, game_date: str) -> list[d
             "season": season,
             "split": SPLITS.get(season, "unassigned"),
             "game_date": game_date,
+            "possession": number,
             "period": start["period"],
             "seconds_left": clock_seconds(start["clock"]),
             "start_margin": running[offense][possession.start] - running[defense][possession.start],

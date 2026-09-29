@@ -52,6 +52,7 @@ def test_possession_rows_of_the_opener():
     assert (first.period, first.seconds_left, first.start_margin, bool(first.offense_is_home)) == (1, 720.0, 0, False), "Houston wins the tip"
     assert (second.points, third.start_margin) == (3, -3), "OKC scores 3, so Houston starts its next possession down 3"
     assert rows.points.between(0, MAX_POINTS).all()
+    assert list(rows.possession) == list(range(len(rows))), "possessions are numbered 0, 1, 2, ... within a game"
     for _, row in rows.iterrows():
         offense = [row[f"off_{i}"] for i in range(5)]
         defense = [row[f"def_{i}"] for i in range(5)]

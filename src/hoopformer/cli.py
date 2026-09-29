@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from hoopformer.dataset import build_dataset, cached_seasons
+from hoopformer.evaluate import LockedSplitError, cached_baselines, evaluate, score
 from hoopformer.fetch import fetch_season
 from hoopformer.rapm import choose_lambda, ratings, season_rows
 
@@ -32,6 +33,18 @@ def main(argv: list[str] | None = None) -> int:
     dataset.add_argument("--season", nargs="+", help="default: every season with a downloaded schedule")
     dataset.add_argument("--out", type=Path, default=Path("data/derived/possessions.parquet"))
     dataset.add_argument("--data-dir", type=Path, default=Path("data"))
+
+    grade = commands.add_parser("evaluate", help="score a predictions file next to the baselines")
+    grade.add_argument("--predictions", type=Path, required=True, help="Parquet with game_id, possession, p0..p4")
+    grade.add_argument("--split", choices=("validation", "test"), default="validation")
+    grade.add_argument("--final", action="store_true", help="required for the test split, after pre-registration")
+    grade.add_argument("--name", default="your model", help="the model's name in the report")
+    grade.add_argument("--dataset", type=Path, default=Path("data/derived/possessions.parquet"))
+    grade.add_argument("--data-dir", type=Path, default=Path("data"))
+
+    bar = commands.add_parser("baselines", help="fit (once) and print baselines B0-B2 on the validation split")
+    bar.add_argument("--dataset", type=Path, default=Path("data/derived/possessions.parquet"))
+    bar.add_argument("--data-dir", type=Path, default=Path("data"))
 
     args = parser.parse_args(argv)
     exit_code = 0
@@ -74,4 +87,21 @@ def main(argv: list[str] | None = None) -> int:
             for game_id, error in report.failed.items():
                 print("  ", game_id, error)
             exit_code = 1
+    if args.command == "baselines":
+        import pandas as pd
+
+        dataset = pd.read_parquet(args.dataset)
+        baselines = cached_baselines(dataset, "validation", args.data_dir / "derived")
+        labels = dataset[dataset["split"] == "validation"]["points"].to_numpy()
+        print(score(baselines, labels).to_string(index=False, float_format=lambda v: f"{v:.5f}"))
+    if args.command == "evaluate":
+        import pandas as pd
+
+        try:
+            report = evaluate(pd.read_parquet(args.predictions), pd.read_parquet(args.dataset), args.split,
+                              args.data_dir / "derived", model_name=args.name, final=args.final)
+        except (LockedSplitError, ValueError) as exc:
+            print(f"not scored: {exc}")
+            return 1
+        print(report.to_string(index=False, float_format=lambda v: f"{v:.5f}"))
     return exit_code

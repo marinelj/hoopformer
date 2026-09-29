@@ -22,6 +22,7 @@ Always predicting these shares gives a **log-loss of 1.1260 nats**: the floor an
 |---|---|---|
 | `game_id`, `season`, `game_date` | str | where it happened |
 | `split` | str | `train`, `validation` or `test` (see Splits below; defined once in `src/hoopformer/dataset.py`) |
+| `possession` | int | 0, 1, 2... within the game. With `game_id`, it identifies the row: predictions are joined on these two |
 | `period` | int | 1-4, 5+ is overtime |
 | `seconds_left` | float | seconds left in the period when the possession started |
 | `start_margin` | int | offense score minus defense score at the start |
@@ -40,11 +41,16 @@ The lineup is the one on the floor when the possession ended, the same rule RAPM
 | validation | 2024-25 | every tuning decision |
 | test | 2025-26 | **locked**, see §6 |
 
-**Harness (next):** `uv run hoopformer evaluate --predictions FILE --split validation`. Your model writes a Parquet file with the row keys and five probability columns `p0` … `p4`; the harness scores it. Three baselines ship with it:
+**Grader (ready):** `src/hoopformer/evaluate.py`.
+- `uv run hoopformer baselines`: fits B0-B2 once (cached in `data/derived/`) and prints them on validation. Run it first: B2's line is your bar.
+- Save your model's predictions with `predictions_frame(rows, probabilities)`, where `rows` is the split's DataFrame and `probabilities` is your model's (n, 5) softmax output in the same order. Then `frame.to_parquet("data/derived/runs/<name>.parquet")`.
+- `uv run hoopformer evaluate --predictions data/derived/runs/<name>.parquet --name "<name>"` scores it on validation next to B0-B2. It first checks that every row is predicted exactly once and each row's probabilities add up to 1.
+- `--split test` is refused without `--final`, and every final run is appended to `docs/EXPERIMENTS.md`.
 
-- **B0 shares:** the table above, from the training seasons.
-- **B1 situation:** a logistic regression on period, clock, margin and home, which catches end-of-quarter heaves and late-game fouling.
-- **B2 linear lineup:** a multinomial logistic regression on one-hot offense and defense players plus the situation, with L2 chosen on validation. This is RAPM's classification cousin, and **the real bar.**
+The three baselines:
+- **B0 shares:** the training outcome shares.
+- **B1 situation:** logistic regression on period, clock (including under-24-seconds and late-game flags) and margin.
+- **B2 linear lineup:** logistic regression on one-hot offense and defense players plus B1's features, with its strength picked on validation. This is RAPM's classification cousin, and **the real bar.** For the test split, the baselines are refitted on train + validation, like your final model.
 
 ## 3. Milestones
 
