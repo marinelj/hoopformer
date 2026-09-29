@@ -51,11 +51,12 @@ The lineup is the one on the floor when the possession ended, the same rule RAPM
 Do them in order. Each one ends with a check that must pass before you move on.
 
 ### M1: Setup
-- On the Mac Studio: `uv add torch`, then check `torch.backends.mps.is_available()` and time a 4096×4096 matmul on `mps` vs `cpu`.
-- **Learn:** tensors, devices, why the GPU wins on big matrix products.
-- **Check:** MPS is at least 5× faster than CPU on the matmul.
+- Work in `notebooks/M1_M2.ipynb` with the **Hoopformer (.venv)** kernel. PyTorch is already a project dependency, so `uv sync` installs it.
+- Check `torch.backends.mps.is_available()`, then time a 4096×4096 matmul on `mps` vs `cpu`, calling `torch.mps.synchronize()` before reading the clock.
+- **Learn:** tensors, devices, asynchronous GPU work, and why the GPU wins on big matrix products. On Apple silicon the gap is small, because the CPU has built-in matrix units: the MacBook Air M5 measured 1.96 TFLOPS on the CPU and 2.74 on the GPU (1.4×).
+- **Check:** record both numbers in `docs/EXPERIMENTS.md`. From M4 on, time a real training step on both devices and use the faster one: for a model this small, that isn't guaranteed to be the GPU.
 
-### M2: Data loader (`src/hoopformer/data.py`)
+### M2: Data loader (prototype in `notebooks/M1_M2.ipynb`, then move to `src/hoopformer/data.py`)
 - `build_vocab(train_df) -> dict[int, int]`: personId → index, **from train rows only**. Index 0 = PAD, 1 = UNK, 2 = MASK (used in M6).
 - `PossessionDataset(df, vocab)`: a torch `Dataset` returning `players` (10 ints: offense then defense; unseen players → UNK), `situation` (float features: period, seconds_left / 720, clipped start_margin / 20, offense_is_home) and `label` (0-4).
 - **Learn:** why the vocabulary and any scaling come from train only (leakage).

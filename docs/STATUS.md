@@ -42,6 +42,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 
 - marinelj writes the model and training loop, following `docs/TRANSFORMER_GUIDE.md`.
 - Done: `hoopformer dataset` (`src/hoopformer/dataset.py`) writes `data/derived/possessions.parquet`, one row per possession with the split column. On 664 games of 2025-26: 134,426 rows, outcome shares 0:49.04% 1:3.24% 2:32.33% 3:15.15% 4+:0.24%.
+- Done: `notebooks/M1_M2.ipynb` (guided cells for marinelj, each with a check cell; verified end to end against a private reference solution) and `notebooks/playground.ipynb`. The Jupyter kernel is registered with `uv run python -m ipykernel install --user --name hoopformer --display-name "Hoopformer (.venv)"`.
 - Next (Claude): `hoopformer evaluate` (locked splits, baselines B0-B2).
 
 ## Known limits
