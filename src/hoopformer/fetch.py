@@ -125,6 +125,13 @@ def final_regular_season_game_ids(schedule: dict) -> list[str]:
     )
 
 
+def game_dates(data_dir: Path, season: str) -> dict[str, str]:
+    """Game id -> date (YYYY-MM-DD) from a cached schedule."""
+    schedule = json.loads(raw_path(data_dir, SCHEDULE, season).read_text(encoding="utf-8"))
+    return {game["gameId"]: game["gameDateEst"][:10]
+            for day in schedule["leagueSchedule"]["gameDates"] for game in day["games"]}
+
+
 def fetch_game(
     game_id: str, data_dir: Path, manifest_path: Path, delay: float = 1.0,
     timeout: int = 60, retries: int = 3, backoff: float = 5.0,

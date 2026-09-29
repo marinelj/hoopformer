@@ -27,7 +27,7 @@ import pandas as pd
 from scipy import sparse
 from sklearn.linear_model import Ridge
 
-from hoopformer.fetch import BOX_SCORE, PLAY_BY_PLAY, SCHEDULE, final_regular_season_game_ids, raw_path
+from hoopformer.fetch import BOX_SCORE, PLAY_BY_PLAY, SCHEDULE, final_regular_season_game_ids, game_dates, raw_path
 from hoopformer.lineups import reconstruct_game, team_rosters
 from hoopformer.possessions import stint_totals
 
@@ -54,13 +54,6 @@ def game_rows(pbp: dict, box: dict) -> list[Row]:
         if totals.away_possessions:
             rows.append(Row(stint.game_id, stint.away, stint.home, False, totals.away_points, totals.away_possessions))
     return rows
-
-
-def game_dates(data_dir: Path, season: str) -> dict[str, str]:
-    """Game id -> date (YYYY-MM-DD) from the cached schedule, for chronological splits."""
-    schedule = json.loads(raw_path(data_dir, SCHEDULE, season).read_text())
-    return {game["gameId"]: game["gameDateEst"][:10]
-            for day in schedule["leagueSchedule"]["gameDates"] for game in day["games"]}
 
 
 def season_rows(data_dir: Path, season: str) -> tuple[list[Row], dict[int, str], dict[str, str]]:

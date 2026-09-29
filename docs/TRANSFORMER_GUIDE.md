@@ -14,13 +14,14 @@ Measured on 134,426 possessions from 664 games of 2025-26:
 
 Always predicting these shares gives a **log-loss of 1.1260 nats**: the floor any model must go below. Expect the good models to win by **1 to 5 millinats** (0.001 to 0.005). That isn't failure. One possession is mostly luck, and the whole game of player evaluation lives in that thin signal. Report every result in millinats (mnats) so small differences are readable.
 
-## 2. What you get from Claude (milestone 0, by about Oct 3)
+## 2. What you get from Claude (milestone 0)
 
-**Dataset:** `data/derived/possessions.parquet`, built by `uv run hoopformer dataset`. One row per possession:
+**Dataset (ready):** `data/derived/possessions.parquet`, built by `uv run hoopformer dataset`, about 2.4 million rows. One row per possession; games in schedule order, possessions in game order:
 
 | Column | Type | Meaning |
 |---|---|---|
 | `game_id`, `season`, `game_date` | str | where it happened |
+| `split` | str | `train`, `validation` or `test` (see Splits below; defined once in `src/hoopformer/dataset.py`) |
 | `period` | int | 1-4, 5+ is overtime |
 | `seconds_left` | float | seconds left in the period when the possession started |
 | `start_margin` | int | offense score minus defense score at the start |
@@ -39,7 +40,7 @@ The lineup is the one on the floor when the possession ended, the same rule RAPM
 | validation | 2024-25 | every tuning decision |
 | test | 2025-26 | **locked**, see §6 |
 
-**Harness:** `uv run hoopformer evaluate --predictions FILE --split validation`. Your model writes a Parquet file with the row keys and five probability columns `p0` … `p4`; the harness scores it. Three baselines ship with it:
+**Harness (next):** `uv run hoopformer evaluate --predictions FILE --split validation`. Your model writes a Parquet file with the row keys and five probability columns `p0` … `p4`; the harness scores it. Three baselines ship with it:
 
 - **B0 shares:** the table above, from the training seasons.
 - **B1 situation:** a logistic regression on period, clock, margin and home, which catches end-of-quarter heaves and late-game fouling.

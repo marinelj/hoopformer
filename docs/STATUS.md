@@ -41,7 +41,8 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 ## v0.2 (the transformer, due at the NBA Cup, Nov-Dec)
 
 - marinelj writes the model and training loop, following `docs/TRANSFORMER_GUIDE.md`.
-- Claude builds `hoopformer dataset` (possession-level Parquet) and `hoopformer evaluate` (locked splits, baselines B0-B2) by about Oct 3.
+- Done: `hoopformer dataset` (`src/hoopformer/dataset.py`) writes `data/derived/possessions.parquet`, one row per possession with the split column. On 664 games of 2025-26: 134,426 rows, outcome shares 0:49.04% 1:3.24% 2:32.33% 3:15.15% 4+:0.24%.
+- Next (Claude): `hoopformer evaluate` (locked splits, baselines B0-B2).
 
 ## Known limits
 

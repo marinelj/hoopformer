@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from hoopformer.dataset import build_dataset, cached_seasons
 from hoopformer.fetch import fetch_season
 from hoopformer.rapm import choose_lambda, ratings, season_rows
 
@@ -26,6 +27,11 @@ def main(argv: list[str] | None = None) -> int:
     rapm.add_argument("--top", type=int, default=15, help="how many players to print from each end")
     rapm.add_argument("--min-possessions", type=int, default=1500, help="only print players with this many")
     rapm.add_argument("--data-dir", type=Path, default=Path("data"))
+
+    dataset = commands.add_parser("dataset", help="build the possession-level dataset for the transformer")
+    dataset.add_argument("--season", nargs="+", help="default: every season with a downloaded schedule")
+    dataset.add_argument("--out", type=Path, default=Path("data/derived/possessions.parquet"))
+    dataset.add_argument("--data-dir", type=Path, default=Path("data"))
 
     args = parser.parse_args(argv)
     exit_code = 0
@@ -54,4 +60,18 @@ def main(argv: list[str] | None = None) -> int:
         print(shown.head(args.top).to_string(index=False))
         print("...")
         print(shown.tail(args.top).to_string(index=False))
+    if args.command == "dataset":
+        seasons = args.season or cached_seasons(args.data_dir)
+        frame, report = build_dataset(args.data_dir, seasons)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_parquet(args.out, index=False)
+        print(f"{report.rows} possessions from {report.games} games -> {args.out}")
+        print("rows per split:", frame["split"].value_counts().to_dict())
+        if report.missing:
+            print(f"{len(report.missing)} finished games not downloaded (run `hoopformer fetch` to add them)")
+        if report.failed:
+            print(f"{len(report.failed)} games failed lineup reconstruction:")
+            for game_id, error in report.failed.items():
+                print("  ", game_id, error)
+            exit_code = 1
     return exit_code

@@ -6,13 +6,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from hoopformer.fetch import BOX_SCORE, PLAY_BY_PLAY, SCHEDULE, raw_path
+from hoopformer.fetch import BOX_SCORE, PLAY_BY_PLAY, SCHEDULE, game_dates, raw_path
 from hoopformer.rapm import (
     LAMBDAS,
     choose_lambda,
     design_matrix,
     fit,
-    game_dates,
     game_rows,
     ratings,
     season_rows,
