@@ -11,6 +11,10 @@ from hoopformer.fetch import fetch_season
 from hoopformer.rapm import choose_lambda, ratings, season_rows
 
 
+def model_path(data_dir: Path, season: str) -> Path:
+    return data_dir / "derived" / f"action_model_{season}.json"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hoopformer")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -45,6 +49,19 @@ def main(argv: list[str] | None = None) -> int:
     bar = commands.add_parser("baselines", help="fit (once) and print baselines B0-B2 on the validation split")
     bar.add_argument("--dataset", type=Path, default=Path("data/derived/possessions.parquet"))
     bar.add_argument("--data-dir", type=Path, default=Path("data"))
+
+    actions = commands.add_parser("actions", help="fit the game's action model on a season and check its realism")
+    actions.add_argument("--season", default="2025-26")
+    actions.add_argument("--games", type=int, default=1000, help="simulated games for the realism check")
+    actions.add_argument("--data-dir", type=Path, default=Path("data"))
+
+    play = commands.add_parser("play", help="simulate one game between two teams (e.g. --home OKC --away HOU)")
+    play.add_argument("--home", required=True, help="team tricode")
+    play.add_argument("--away", required=True, help="team tricode")
+    play.add_argument("--seed", type=int, default=0, help="the same seed replays the same game")
+    play.add_argument("--season", default="2025-26")
+    play.add_argument("--play-by-play", action="store_true", help="print every event")
+    play.add_argument("--data-dir", type=Path, default=Path("data"))
 
     args = parser.parse_args(argv)
     exit_code = 0
@@ -87,6 +104,45 @@ def main(argv: list[str] | None = None) -> int:
             for game_id, error in report.failed.items():
                 print("  ", game_id, error)
             exit_code = 1
+    if args.command == "actions":
+        from hoopformer.game.actions import season_counts
+        from hoopformer.game.model import fit_action_model
+        from hoopformer.game.realism import compare, real_per_team_game, simulate_league, simulated_per_team_game
+
+        players, teams, extras = season_counts(args.data_dir, args.season)
+        model = fit_action_model(players, teams, extras, args.season)
+        path = model_path(args.data_dir, args.season)
+        model.save(path)
+        print(f"{len(model.players)} players, {len(model.teams)} teams -> {path}")
+        table = compare(real_per_team_game(extras), simulated_per_team_game(simulate_league(model, args.games, seed=1)))
+        print(f"realism, per team per game, real season vs {args.games} simulated games:")
+        print(table[["statistic", "real", "simulated", "difference", "tolerance", "ok"]].to_string(index=False, float_format=lambda v: f"{v:.4f}"))
+        if not table.ok.all():
+            exit_code = 1
+    if args.command == "play":
+        from hoopformer.game.engine import Game
+        from hoopformer.game.model import ActionModel
+
+        path = model_path(args.data_dir, args.season)
+        if not path.exists():
+            print(f"no action model at {path}: run `uv run hoopformer actions --season {args.season}` first")
+            return 1
+        model = ActionModel.load(path)
+        by_code = {team.tricode: team.team_id for team in model.teams.values()}
+        unknown = [code for code in (args.home, args.away) if code not in by_code]
+        if unknown:
+            print(f"unknown team {unknown}; choose from {' '.join(sorted(by_code))}")
+            return 1
+        result = Game(model, by_code[args.home], by_code[args.away], seed=args.seed).play()
+        if args.play_by_play:
+            for event in result.events:
+                minutes, seconds = divmod(int(event.clock), 60)
+                print(f"Q{event.period} {minutes:2d}:{seconds:02d}  {event.team}  {event.text}  ({event.home_score}-{event.away_score})")
+        for side in (result.away, result.home):
+            print(f"\n{side.name} {side.points}")
+            print(result.box_score(side).to_string(index=False))
+        overtime = f" after {result.periods - 4} overtime(s)" if result.periods > 4 else ""
+        print(f"\nFinal{overtime}: {result.away.tricode} {result.away.points} @ {result.home.tricode} {result.home.points} (seed {args.seed})")
     if args.command == "baselines":
         import pandas as pd
 

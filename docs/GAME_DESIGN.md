@@ -130,7 +130,16 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - Nov-Dec: v0.2 (marinelj's transformer), which can replace the day-1 action model as the game's engine.
 - Then: richer athlete memory, the reinforcement-learning AI coach, two humans in real time.
 
-**Day 1 progress:** the action counter (`src/hoopformer/game/actions.py`) reproduces the official box scores over 150 games: FGA, FGM, 3PA, FTA, FTM, AST, TOV, OREB, DREB and STL exactly, PF 99.95%, BLK 99.5%.
+**Day 1 result (engine core, done):**
+- `game/actions.py` counts every player's chances and actions from play-by-play. Over 400 games it reproduces the official box scores: FGA, FGM, 3PA, FTA, FTM, AST, TOV, OREB, DREB and STL exactly, PF 99.95%, BLK 99.5%.
+- `game/model.py` turns the counts into rates with shrinkage toward the league, plus team defense factors and home court. It fits in about 6 seconds.
+- `game/engine.py` plays a seeded game in about 2 ms; the same seed replays the same game.
+- `game/realism.py`: 1,000 simulated games match the real 2025-26 season on all 16 statistics checked:
+  - points 116.1 vs 115.3, possessions 101.6 vs 101.0
+  - FG% 47.3 vs 46.9
+  - home win share 51.9% vs 54.2%
+- Replaying the real season's matchups, simulated team point differentials correlate 0.86 with real ones. They're about 24% compressed: defense is still per team, and rosters are end-of-season.
+- Commands: `uv run hoopformer actions --season 2025-26` fits, saves and checks realism; `uv run hoopformer play --home OKC --away HOU --seed 7 [--play-by-play]` plays one game.
 
 ## 10. Open questions for marinelj
 

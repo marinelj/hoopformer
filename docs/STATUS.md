@@ -35,7 +35,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 
 - Design and decisions: `docs/GAME_DESIGN.md`. Real players for a private prototype; names live in a separate layer.
 - The 5-day build, Oct 1-5, by Claude on the MacBook Air, in `src/hoopformer/game/`. Other teammates: please don't edit that folder until the build is pushed.
-- Day 1 (in progress): the action counter reproduces official box scores over 150 games (most stats exactly).
+- Day 1 (done): the action counter reproduces official box scores. The engine plays a game in about 2 ms with real players' rates, and 1,000 simulated games match the real 2025-26 season on 16 statistics. Try `uv run hoopformer actions` then `uv run hoopformer play --home OKC --away HOU --play-by-play`. Details are in GAME_DESIGN.md §9.
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next
