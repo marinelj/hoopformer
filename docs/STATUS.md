@@ -31,6 +31,13 @@ The regular-season archive was downloaded from stats.nba.com and verified on 202
 
 The retry pass ended with `0 failed` for every season. `uv run pytest` reports `49 passed, 1 deselected`; the deselected test is the explicit stats.nba.com network smoke test. RAPM also completes for both 2025-26 and 2024-25.
 
+## The game: the centre of the NBA lab (decided 2026-10-01)
+
+- Design and decisions: `docs/GAME_DESIGN.md`. Real players for a private prototype; names live in a separate layer.
+- The 5-day build, Oct 1-5, by Claude on the MacBook Air, in `src/hoopformer/game/`. Other teammates: please don't edit that folder until the build is pushed.
+- Day 1 (in progress): the action counter reproduces official box scores over 150 games (most stats exactly).
+- v0.1 moves to Oct 6-17, still locked before opening night.
+
 ## Next
 
 1. RAPM over several seasons (later seasons weigh more).
