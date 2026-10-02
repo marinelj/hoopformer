@@ -15,10 +15,12 @@ import pytest
 from hoopformer.fetch import (
     BOX_SCORE,
     PLAY_BY_PLAY,
+    ROSTER,
     SCHEDULE,
     FetchError,
     ensure_json,
     fetch_game,
+    fetch_rosters,
     final_regular_season_game_ids,
     raw_path,
     store_raw,
@@ -102,6 +104,19 @@ def test_fetch_game_downloads_play_by_play_and_box_score(tmp_path):
     assert len(home["players"]) >= 8
     assert len(manifest.read_text().splitlines()) == 2
     assert fetch_game("0022500001", tmp_path, manifest) is False, "second call must come from the cache"
+
+
+@pytest.mark.network
+def test_fetch_rosters_downloads_a_teams_current_roster(tmp_path):
+    manifest = tmp_path / "manifest.jsonl"
+    report = fetch_rosters("2026-27", tmp_path, manifest, delay=0.5, team_codes=["OKC"])
+    roster = json.loads(raw_path(tmp_path, ROSTER, "2026-27_1610612760").read_text())
+    table = next(t for t in roster["resultSets"] if t["name"] == "CommonTeamRoster")
+    names = [row[table["headers"].index("PLAYER")] for row in table["rowSet"]]
+    print(len(names), "players:", ", ".join(names[:8]), "...")
+    assert report.fetched == 1 and not report.failed
+    assert len(names) >= 13 and "Shai Gilgeous-Alexander" in names
+    assert len(manifest.read_text().splitlines()) == 1
 
 
 def test_cli_fetch_serves_already_downloaded_games_from_the_cache(capsys):

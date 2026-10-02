@@ -36,12 +36,13 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - Design and decisions: `docs/GAME_DESIGN.md`. Real players for a private prototype; names live in a separate layer.
 - The 5-day build, Oct 1-5, by Claude on the MacBook Air, in `src/hoopformer/game/`. Other teammates: please don't edit that folder until the build is pushed.
 - Day 1 (done): the action counter reproduces official box scores. The engine plays a game in about 2 ms with real players' rates, and 1,000 simulated games match the real 2025-26 season on 16 statistics. Try `uv run hoopformer actions` then `uv run hoopformer play --home OKC --away HOU --play-by-play`. Details are in GAME_DESIGN.md §9.
+- Day 2 (done): the engine moves one possession at a time (`Game.step`); fatigue and a scripted coach make real-looking rotations (28 substitutions and 5.1 timeouts per team-game vs 26 and 5.4 real); home court is spread over shooting, free throws and turnovers; 2026-27 rosters are fetched and playable (`--rosters 2026-27`). After pulling, refit once with `uv run hoopformer actions` (the model gained home-court fields). Details are in GAME_DESIGN.md §9.
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next
 
 1. RAPM over several seasons (later seasons weigh more).
-2. The 2026-27 schedule and current rosters from nba_api.
+2. The 2026-27 schedule from nba_api (current rosters: done, `fetch --rosters`).
 3. The season simulator: team strength = player ratings × expected minutes; simulate the schedule thousands of times.
 4. Backtest the method on 2025-26, then pre-register the 2026-27 win totals and playoff odds: push them, and post their SHA-256 on X before opening night.
 

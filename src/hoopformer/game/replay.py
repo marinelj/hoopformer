@@ -54,7 +54,7 @@ def replay_data(result: GameResult, model: ActionModel, home_coach: str = "You",
         row["away_lineup"] = list(event.away_lineup)
         events.append(row)
     return {
-        "season": model.season,
+        "season": model.season if "rates" in model.season else f"{model.season} player rates",
         "seed": result.seed,
         "periods": result.periods,
         "home": team_data(result.home, home_coach),

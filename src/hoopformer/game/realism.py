@@ -85,3 +85,98 @@ def compare(real: dict[str, float], simulated: dict[str, float]) -> pd.DataFrame
         lines.append({"statistic": name, "real": r, "simulated": s, "difference": difference,
                       "tolerance": tolerance, "kind": kind, "ok": abs(difference) <= tolerance})
     return pd.DataFrame(lines)
+
+
+# --- rotations: substitutions, timeouts, stint lengths and minutes ----------------------------------
+
+TIERS = ((33.0, "33+ mpg"), (28.0, "28-33 mpg"), (20.0, "20-28 mpg"), (0.0, "under 20 mpg"))
+
+
+def tier(minutes_per_game: float) -> str:
+    return next(name for floor, name in TIERS if minutes_per_game >= floor)
+
+
+def on_court_intervals(timeline: list[tuple[float, tuple[int, ...]]], end: float) -> dict[int, list[list[float]]]:
+    """Each player's continuous spells on the floor, from (time, the ten on the floor) moments in time order.
+
+    A player still on the floor when a period ends and the next one starts is one spell, as in real box scores.
+    """
+    spells: dict[int, list[list[float]]] = {}
+    on: dict[int, float] = {}
+    for t, floor in timeline:
+        now = set(floor)
+        for pid in [p for p in on if p not in now]:
+            spells.setdefault(pid, []).append([on.pop(pid), t])
+        for pid in now - set(on):
+            on[pid] = t
+    for pid, start in on.items():
+        spells.setdefault(pid, []).append([start, end])
+    return spells
+
+
+def rotation_summary(spells_per_game: list[dict[int, list[list[float]]]], entries: list[int], timeouts: list[int],
+                     model: ActionModel) -> dict:
+    """Substitutions and timeouts per team-game, average stint by minutes tier, and each player's minutes per game."""
+    stints: dict[str, list[float]] = {name: [] for _, name in TIERS}
+    minutes: dict[int, list[float]] = {}
+    for spells in spells_per_game:
+        for pid, intervals in spells.items():
+            profile = model.players.get(pid)
+            if profile is None:
+                continue
+            stints[tier(profile.minutes_per_game)] += [(b - a) / 60 for a, b in intervals]
+            minutes.setdefault(pid, []).append(sum(b - a for a, b in intervals) / 60)
+    return {
+        "subs per team-game": sum(entries) / len(entries),
+        "timeouts per team-game": sum(timeouts) / len(timeouts),
+        "stint minutes": {name: sum(v) / len(v) for name, v in stints.items() if v},
+        "minutes per game": {pid: sum(v) / len(v) for pid, v in minutes.items()},
+    }
+
+
+def simulated_rotations(results: list[GameResult], model: ActionModel) -> dict:
+    from hoopformer.game.replay import game_seconds
+
+    spells_per_game, entries, timeouts = [], [], []
+    for result in results:
+        timeline = [(game_seconds(e.period, e.clock), e.home_lineup + e.away_lineup) for e in result.events if e.home_lineup]
+        end = game_seconds(result.periods, 0.0)
+        spells = on_court_intervals(timeline, end)
+        # every player who appeared, including those who never left the bench (0 minutes) counts for the average
+        for side in (result.home, result.away):
+            for pid in side.athletes:
+                spells.setdefault(pid, [])
+            starts_of_halves = sum(1 for e in result.events if e.kind == "sub" and e.team == side.tricode and e.zone == "starters")
+            entries.append(sum(1 for e in result.events if e.kind == "sub" and e.team == side.tricode) - starts_of_halves)
+            timeouts.append(sum(1 for e in result.events if e.kind == "timeout" and e.team == side.tricode))
+        spells_per_game.append({pid: v for pid, v in spells.items() if v})
+    return rotation_summary(spells_per_game, entries, timeouts, model)
+
+
+def real_rotations(data_dir, season: str, model: ActionModel, games: int | None = None) -> dict:
+    """The same numbers from real games: rebuilt lineups for stints and minutes, play-by-play for timeouts."""
+    import json
+
+    from hoopformer.fetch import BOX_SCORE, PLAY_BY_PLAY, SCHEDULE, final_regular_season_game_ids, raw_path
+    from hoopformer.lineups import LineupError, reconstruct_game
+
+    schedule = json.loads(raw_path(data_dir, SCHEDULE, season).read_text(encoding="utf-8"))
+    game_ids = [g for g in final_regular_season_game_ids(schedule) if raw_path(data_dir, PLAY_BY_PLAY, g).exists()][:games]
+    spells_per_game, entries, timeouts = [], [], []
+    for game_id in game_ids:
+        pbp = json.loads(raw_path(data_dir, PLAY_BY_PLAY, game_id).read_text(encoding="utf-8"))
+        box = json.loads(raw_path(data_dir, BOX_SCORE, game_id).read_text(encoding="utf-8"))["boxScoreTraditional"]
+        try:
+            stints = reconstruct_game(pbp, box)
+        except LineupError:
+            continue
+        timeline = [(s.start, s.home + s.away) for s in stints]
+        spells_per_game.append(on_court_intervals(timeline, stints[-1].end))
+        for side in ("home", "away"):
+            fives = [(s.period, getattr(s, side)) for s in stints]
+            entries.append(sum(len(set(b) - set(a)) for (pa, a), (pb, b) in zip(fives, fives[1:]) if pa == pb))
+        for team in (box["homeTeamId"], box["awayTeamId"]):
+            # a timeout's team id is in personId; coach's challenges aren't timeouts
+            timeouts.append(sum(1 for a in pbp["game"]["actions"]
+                                if a["actionType"] == "Timeout" and a.get("subType") == "Regular" and a.get("personId") == team))
+    return rotation_summary(spells_per_game, entries, timeouts, model)

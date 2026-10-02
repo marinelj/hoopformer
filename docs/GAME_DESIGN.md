@@ -141,6 +141,31 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - Replaying the real season's matchups, simulated team point differentials correlate 0.86 with real ones. They're about 24% compressed: defense is still per team, and rosters are end-of-season.
 - Commands: `uv run hoopformer actions --season 2025-26` fits, saves and checks realism; `uv run hoopformer play --home OKC --away HOU --seed 7 [--play-by-play]` plays one game.
 
+**Day 2 result (rotations, fatigue, the scripted coach, home court, 2026-27 rosters; done):**
+- **The engine moves one possession at a time.** `Game.step()` plays one possession, then lets both coaches act, and returns the new events; `play()` just loops it. A live app (day 4) will stop between steps for the human coach. `Game.substitute()` and `Game.call_timeout()` are the actions a human coach will use.
+- **What real games told us (2025-26, measured from the rebuilt lineups and play-by-play):**
+
+  | Measured | Real |
+  |---|---|
+  | Substitutions per team per game (not counting period starts) | 26.1 |
+  | Timeouts per team per game | 5.4 (2.2 / 2.3 / 2.4 / 3.8 per game in Q1-Q4) |
+  | Average stint, players over 33 / 28-33 / 20-28 / under 20 minutes a game | 9.0 / 7.7 / 6.6 / 5.4 minutes |
+  | Average rest between stints, same groups | 3.9 / 4.6 / 5.9 / 8.0 minutes |
+  | Shooting by time since checking in (made / expected) | 0-3 min 0.984, 3-6 0.998, 6-9 1.000, 9-12 1.010, 12+ 0.992 |
+  | Opponent's run when a timeout is called | 3.7 points on average; only 10% after 8-0 or more |
+  | Home minus away, per game | +1.7 points: +0.6 FG% points, +0.6 free throws attempted, -0.2 turnovers |
+
+- **Fatigue changes who plays, not how well they shoot.** Real shooting doesn't drop late in a stint (the table above: the data shows no fatigue penalty within the stints coaches actually allow). So energy only drives rotations: it runs down on the floor in `2.5 + 0.17 × minutes per game` minutes (6 to 10, the real stint lengths) and back up on the bench in about 4 minutes; quarter breaks, halftime and timeouts rest players too.
+- **The scripted coach** (`game/coach.py`), for both teams:
+  - substitutions: fouled-out players leave at once; foul trouble sits (2 fouls in Q1, 3 in Q2, 4 in Q3, 5 before the last 5 minutes); tired players rest; rested players come back, whoever is furthest behind their minutes first; the best five close games (last 5 minutes within 10, and overtime); the end of the bench plays garbage time (last 5 minutes, 20+ apart);
+  - timeouts: a breather at the first stop under 7:00 and 3:00 of each quarter (like TV timeouts; the trailing team takes it), one to stop a 10-0 run, and one to draw up a play when down 1-6 in the last 2 minutes after the other team scores; two are kept for the 4th quarter.
+- **Simulated vs real rotations** (600 games, `test_rotations_look_like_real_games`): substitutions 28.3 vs 26.1 per team-game; timeouts 5.1 vs 5.4; stints 9.7 / 7.4 / 5.9 / 4.2 vs 9.0 / 7.7 / 6.6 / 5.4 minutes; each player's minutes land within 1.1 minutes of the coach's target on average (stars 0.7 short).
+- **Home court is spread out:** home teams shoot better (FG% × 1.007, away × 0.993), draw more free throws (× 1.012 / 0.988) and turn it over less (× 0.995 / 1.005), each measured directly. Over 6,000 games: home margin +1.2, home win share 53% (real +1.7 and 55.5%).
+- **Known gap:** simulated games are more spread out than real ones (margin SD 18 vs 16.4; 27% of games decided by 20+ vs 23%). It was already there on day 1, and earlier garbage time doesn't fix it. Real teams ease off with a lead and push when behind ("score effects"); the engine doesn't model that yet. This also holds home win share below the real one.
+- **2026-27 rosters:** `uv run hoopformer fetch --rosters --season 2026-27` caches all 30 training-camp rosters (619 players; 480 have 2025-26 rates). `game/rosters.py` moves every player to their current team with last season's rates; newcomers start as league-average 10-minute players. Play with them: `uv run hoopformer play --home OKC --away BOS --rosters 2026-27`.
+- A game now takes about 4 ms (the coach checks both benches after every possession).
+- The realism check uses 2,000 games: with 1,000, home win share alone moves by ±1.6 points from seed to seed.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

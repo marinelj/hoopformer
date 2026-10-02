@@ -47,6 +47,10 @@ class League:
     home_win_share: float
     first_chance_seconds: list[float] = field(repr=False)
     second_chance_seconds: list[float] = field(repr=False)
+    home_free_throw_factor: float = 1.0  # home teams draw more free throws...
+    away_free_throw_factor: float = 1.0
+    home_turnover_factor: float = 1.0    # ...and turn the ball over a little less
+    away_turnover_factor: float = 1.0
 
 
 @dataclass
@@ -113,13 +117,13 @@ def fit_action_model(players: pd.DataFrame, teams: pd.DataFrame, extras: dict, s
     attempts = {zone: total[zone] for zone in ZONES}
     team_chances = teams["chances"].sum()
     misses = teams["misses"].sum()
-    # Home court: real home teams outscore visitors by `margin` points a game, through shooting,
-    # free throws, turnovers and rebounding together. The engine puts all of it into shooting:
-    # home makes rise and away makes fall by the share of field-goal points that closes the gap.
-    totals = extras["team_totals"]
-    field_goal_points = (2 * totals["fieldGoalsMade"] + totals["threePointersMade"]) / (2 * extras["games"])
-    margin = extras["home_margin"] / extras["games"]
-    home_shift = margin / 2 / field_goal_points
+    # Home court, measured: real home teams shoot a little better, get to the line a little more and
+    # turn the ball over a little less. Each factor is the home (or away) rate over the league rate, so
+    # the engine reproduces all three and the home margin comes out of them, not out of one knob.
+    totals, split = extras["team_totals"], extras["home_away"]
+    fg_pct = {side: split[side]["fieldGoalsMade"] / split[side]["fieldGoalsAttempted"] for side in split}
+    league_fg_pct = totals["fieldGoalsMade"] / totals["fieldGoalsAttempted"]
+    vs_league = {stat: {side: 2 * split[side][stat] / totals[stat] for side in split} for stat in ("freeThrowsAttempted", "turnovers")}
 
     league = League(
         event_rate={event: float(total[event] / player_chances) for event in EVENTS},
@@ -136,11 +140,15 @@ def fit_action_model(players: pd.DataFrame, teams: pd.DataFrame, extras: dict, s
         block_rate=float(total["blocks"] / total["opp_misses"]),
         foul_rate=float(total["fouls"] / total["defended_chances"]),
         team_turnover_rate=float(teams["team_turnovers"].sum() / team_chances),
-        home_make_factor=float(1 + home_shift),
-        away_make_factor=float(1 - home_shift),
+        home_make_factor=float(fg_pct["home"] / league_fg_pct),
+        away_make_factor=float(fg_pct["away"] / league_fg_pct),
         home_win_share=float(extras["home_wins"] / extras["games"]),
         first_chance_seconds=[round(s, 1) for s in extras["durations"]["first"]],
         second_chance_seconds=[round(s, 1) for s in extras["durations"]["second"]],
+        home_free_throw_factor=float(vs_league["freeThrowsAttempted"]["home"]),
+        away_free_throw_factor=float(vs_league["freeThrowsAttempted"]["away"]),
+        home_turnover_factor=float(vs_league["turnovers"]["home"]),
+        away_turnover_factor=float(vs_league["turnovers"]["away"]),
     )
 
     profiles = {}

@@ -215,7 +215,7 @@ def season_counts(data_dir: Path, season: str, log=print) -> tuple[pd.DataFrame,
 
     Returns per-player counts, per-defending-team counts, and extras: chance
     lengths in seconds, who played for which team and how much, team names,
-    home/away shooting, and the number of home wins.
+    box-score totals (also split by home and away), and the number of home wins.
     """
     schedule = json.loads(raw_path(data_dir, SCHEDULE, season).read_text(encoding="utf-8"))
     players: dict[int, dict] = defaultdict(counts_template)
@@ -225,6 +225,7 @@ def season_counts(data_dir: Path, season: str, log=print) -> tuple[pd.DataFrame,
     team_names: dict[int, dict] = {}
     shooting = defaultdict(int)  # home/away field goals, for home-court advantage
     team_totals = defaultdict(int)  # summed box-score team stats, for realism checks
+    home_away = {"home": defaultdict(int), "away": defaultdict(int)}  # the same, split by home and away, for home court
     games = skipped = home_wins = possessions = home_margin = 0
     for game_id in final_regular_season_game_ids(schedule):
         pbp_path, box_path = raw_path(data_dir, PLAY_BY_PLAY, game_id), raw_path(data_dir, BOX_SCORE, game_id)
@@ -256,6 +257,7 @@ def season_counts(data_dir: Path, season: str, log=print) -> tuple[pd.DataFrame,
                     entry["seconds"] += seconds
             for stat in BOX_TOTALS:
                 team_totals[stat] += team["statistics"][stat]
+                home_away["home" if side == "homeTeam" else "away"][stat] += team["statistics"][stat]
         home_wins += box["homeTeam"]["statistics"]["points"] > box["awayTeam"]["statistics"]["points"]
         home_margin += box["homeTeam"]["statistics"]["points"] - box["awayTeam"]["statistics"]["points"]
         possessions += counts.possessions
@@ -266,5 +268,6 @@ def season_counts(data_dir: Path, season: str, log=print) -> tuple[pd.DataFrame,
     team_frame = pd.DataFrame.from_dict(teams, orient="index").fillna(0).astype(int)
     team_frame.index.name = "teamId"
     extras = {"durations": durations, "players": meta, "teams": team_names, "shooting": dict(shooting),
-              "games": games, "home_wins": home_wins, "home_margin": home_margin, "possessions": possessions, "team_totals": dict(team_totals)}
+              "games": games, "home_wins": home_wins, "home_margin": home_margin, "possessions": possessions, "team_totals": dict(team_totals),
+              "home_away": {key: dict(values) for key, values in home_away.items()}}
     return player_frame, team_frame, extras

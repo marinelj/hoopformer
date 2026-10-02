@@ -6,9 +6,10 @@ chances (see actions.py); each chance picks who acts and what they do, in
 proportion to the five players' rates and adjusted for the defense and home
 court, then resolves makes, assists, blocks, rebounds, steals and fouls.
 
-Day 1 rotation: each player's minutes follow their real minutes per game, and
-the coach sends in whoever is furthest behind their share. Day 2 replaces this
-with fatigue and a proper AI coach.
+The game moves one possession at a time (`Game.step`), so a live app can stop
+between possessions to let a coach talk, call a timeout or substitute. Between
+possessions each team's scripted coach (coach.py) decides timeouts and
+substitutions, from fatigue, fouls, minutes and the score.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from hoopformer.game import coach
 from hoopformer.game.actions import EVENTS, ZONES
 from hoopformer.game.model import ActionModel, PlayerProfile, TeamDefense
 
@@ -26,12 +28,26 @@ PERIOD_SECONDS = 720.0
 OVERTIME_SECONDS = 300.0
 FOUL_OUT = 6
 ROSTER_SIZE = 13
-ROTATION_CHECK_SECONDS = 180.0
-SWAP_MARGIN_SECONDS = 60.0  # bring a player in only if they're this far behind their share
+TIMEOUTS = 7
 MAX_SHARE = 0.9  # no one plays more than 90% of the game
-SETTLED_GAMES = 10  # minutes per game from fewer games are scaled down: two 35-minute cameos aren't a starter
+SETTLED_GAMES = 10  # minutes per game from fewer games are scaled down (expected_minutes)
 POINTS = {"rim": 2, "mid": 2, "three": 3}
 BOX_COLUMNS = ["MIN", "PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TOV", "PF"]
+
+# Fatigue. Energy runs from 1 (fresh) down while a player is on the floor and back up on the bench.
+# Real 2025-26 stints (measured from the rebuilt lineups, see docs/GAME_DESIGN.md) last about 5 minutes
+# for players averaging under 20 minutes and 9 minutes for those over 35, and regulars rest about 4
+# minutes, so a player's energy reaches coach.TIRED after `stint_seconds` and recovers in about 4 minutes.
+# Real shooting doesn't drop late in a stint (made/expected 0.98-1.01 at every stint length), so
+# fatigue changes who plays, not how well they shoot.
+TIRED = coach.TIRED
+REST_SECONDS = 240.0
+BREAK_SECONDS = {"quarter": 130.0, "half": 900.0}  # real time off the floor between periods
+
+
+def stint_seconds(minutes_per_game: float) -> float:
+    """How long a player plays from fresh to tired: real stints, 2.5 minutes plus 0.17 per minute per game (6 to 10)."""
+    return 60 * max(6.0, min(10.0, 2.5 + 0.17 * minutes_per_game))
 
 
 @dataclass
@@ -39,10 +55,22 @@ class Athlete:
     profile: PlayerProfile
     seconds: float = 0.0
     stats: Counter = field(default_factory=Counter)
+    energy: float = 1.0
 
     @property
     def fouled_out(self) -> bool:
         return self.stats["PF"] >= FOUL_OUT
+
+    def run(self, seconds: float, on_floor: bool) -> None:
+        """Time passes: on the floor it tires the player and counts as minutes, on the bench it rests them."""
+        if on_floor:
+            self.seconds += seconds
+            self.energy = max(0.0, self.energy - seconds * (1 - TIRED) / stint_seconds(self.profile.minutes_per_game))
+        else:
+            self.rest(seconds)
+
+    def rest(self, seconds: float) -> None:
+        self.energy = min(1.0, self.energy + seconds * (1 - TIRED) / REST_SECONDS)
 
 
 @dataclass
@@ -58,6 +86,9 @@ class Side:
     points: int = 0
     possessions: int = 0
     team_turnovers: int = 0
+    timeouts: int = TIMEOUTS
+    last_change: float = -1e9  # game seconds of the last substitution
+    held_out: set[int] = field(default_factory=set)  # players the coach told to sit
 
 
 @dataclass
@@ -68,10 +99,10 @@ class Event:
     text: str
     home_score: int
     away_score: int
-    kind: str = ""          # period_start, period_end, chance, shot, block, rebound, turnover, foul, free_throws, sub
+    kind: str = ""          # period_start, period_end, chance, shot, block, rebound, turnover, foul, free_throws, sub, timeout
     actor: int | None = None  # who did it (shooter, rebounder, fouler, player coming in...)
     other: int | None = None  # the second player involved (passer, thief, blocked shooter, fouled player, player going out)
-    zone: str | None = None   # shot zone; "offensive"/"defensive" for rebounds; foul type; "first"/"second" chance
+    zone: str | None = None   # shot zone; "offensive"/"defensive" for rebounds; foul type; "first"/"second" chance; timeout reason
     value: int = 0            # points on a shot; free throws made
     attempts: int = 0         # free throws attempted
     home_lineup: tuple[int, ...] = ()
@@ -101,6 +132,11 @@ class GameResult:
         return pd.DataFrame(rows).sort_values("MIN", ascending=False, ignore_index=True)
 
 
+def expected_minutes(p: PlayerProfile) -> float:
+    """Minutes per game, scaled down for players with few games: two 35-minute cameos aren't a starter."""
+    return p.minutes_per_game * min(1.0, p.games / SETTLED_GAMES)
+
+
 def minute_shares(profiles: list[PlayerProfile]) -> dict[int, float]:
     """Each player's target share of game time, summing to 5 (five players on the floor).
 
@@ -108,9 +144,7 @@ def minute_shares(profiles: list[PlayerProfile]) -> dict[int, float]:
     first, until the 240 team minutes are used up; the end of the bench gets what
     is left, which is often nothing.
     """
-    def expected(p: PlayerProfile) -> float:
-        return p.minutes_per_game * min(1.0, p.games / SETTLED_GAMES)
-
+    expected = expected_minutes
     shares, left = {}, 240.0
     for profile in sorted(profiles, key=expected, reverse=True):
         minutes = min(expected(profile), MAX_SHARE * 48, left)
@@ -123,9 +157,9 @@ def minute_shares(profiles: list[PlayerProfile]) -> dict[int, float]:
 
 
 def default_roster(model: ActionModel, team_id: int, size: int = ROSTER_SIZE) -> list[int]:
-    """The team's players at the end of the season, most minutes first."""
+    """The team's 13 players with the biggest roles (minutes per game), so a star who missed games still makes it."""
     players = [p for p in model.players.values() if p.team_id == team_id]
-    players.sort(key=lambda p: p.minutes_per_game * p.games, reverse=True)
+    players.sort(key=expected_minutes, reverse=True)
     return [p.person_id for p in players[:size]]
 
 
@@ -142,7 +176,12 @@ class Game:
         self.period = 1
         self.clock = PERIOD_SECONDS
         self.game_seconds = 0.0
-        self.last_rotation = -ROTATION_CHECK_SECONDS
+        self.period_open = False  # between "Start of period" and "End of period"
+        self.done = False
+        self.run = (None, 0)  # (side that scored, points) since the other side last scored
+        self.timeout_windows: set[tuple[int, int]] = set()  # (period, mark) breaks already taken, see coach.py
+        self.tip_winner = self.home if self.rng.random() < 0.5 else self.away
+        self.offense = self.tip_winner
         league = self.league
         # Fouls with no free throws (reach-ins, loose balls before the bonus): whatever is left of the
         # league's foul rate after the fouls that the engine already creates on free-throw trips and and-ones.
@@ -156,8 +195,11 @@ class Game:
         athletes = {pid: Athlete(self.model.players[pid]) for pid in roster}
         share = minute_shares([athletes[pid].profile for pid in roster])
         side = Side(team_id, defense.tricode, defense.name, is_home, defense, athletes, share)
-        side.lineup = sorted(roster, key=lambda pid: share[pid], reverse=True)[:5]
+        side.lineup = coach.starters(side)
         return side
+
+    def other(self, side: Side) -> Side:
+        return self.away if side is self.home else self.home
 
     # --- bookkeeping -------------------------------------------------------------------------------
 
@@ -173,32 +215,38 @@ class Game:
     def _pick(self, side: Side, players: list[int], weight) -> int:
         return self.rng.choices(players, [weight(side.athletes[p].profile) for p in players])[0]
 
-    def _rotate(self, side: Side, force: bool = False) -> None:
-        """Swap in whoever is furthest behind their share of game time; starters open halves."""
-        available = [pid for pid, a in side.athletes.items() if not a.fouled_out]
-        if force:
-            new = sorted(available, key=lambda pid: side.share[pid], reverse=True)[:5]
-        else:
-            need = {pid: side.share[pid] * (self.game_seconds + 60) - side.athletes[pid].seconds for pid in available}
-            new = [pid for pid in side.lineup if pid in need]
-            bench = sorted((pid for pid in available if pid not in new), key=need.get, reverse=True)
-            while len(new) < 5 and bench:
-                new.append(bench.pop(0))
-            for _ in range(5):
-                if not bench:
-                    break
-                tired = min(new, key=need.get)
-                fresh = bench[0]
-                if need[fresh] - need[tired] < SWAP_MARGIN_SECONDS:
-                    break
-                new[new.index(tired)] = bench.pop(0)
-                bench.append(tired)
-                bench.sort(key=need.get, reverse=True)
-        leaving = [p for p in side.lineup if p not in new]
-        entering = [p for p in new if p not in side.lineup]
-        side.lineup = new
+    def _score(self, side: Side, points: int) -> None:
+        side.points += points
+        team, run = self.run
+        self.run = (side, run + points) if team is side else (side, points)
+
+    # --- coaching actions (the scripted coaches use these; so will human coaches) --------------------
+
+    def substitute(self, side: Side, new_lineup: list[int], reason: str = "") -> None:
+        """Change a team's five. Players keep their slot, so an incoming player takes the leaving player's place."""
+        leaving = [p for p in side.lineup if p not in new_lineup]
+        entering = [p for p in new_lineup if p not in side.lineup]
+        if len(set(new_lineup)) != 5 or any(p not in side.athletes or side.athletes[p].fouled_out for p in entering):
+            raise ValueError(f"not a valid five for {side.tricode}: {new_lineup}")
+        if not leaving:
+            return
+        lineup = list(side.lineup)
         for out, inn in zip(leaving, entering):
-            self._log(side, f"SUB: {self._name(side, inn)} for {self._name(side, out)}", "sub", inn, out)
+            lineup[lineup.index(out)] = inn
+            side.lineup = lineup
+            self._log(side, f"SUB: {self._name(side, inn)} for {self._name(side, out)}", "sub", inn, out, reason or None)
+        side.last_change = self.game_seconds
+
+    def call_timeout(self, side: Side, reason: str) -> bool:
+        """Stop play: everyone on the floor gets a short breather, then the coach may substitute."""
+        if side.timeouts <= 0:
+            return False
+        side.timeouts -= 1
+        self._log(side, f"{side.tricode} timeout ({coach.TIMEOUT_REASONS[reason]})", "timeout", zone=reason)
+        for team in (self.home, self.away):
+            for pid in team.lineup:
+                team.athletes[pid].rest(coach.TIMEOUT_REST_SECONDS)
+        return True
 
     # --- one chance --------------------------------------------------------------------------------
 
@@ -209,19 +257,21 @@ class Game:
             fouler = self._pick(dfn, dfn.lineup, lambda p: p.foul)
             dfn.athletes[fouler].stats["PF"] += 1
             self._log(dfn, f"{self._name(dfn, fouler)} personal foul", "foul", fouler, zone="personal")
+        turnover_factor = dfn.defense.turnover_factor * (league.home_turnover_factor if off.is_home else league.away_turnover_factor)
+        free_throw_factor = dfn.defense.free_throw_factor * (league.home_free_throw_factor if off.is_home else league.away_free_throw_factor)
         choices, weights = [], []
         for pid in off.lineup:
             profile = off.athletes[pid].profile
             for event in EVENTS:
                 weight = profile.events[event]
                 if event == "turnover":
-                    weight *= dfn.defense.turnover_factor
+                    weight *= turnover_factor
                 elif event == "free_throws":
-                    weight *= dfn.defense.free_throw_factor
+                    weight *= free_throw_factor
                 choices.append((pid, event))
                 weights.append(weight)
         choices.append((None, "turnover"))
-        weights.append(league.team_turnover_rate * dfn.defense.turnover_factor)
+        weights.append(league.team_turnover_rate * turnover_factor)
         pid, event = self.rng.choices(choices, weights)[0]
         if event in ZONES:
             return self._shot(off, dfn, pid, event)
@@ -247,7 +297,7 @@ class Game:
             shooter.stats["FGM"] += 1
             shooter.stats["3PM"] += zone == "three"
             shooter.stats["PTS"] += points
-            off.points += points
+            self._score(off, points)
             text = f"{shooter.profile.name} makes {label} ({shooter.stats['PTS']} PTS)"
             passer = None
             if self.rng.random() < shooter.profile.assisted[zone]:
@@ -279,7 +329,7 @@ class Game:
                 made += 1
                 shooter.stats["FTM"] += 1
                 shooter.stats["PTS"] += 1
-                off.points += 1
+                self._score(off, 1)
             elif number == shots:
                 self._log(off, f"{shooter.profile.name} free throws {made}/{shots}", "free_throws", pid, value=made, attempts=shots)
                 return self._rebound(off, dfn)
@@ -321,8 +371,9 @@ class Game:
         self.clock -= seconds
         self.game_seconds += seconds
         for side in (self.home, self.away):
-            for pid in side.lineup:
-                side.athletes[pid].seconds += seconds
+            on_floor = set(side.lineup)
+            for pid, athlete in side.athletes.items():
+                athlete.run(seconds, pid in on_floor)
 
     def _possession(self, off: Side, dfn: Side) -> bool:
         """Play one possession. Returns False if the period clock ran out first."""
@@ -341,29 +392,58 @@ class Game:
                 return True
             first = False
 
-    def play(self) -> GameResult:
-        tip_winner = self.home if self.rng.random() < 0.5 else self.away
-        tip_loser = self.away if tip_winner is self.home else self.home
-        while self.period <= 4 or self.home.points == self.away.points:
-            self.clock = PERIOD_SECONDS if self.period <= 4 else OVERTIME_SECONDS
-            if self.period in (1, 3):
-                for side in (self.home, self.away):
-                    self._rotate(side, force=True)
-            if self.period <= 4:
-                offense = tip_winner if self.period in (1, 4) else tip_loser
-            else:
-                offense = self.home if self.rng.random() < 0.5 else self.away
-            self._log(offense, f"Start of period {self.period}", "period_start")
-            while self.clock > 0:
-                defense = self.away if offense is self.home else self.home
-                if not self._possession(offense, defense):
-                    break
-                offense = defense
-                if self.game_seconds - self.last_rotation >= ROTATION_CHECK_SECONDS or any(
-                        side.athletes[p].fouled_out for side in (self.home, self.away) for p in side.lineup):
-                    for side in (self.home, self.away):
-                        self._rotate(side)
-                    self.last_rotation = self.game_seconds
-            self._log(offense, f"End of period {self.period}", "period_end")
+    def _start_period(self) -> None:
+        self.clock = PERIOD_SECONDS if self.period <= 4 else OVERTIME_SECONDS
+        if self.period > 1:  # the break between periods rests everybody
+            for side in (self.home, self.away):
+                for athlete in side.athletes.values():
+                    athlete.rest(BREAK_SECONDS["half" if self.period == 3 else "quarter"])
+        if self.period in (1, 3):  # starters open each half
+            for side in (self.home, self.away):
+                self.substitute(side, coach.starters(side), "starters")
+        if self.period <= 4:
+            tip_loser = self.other(self.tip_winner)
+            self.offense = self.tip_winner if self.period in (1, 4) else tip_loser
+        else:
+            self.offense = self.home if self.rng.random() < 0.5 else self.away
+        self._log(self.offense, f"Start of period {self.period}", "period_start")
+        self.period_open = True
+        if self.period not in (1, 3):  # the coaches may change their five over the break
+            for side in (self.home, self.away):
+                coach.rotate(self, side, stopped=True)
+
+    def _end_period(self) -> None:
+        self._log(self.offense, f"End of period {self.period}", "period_end")
+        self.period_open = False
+        if self.period >= 4 and self.home.points != self.away.points:
+            self.done = True
+        else:
             self.period += 1
-        return GameResult(self.seed, self.home, self.away, self.period - 1, self.events)
+
+    def step(self) -> list[Event]:
+        """Play until the next stop: one possession, then the coaches' timeouts and substitutions.
+
+        Returns the events of this step. A live app calls this in a loop and lets the
+        human coach act between steps; `play` just runs it to the end.
+        """
+        if self.done:
+            return []
+        start = len(self.events)
+        if not self.period_open:
+            self._start_period()
+        offense, defense = self.offense, self.other(self.offense)
+        before = offense.points
+        if self._possession(offense, defense):
+            self.offense = defense
+            coach.between_possessions(self, offense if offense.points > before else None)
+        else:
+            self._end_period()
+        return self.events[start:]
+
+    def play(self) -> GameResult:
+        while not self.done:
+            self.step()
+        return self.result()
+
+    def result(self) -> GameResult:
+        return GameResult(self.seed, self.home, self.away, self.period, self.events)

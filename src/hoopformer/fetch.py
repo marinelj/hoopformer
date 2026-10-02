@@ -18,12 +18,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
-from nba_api.stats.endpoints import boxscoretraditionalv3, playbyplayv3, scheduleleaguev2
+from nba_api.stats.endpoints import boxscoretraditionalv3, commonteamroster, playbyplayv3, scheduleleaguev2
 from nba_api.stats.library.http import NBAStatsHTTP
+from nba_api.stats.static import teams as static_teams
 
 SCHEDULE = "scheduleleaguev2"
 PLAY_BY_PLAY = "playbyplayv3"
 BOX_SCORE = "boxscoretraditionalv3"
+ROSTER = "commonteamroster"
 
 REGULAR_SEASON_PREFIX = "002"  # game ids: 001 preseason, 002 regular season, 004 playoffs
 FINAL_STATUS = 3  # schedule gameStatus: 1 scheduled, 2 live, 3 final
@@ -174,4 +176,34 @@ def fetch_season(
             report.failed.append(game_id)
             status = f"FAILED ({exc})"
         log(f"{season} {index}/{len(game_ids)} {game_id} {status}")
+    return report
+
+
+def fetch_rosters(
+    season: str, data_dir: Path, manifest_path: Path, delay: float = 1.0, log: Callable[[str], None] = print,
+    team_codes: list[str] | None = None, timeout: int = 60, retries: int = 3, backoff: float = 5.0,
+) -> SeasonFetchReport:
+    """Cache all 30 teams' current rosters for a season, e.g. raw/commonteamroster/2026-27_1610612760.json.
+
+    Rosters change all the time before and during a season, so this always downloads again;
+    the manifest keeps a record of every version.
+    """
+    report = SeasonFetchReport(season)
+    for team in sorted(static_teams.get_teams(), key=lambda t: t["abbreviation"]):
+        if team_codes and team["abbreviation"] not in team_codes:
+            continue
+        key = f"{season}_{team['id']}"
+        try:
+            text, url = request_with_retries(
+                lambda: commonteamroster.CommonTeamRoster(team_id=team["id"], season=season, timeout=timeout),
+                f"{ROSTER} {key}", retries, backoff,
+            )
+            store_raw(data_dir, manifest_path, ROSTER, key, text, url)
+            report.fetched += 1
+            status = "fetched"
+            time.sleep(delay)
+        except FetchError as exc:
+            report.failed.append(team["abbreviation"])
+            status = f"FAILED ({exc})"
+        log(f"{season} roster {team['abbreviation']} {status}")
     return report

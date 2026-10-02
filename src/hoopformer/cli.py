@@ -7,7 +7,7 @@ from pathlib import Path
 
 from hoopformer.dataset import build_dataset, cached_seasons
 from hoopformer.evaluate import LockedSplitError, cached_baselines, evaluate, score
-from hoopformer.fetch import fetch_season
+from hoopformer.fetch import fetch_rosters, fetch_season
 from hoopformer.rapm import choose_lambda, ratings, season_rows
 
 
@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     fetch.add_argument("--limit", type=int, help="only the first N games (for a quick test)")
     fetch.add_argument("--delay", type=float, default=1.0, help="seconds to wait between requests")
     fetch.add_argument("--refresh-schedule", action="store_true", help="re-download the schedule")
+    fetch.add_argument("--rosters", action="store_true", help="fetch the 30 current team rosters instead of games")
     fetch.add_argument("--data-dir", type=Path, default=Path("data"))
     fetch.add_argument("--manifest", type=Path, default=Path("manifests/raw.jsonl"))
 
@@ -52,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
 
     actions = commands.add_parser("actions", help="fit the game's action model on a season and check its realism")
     actions.add_argument("--season", default="2025-26")
-    actions.add_argument("--games", type=int, default=1000, help="simulated games for the realism check")
+    actions.add_argument("--games", type=int, default=2000, help="simulated games for the realism check")
     actions.add_argument("--data-dir", type=Path, default=Path("data"))
 
     play = commands.add_parser("play", help="simulate one game between two teams (e.g. --home OKC --away HOU)")
@@ -63,10 +64,16 @@ def main(argv: list[str] | None = None) -> int:
     play.add_argument("--play-by-play", action="store_true", help="print every event")
     play.add_argument("--data-dir", type=Path, default=Path("data"))
     play.add_argument("--replay", type=Path, help="also write a Courtside replay page (HTML) here")
+    play.add_argument("--rosters", help="play with this season's cached rosters, e.g. 2026-27 (fetch --rosters first)")
 
     args = parser.parse_args(argv)
     exit_code = 0
-    if args.command == "fetch":
+    if args.command == "fetch" and args.rosters:
+        for season in args.season:
+            report = fetch_rosters(season, args.data_dir, args.manifest, delay=args.delay)
+            print(f"{season} rosters: {report.fetched} fetched, {len(report.failed)} failed {' '.join(report.failed)}")
+            exit_code = 1 if report.failed else exit_code
+    elif args.command == "fetch":
         for season in args.season:
             report = fetch_season(
                 season, args.data_dir, args.manifest, limit=args.limit,
@@ -129,6 +136,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no action model at {path}: run `uv run hoopformer actions --season {args.season}` first")
             return 1
         model = ActionModel.load(path)
+        if args.rosters:
+            from hoopformer.game.rosters import season_rosters, with_rosters
+
+            rosters = season_rosters(args.data_dir, args.rosters)
+            if len(rosters) < 30:
+                print(f"only {len(rosters)} {args.rosters} rosters cached: run `uv run hoopformer fetch --rosters --season {args.rosters}`")
+                return 1
+            model = with_rosters(model, rosters, args.rosters)
         by_code = {team.tricode: team.team_id for team in model.teams.values()}
         unknown = [code for code in (args.home, args.away) if code not in by_code]
         if unknown:

@@ -12,9 +12,11 @@ import pytest
 
 from hoopformer.fetch import BOX_SCORE, PLAY_BY_PLAY, SCHEDULE, raw_path
 from hoopformer.game.actions import EVENTS, ZONES, count_game, is_personal_foul, season_counts, shot_zone
+from hoopformer.game import coach
 from hoopformer.game.engine import Game, default_roster, minute_shares
 from hoopformer.game.model import ActionModel, fit_action_model, shrink
-from hoopformer.game.realism import compare, real_per_team_game, simulate_league, simulated_per_team_game
+from hoopformer.game.realism import (compare, real_per_team_game, real_rotations, simulate_league, simulated_per_team_game,
+                                     simulated_rotations)
 
 DATA = Path("data")
 OKC, HOU, SGA = 1610612760, 1610612745, 1628983
@@ -166,7 +168,8 @@ def test_a_game_is_internally_consistent(fitted):
 
 def test_a_simulated_league_matches_the_real_season(fitted):
     model, extras = fitted
-    table = compare(real_per_team_game(extras), simulated_per_team_game(simulate_league(model, 1000, seed=1)))
+    # 2000 games: home win share has a standard error of about 1.1 points (1.6 with 1000)
+    table = compare(real_per_team_game(extras), simulated_per_team_game(simulate_league(model, 2000, seed=1)))
     print(table[["statistic", "real", "simulated", "difference", "tolerance", "ok"]].round(4).to_string(index=False))
     assert table.ok.all(), table[~table.ok].statistic.tolist()
 
@@ -195,7 +198,7 @@ def test_cli_fits_the_model_and_plays_a_game(fitted, tmp_path, capsys):
     from hoopformer.cli import main
 
     (tmp_path / "raw").symlink_to((DATA / "raw").resolve())
-    assert main(["actions", "--season", "2025-26", "--games", "300", "--data-dir", str(tmp_path)]) == 0
+    assert main(["actions", "--season", "2025-26", "--games", "2000", "--data-dir", str(tmp_path)]) == 0, "realism needs 2000 games to be stable"
     assert main(["play", "--home", "OKC", "--away", "HOU", "--seed", "3", "--data-dir", str(tmp_path)]) == 0
     output = capsys.readouterr().out
     print(output[-600:])
@@ -230,10 +233,135 @@ def test_replay_data_and_page(fitted, tmp_path):
 
 
 def test_cli_play_writes_a_replay_page(fitted, tmp_path):
-    from hoopformer.cli import main
+    from hoopformer.cli import main, model_path
 
-    (tmp_path / "raw").symlink_to((DATA / "raw").resolve())
-    assert main(["actions", "--season", "2025-26", "--games", "200", "--data-dir", str(tmp_path)]) == 0
+    model, _ = fitted
+    model.save(model_path(tmp_path, "2025-26"))
     page = tmp_path / "replay.html"
     assert main(["play", "--home", "OKC", "--away", "BOS", "--seed", "264", "--data-dir", str(tmp_path), "--replay", str(page)]) == 0
     assert page.exists() and page.stat().st_size > 50_000
+
+
+# --- day 2: steps, fatigue, the scripted coach, home court -------------------------------------------
+
+def test_stepping_plays_the_same_game_as_play(fitted):
+    model, _ = fitted
+    whole = Game(model, OKC, HOU, seed=21).play()
+    game, steps = Game(model, OKC, HOU, seed=21), []
+    while not game.done:
+        steps.append(game.step())
+    print(len(steps), "steps;", "first step:", [e.text for e in steps[0] if e.text])
+    assert [e.text for step in steps for e in step] == [e.text for e in whole.events]
+    assert game.step() == [], "a finished game has no more steps"
+    assert all(step for step in steps), "every step plays something"
+
+
+def test_coaches_substitute_and_call_timeouts_within_the_rules(fitted):
+    model, _ = fitted
+    result = Game(model, OKC, HOU, seed=5).play()
+    timeouts = [e for e in result.events if e.kind == "timeout"]
+    subs = [e for e in result.events if e.kind == "sub"]
+    print(len(timeouts), "timeouts:", [(e.team, e.period, e.zone) for e in timeouts])
+    print(len(subs), "substitutions, reasons:", sorted({e.zone for e in subs}))
+    for side in (result.home, result.away):
+        assert 7 - side.timeouts == sum(e.team == side.tricode for e in timeouts) <= 7
+    assert {e.zone for e in timeouts} <= set(coach.TIMEOUT_REASONS)
+    assert all(len(set(e.home_lineup)) == 5 and len(set(e.away_lineup)) == 5 for e in subs)
+    assert len({e.actor for e in subs}) >= 8, "the bench plays"
+
+
+def test_foul_trouble_rule_of_thumb():
+    assert coach.foul_trouble(2, 1, 400) and not coach.foul_trouble(1, 1, 400)
+    assert coach.foul_trouble(3, 2, 400) and not coach.foul_trouble(3, 3, 400)
+    assert coach.foul_trouble(5, 4, 600) and not coach.foul_trouble(5, 4, 120), "with 5 minutes left, play through it"
+    assert not coach.foul_trouble(5, 5, 200), "overtime: no sitting"
+
+
+def test_close_games_end_with_the_best_five(fitted):
+    model, _ = fitted
+    checked = 0
+    for seed in range(60):
+        result = Game(model, OKC, HOU, seed=seed).play()
+        if result.periods != 4 or abs(result.home.points - result.away.points) > 4:
+            continue
+        side = result.home
+        best = coach.starters(side)  # most minutes among those still eligible
+        final = result.events[-1]
+        print(seed, result.home.points, result.away.points, "closing five:", sorted(final.home_lineup) == sorted(best))
+        assert sorted(final.home_lineup) == sorted(best)
+        checked += 1
+    assert checked >= 5
+
+
+def test_substitute_rejects_an_impossible_five(fitted):
+    model, _ = fitted
+    game = Game(model, OKC, HOU, seed=1)
+    with pytest.raises(ValueError):
+        game.substitute(game.home, game.home.lineup[:4] + [game.away.lineup[0]])
+    bench = [pid for pid in game.home.athletes if pid not in game.home.lineup][0]
+    game.substitute(game.home, [bench] + game.home.lineup[1:])
+    assert game.home.lineup[0] == bench and game.events[-1].kind == "sub"
+
+
+def test_fatigue_tires_players_on_the_floor_and_rests_them_on_the_bench(fitted):
+    model, _ = fitted
+    game = Game(model, OKC, HOU, seed=1)
+    starter = game.home.athletes[game.home.lineup[0]]
+    bench = game.home.athletes[[pid for pid in game.home.athletes if pid not in game.home.lineup][0]]
+    starter.run(300, on_floor=True)
+    bench.energy = 0.3
+    bench.run(300, on_floor=False)
+    print("starter after 5 minutes:", round(starter.energy, 3), "| bench player after 5 minutes' rest:", round(bench.energy, 3))
+    assert 0.25 < starter.energy < 0.8 and bench.energy == 1.0 and starter.seconds == 300 and bench.seconds == 0
+
+
+def test_rotations_look_like_real_games(fitted):
+    model, _ = fitted
+    real = real_rotations(DATA, "2025-26", model)
+    simulated = simulated_rotations(simulate_league(model, 600, seed=1), model)
+    for key in ("subs per team-game", "timeouts per team-game"):
+        print(f"{key}: real {real[key]:.2f}, simulated {simulated[key]:.2f}")
+    for tier, minutes in real["stint minutes"].items():
+        print(f"stint, {tier}: real {minutes:.2f} min, simulated {simulated['stint minutes'][tier]:.2f}")
+    assert abs(simulated["subs per team-game"] / real["subs per team-game"] - 1) < 0.2
+    assert abs(simulated["timeouts per team-game"] - real["timeouts per team-game"]) < 0.8
+    assert all(abs(simulated["stint minutes"][t] - m) < 1.5 for t, m in real["stint minutes"].items())
+    targets = {}
+    for team in model.teams:
+        side = Game(model, team, OKC if team != OKC else HOU, seed=0).home
+        targets.update({pid: share * 48 for pid, share in side.share.items() if share * 48 >= 10})
+    errors = np.array([simulated["minutes per game"][pid] - target for pid, target in targets.items() if pid in simulated["minutes per game"]])
+    print(f"minutes vs target, {len(errors)} players: mean {errors.mean():+.2f}, mean abs {np.abs(errors).mean():.2f}")
+    assert np.abs(errors).mean() < 1.5 and errors.mean() > -1.5
+
+
+def test_home_court_is_spread_over_shooting_free_throws_and_turnovers(fitted):
+    model, _ = fitted
+    league = model.league
+    print({k: round(getattr(league, k), 4) for k in ("home_make_factor", "away_make_factor", "home_free_throw_factor",
+                                                      "away_free_throw_factor", "home_turnover_factor", "away_turnover_factor")})
+    assert league.home_make_factor > 1 > league.away_make_factor
+    assert league.home_free_throw_factor > 1 > league.away_free_throw_factor
+    assert league.home_turnover_factor < 1 < league.away_turnover_factor
+
+
+def test_next_seasons_rosters_keep_last_seasons_rates(fitted):
+    from hoopformer.fetch import ROSTER
+    from hoopformer.game.rosters import NEWCOMER_MINUTES, season_rosters, with_rosters
+
+    model, _ = fitted
+    if len(list((DATA / "raw" / ROSTER).glob("2026-27_*.json"))) < 30:
+        pytest.skip("2026-27 rosters not cached: run `uv run hoopformer fetch --rosters --season 2026-27`")
+    rosters = season_rosters(DATA, "2026-27")
+    season = with_rosters(model, rosters, "2026-27")
+    known = [pid for team in rosters.values() for pid in (p["person_id"] for p in team) if pid in model.players]
+    newcomers = [pid for team in rosters.values() for pid in (p["person_id"] for p in team) if pid not in model.players]
+    print(len(rosters), "teams |", len(known), "players with 2025-26 rates |", len(newcomers), "newcomers")
+    assert len(rosters) == 30 and all(len(team) >= 13 for team in rosters.values())
+    sga = season.players[SGA]
+    assert sga.team_id == OKC and sga.make == model.players[SGA].make, "a returning player keeps last season's rates"
+    rookie = season.players[newcomers[0]]
+    assert rookie.make == model.league.make and rookie.minutes_per_game == NEWCOMER_MINUTES
+    assert {p.team_id for p in season.players.values()} == set(rosters)
+    result = Game(season, OKC, HOU, seed=3).play()
+    assert result.home.points > 70 and result.away.points > 70

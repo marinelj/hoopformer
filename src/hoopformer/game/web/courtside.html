@@ -191,7 +191,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       <div class="eyebrow" id="meta">Simulated game</div>
       <h1>Hoopformer <span>Courtside</span></h1>
     </div>
-    <div class="note">Players and rates from real 2025-26 play-by-play. Movement on the court is illustrative; every event comes from the engine.</div>
+    <div class="note" id="source-note">Players and rates from real play-by-play. Movement on the court is illustrative; every event comes from the engine.</div>
   </div>
 
   <section class="board" aria-label="Scoreboard">
@@ -323,7 +323,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const periodLabel = (p) => p <= 4 ? ["1ST", "2ND", "3RD", "4TH"][p - 1] + " QTR" : (p === 5 ? "OT" : `${p - 4}OT`);
 
   // header, scoreboard, paint
-  $("meta").textContent = `Simulated game · ${G.away.name} at ${G.home.name} · seed ${G.seed} · ${G.season} player rates`;
+  $("meta").textContent = `Simulated game · ${G.away.name} at ${G.home.name} · seed ${G.seed} · ${G.season}`;
   for (const key of ["home", "away"]) {
     $(`${key}-code`).textContent = sides[key].tricode;
     $(`${key}-coach`).textContent = `${sides[key].name} · coach: ${sides[key].coach}`;
