@@ -2,8 +2,8 @@
 
 All on real 2025-26 data. Lever effects are measured with common random numbers:
 the same seeds with and without an instruction, so the difference is the lever,
-not luck. The Qwen tests need DASHSCOPE_API_KEY and the network:
-`uv run pytest -m network -k qwen`.
+not luck. The LLM tests need a key (DASHSCOPE_API_KEY for Qwen, OPENAI_API_KEY for
+OpenAI) and the network: `uv run pytest -m network -k llm`.
 """
 
 import os
@@ -241,19 +241,21 @@ def test_translate_logs_what_it_cannot_map(fitted, limits, tmp_path):
 
 
 @pytest.mark.network
-def test_qwen_translates_coach_phrases(fitted, limits):
+@pytest.mark.parametrize("provider", ["qwen", "openai"])
+def test_llm_translates_coach_phrases(fitted, limits, provider):
+    from hoopformer.game.translator import PROVIDERS
+
     load_env()
-    if not os.environ.get("DASHSCOPE_API_KEY"):
-        pytest.skip("set DASHSCOPE_API_KEY (shell profile or .env) to test Qwen")
+    if not os.environ.get(PROVIDERS[provider]["key"]):
+        pytest.skip(f"set {PROVIDERS[provider]['key']} (shell profile or .env) to test {provider}")
     model, _ = fitted
     game = mid_game(model, limits)
-    seen, total, rows = check_phrases(game, game.home, "qwen", PHRASES)
-    held_out, total_held, rows_held = check_phrases(game, game.home, "qwen", HOLDOUT_PHRASES)
+    seen, total, rows = check_phrases(game, game.home, provider, PHRASES)
+    held_out, total_held, rows_held = check_phrases(game, game.home, provider, HOLDOUT_PHRASES)
     seconds = np.mean([r["seconds"] for r in rows + rows_held])
-    print(f"Qwen: {seen}/{total} and {held_out}/{total_held} held out; {seconds:.1f} s per instruction")
+    print(f"{provider}: {seen}/{total} and {held_out}/{total_held} held out; {seconds:.1f} s per instruction")
     print("sample replies:", [r["reply"] for r in rows[:5]])
     assert seen >= 0.9 * total and held_out >= 0.85 * total_held
-
 
 def test_cli_coach_and_play_with_instructions(fitted, tmp_path, capsys):
     from hoopformer.cli import main, model_path

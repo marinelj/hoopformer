@@ -1,8 +1,9 @@
 """The translator: a coach's free words in, levers out.
 
-Two translators share one output format (see `SYSTEM`):
-- `ask_qwen`: an LLM (Qwen, through the Qianwen AI platform's OpenAI-compatible
-  API) with JSON output. One call per instruction, never one per decision.
+Two kinds of translator share one output format (see `SYSTEM`):
+- `ask_llm`: a large language model with JSON output, Qwen (the Qianwen AI
+  platform) or OpenAI, both through the same OpenAI-style chat API. One call per
+  instruction, never one per decision.
 - `ask_rules`: keyword rules, no network. It's the baseline the LLM has to beat
   (the same idea as B0-B2 for the transformer) and the fallback when the API is down.
 
@@ -10,10 +11,10 @@ Either way the output goes through `levers.validate`, which clamps every value a
 sends anything that doesn't fit to `unmapped`. Unmapped phrases are logged: the
 most frequent ones decide which lever gets built next.
 
-The API key comes from the environment (DASHSCOPE_API_KEY) or a git-ignored .env
-file. It is never printed, logged or written anywhere. It must be a pay-as-you-go
-key (sk-...): Token Plan keys (sk-sp-...) are for interactive coding tools only, and
-using one in an application like this one breaks the plan's rules.
+API keys come from the environment (DASHSCOPE_API_KEY for Qwen, OPENAI_API_KEY for
+OpenAI) or a git-ignored .env file. They are never printed, logged or written
+anywhere. A Qwen key must be pay-as-you-go (sk-...): Token Plan keys (sk-sp-...) are
+for interactive coding tools only, and using one in an application breaks the plan's rules.
 """
 
 from __future__ import annotations
@@ -31,8 +32,15 @@ from hoopformer.game.engine import Game, Side
 from hoopformer.game.levers import PLAYER_LEVERS, TEAM_LEVERS, Instruction, validate
 from hoopformer.lineups import plain
 
-DEFAULT_MODEL = "qwen3.8-max"  # Qwen's most capable model (Qwen3.8-Max, August 2026)
-DEFAULT_BASE_URL = "https://maas.qianwenaiapi.com/compatible-mode/v1"  # Qianwen AI platform, pay-as-you-go keys
+# Each provider: where its key lives, its address and model (both overridable), and its own request settings.
+PROVIDERS = {
+    "qwen": {"key": "DASHSCOPE_API_KEY", "url": ("QWEN_BASE_URL", "https://maas.qianwenaiapi.com/compatible-mode/v1"),
+             "model": ("QWEN_MODEL", "qwen3.8-max"),  # Qwen's most capable model (August 2026)
+             "settings": {"enable_thinking": False, "temperature": 0.1}},  # strict JSON, fast; no thinking needed
+    "openai": {"key": "OPENAI_API_KEY", "url": ("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+               "model": ("OPENAI_MODEL", "gpt-6-astra"),  # OpenAI's most capable model (September 2026)
+               "settings": {"reasoning_effort": "low"}},  # a reasoning model: low effort keeps it quick; no custom temperature
+}
 PHRASES = Path(__file__).parent / "coach_phrases.json"                  # 50 phrases the rules were written against
 HOLDOUT_PHRASES = Path(__file__).parent / "coach_phrases_holdout.json"  # 30 written afterwards, never used to tune
 
@@ -97,27 +105,29 @@ def context_for(game: Game, side: Side, addressed: int | None) -> dict:
     }
 
 
-def ask_qwen(words: str, context: dict, model: str | None = None, timeout: float = 30.0) -> tuple[dict, str]:
-    """One call to Qwen with JSON output. Returns (raw output, model name)."""
-    key = os.environ.get("DASHSCOPE_API_KEY")
+def ask_llm(provider: str, words: str, context: dict, timeout: float = 60.0) -> tuple[dict, str]:
+    """One chat call with JSON output to "qwen" or "openai". Returns (raw output, model name)."""
+    config = PROVIDERS[provider]
+    key = os.environ.get(config["key"])
     if not key:
-        raise RuntimeError("DASHSCOPE_API_KEY is not set (put it in your shell profile or a git-ignored .env)")
-    if key.startswith("sk-sp-"):
+        raise RuntimeError(f"{config['key']} is not set (put it in your shell profile or a git-ignored .env)")
+    if provider == "qwen" and key.startswith("sk-sp-"):
         raise RuntimeError("that's a Token Plan key, which may only be used in coding tools: create a pay-as-you-go key")
-    model = model or os.environ.get("QWEN_MODEL", DEFAULT_MODEL)
-    base_url = os.environ.get("QWEN_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+    if provider == "qwen" and key.startswith("sk-proj-"):
+        raise RuntimeError("that's an OpenAI key: it goes in OPENAI_API_KEY, not DASHSCOPE_API_KEY")
+    model = os.environ.get(*config["model"])
+    base_url = os.environ.get(*config["url"]).rstrip("/")
     body = {
         "model": model,
         "messages": [{"role": "system", "content": SYSTEM},
                      {"role": "user", "content": json.dumps({"context": context, "coach_says": words}, ensure_ascii=False)}],
         "response_format": {"type": "json_object"},
-        "enable_thinking": False,  # strict JSON and a fast answer; thinking mode isn't needed for this
-        "temperature": 0.1,
+        **config["settings"],
     }
     response = requests.post(f"{base_url}/chat/completions", json=body, timeout=timeout,
                              headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     if response.status_code != 200:
-        raise RuntimeError(f"Qwen API {response.status_code}: {response.text[:300]}")
+        raise RuntimeError(f"{provider} API {response.status_code}: {response.text[:300]}")
     text = response.json()["choices"][0]["message"]["content"]
     return json.loads(text), model
 
@@ -236,15 +246,22 @@ RULE_REPLIES = {  # what a player answers, by the first lever the rules set: an 
 
 def translate(words: str, game: Game, side: Side, addressed: int | None = None, use: str = "auto",
               unmapped_log: Path | None = None) -> Instruction:
-    """Words -> a validated Instruction. use: "qwen", "rules", or "auto" (Qwen when a key is set, else rules)."""
+    """Words -> a validated Instruction.
+
+    use: "qwen", "openai", "rules", or "auto": the first provider with a key set (Qwen, then
+    OpenAI), else rules. In auto mode a failed call falls back to the rules.
+    """
     context = context_for(game, side, addressed)
-    if use == "qwen" or (use == "auto" and os.environ.get("DASHSCOPE_API_KEY")):
+    provider = use if use in PROVIDERS else None
+    if use == "auto":
+        provider = next((name for name, config in PROVIDERS.items() if os.environ.get(config["key"])), None)
+    if provider:
         try:
-            raw, source = ask_qwen(words, context)
-        except (requests.RequestException, RuntimeError, json.JSONDecodeError, KeyError) as exc:
-            if use == "qwen":
+            raw, source = ask_llm(provider, words, context)
+        except (requests.RequestException, RuntimeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+            if use != "auto":
                 raise
-            raw, source = ask_rules(words, context), f"rules (Qwen failed: {type(exc).__name__})"
+            raw, source = ask_rules(words, context), f"rules ({provider} failed: {type(exc).__name__})"
     else:
         raw, source = ask_rules(words, context), "rules"
     own = set(side.athletes)

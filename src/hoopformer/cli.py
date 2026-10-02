@@ -67,15 +67,16 @@ def main(argv: list[str] | None = None) -> int:
     play.add_argument("--rosters", help="play with this season's cached rosters, e.g. 2026-27 (fetch --rosters first)")
     play.add_argument("--say", action="append", default=[], metavar="WHEN WORDS",
                       help='the home coach speaks, e.g. "Q2 6:00 Push the pace" or "Q4 3:00 Shai Gilgeous-Alexander: take over"; repeatable')
-    play.add_argument("--use", choices=("auto", "qwen", "rules"), default="auto", help="translator for --say (auto: Qwen if a key is set)")
+    play.add_argument("--use", choices=("auto", "qwen", "openai", "rules"), default="auto",
+                      help="translator for --say (auto: the first LLM with a key set, else rules)")
 
-    talk = commands.add_parser("coach", help="translate a coach's words into levers (Qwen, or keyword rules without a key)")
+    talk = commands.add_parser("coach", help="translate a coach's words into levers (Qwen or OpenAI, or keyword rules without a key)")
     talk.add_argument("words", nargs="?", help='e.g. "Push the pace and run their shooters off the line"')
     talk.add_argument("--to", help='the player you\'re talking to, e.g. "Shai Gilgeous-Alexander" (default: the whole team)')
     talk.add_argument("--home", default="OKC", help="your team")
     talk.add_argument("--away", default="BOS")
     talk.add_argument("--season", default="2025-26")
-    talk.add_argument("--use", choices=("auto", "qwen", "rules"), default="auto")
+    talk.add_argument("--use", choices=("auto", "qwen", "openai", "rules"), default="auto")
     talk.add_argument("--check", action="store_true", help="grade the translator on the 50 test phrases and the 30 held-out ones")
     talk.add_argument("--data-dir", type=Path, default=Path("data"))
 
