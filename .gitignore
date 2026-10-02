@@ -18,3 +18,6 @@ __pycache__/
 
 # Local preview server for the Courtside page (serves data/preview)
 .claude/launch.json
+
+# API keys (DASHSCOPE_API_KEY for Qwen) live here, never in git
+.env

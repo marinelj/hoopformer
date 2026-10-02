@@ -65,12 +65,13 @@ def wanted_lineup(game: Game, side: Side) -> tuple[list[int], str]:
     rhythm, so stints last about as long as real ones.
     """
     players = available(side)
-    by_minutes = sorted(players, key=lambda pid: side.share[pid], reverse=True)
+    pinned = [pid for pid in side.lineup if pid in side.pinned and pid in players]  # the head coach's picks stay
+    by_minutes = sorted((pid for pid in players if pid not in pinned), key=lambda pid: side.share[pid], reverse=True)
     margin = abs(side.points - game.other(side).points)
     if game.period >= 4 and game.clock <= GARBAGE_SECONDS and margin >= GARBAGE_MARGIN:
-        return by_minutes[-5:], "garbage time"
+        return keep_slots(side, pinned + by_minutes[len(by_minutes) - (5 - len(pinned)):]), "garbage time"
     if game.period > 4 or (game.period == 4 and game.clock <= CLOSING_SECONDS and margin <= CLOSING_MARGIN):
-        return by_minutes[:5], "closing"
+        return keep_slots(side, pinned + by_minutes[:5 - len(pinned)]), "closing"
     athletes = side.athletes
     need = {pid: side.share[pid] * (game.game_seconds + 60) - athletes[pid].seconds for pid in players}
     trouble = {pid for pid in players if foul_trouble(athletes[pid].stats["PF"], game.period, game.clock)}
@@ -78,6 +79,8 @@ def wanted_lineup(game: Game, side: Side) -> tuple[list[int], str]:
                    key=need.get, reverse=True)
     lineup = list(side.lineup)
     for slot, pid in enumerate(lineup):
+        if pid in pinned:
+            continue
         must_go = pid not in need or pid in trouble
         wants_rest = not must_go and (athletes[pid].energy <= TIRED or need[pid] < -AHEAD_SECONDS)
         if (must_go or wants_rest) and ready:
@@ -87,11 +90,18 @@ def wanted_lineup(game: Game, side: Side) -> tuple[list[int], str]:
             if others:
                 lineup[slot] = others[0]
     while ready:  # minutes: a rested player far behind their share replaces whoever is furthest ahead of theirs
-        ahead = min((pid for pid in lineup if pid in need), key=need.get, default=None)
+        ahead = min((pid for pid in lineup if pid in need and pid not in pinned), key=need.get, default=None)
         if ahead is None or need[ready[0]] - need[ahead] < SWAP_SECONDS:
             break
         lineup[lineup.index(ahead)] = ready.pop(0)
     return lineup, "rotation"
+
+
+def keep_slots(side: Side, five: list[int]) -> list[int]:
+    """The same five, with players already on the floor kept in their slots (no needless substitutions)."""
+    staying = [pid if pid in five else None for pid in side.lineup]
+    coming = [pid for pid in five if pid not in side.lineup]
+    return [pid if pid is not None else coming.pop(0) for pid in staying]
 
 
 def leaving_reason(game: Game, side: Side, pid: int, default: str) -> str:

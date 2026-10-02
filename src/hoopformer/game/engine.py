@@ -10,6 +10,11 @@ The game moves one possession at a time (`Game.step`), so a live app can stop
 between possessions to let a coach talk, call a timeout or substitute. Between
 possessions each team's scripted coach (coach.py) decides timeouts and
 substitutions, from fatigue, fouls, minutes and the score.
+
+A human coach's words arrive as an Instruction (levers.py, translator.py);
+`Game.instruct` stores them as directives in the team's and the athletes'
+memory, and from the next possession on they change the rates the engine
+plays with, never further than real teams and players go.
 """
 
 from __future__ import annotations
@@ -20,8 +25,9 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from hoopformer.game import coach
+from hoopformer.game import coach, levers
 from hoopformer.game.actions import EVENTS, ZONES
+from hoopformer.game.levers import Directive, Instruction
 from hoopformer.game.model import ActionModel, PlayerProfile, TeamDefense
 
 PERIOD_SECONDS = 720.0
@@ -43,6 +49,9 @@ BOX_COLUMNS = ["MIN", "PTS", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "OREB", "
 TIRED = coach.TIRED
 REST_SECONDS = 240.0
 BREAK_SECONDS = {"quarter": 130.0, "half": 900.0}  # real time off the floor between periods
+LATE_FOUL_SECONDS = 60.0  # "foul when we're down late": the last minute, trailing by 1 to LATE_FOUL_MARGIN
+LATE_FOUL_MARGIN = 8
+COACH_SUB_SECONDS = 240.0  # a coach's substitution sticks this long before the assistant may undo it
 
 
 def stint_seconds(minutes_per_game: float) -> float:
@@ -56,6 +65,7 @@ class Athlete:
     seconds: float = 0.0
     stats: Counter = field(default_factory=Counter)
     energy: float = 1.0
+    confidence: float = 0.5  # memory only: moves with the coach's words, changes how the athlete talks
 
     @property
     def fouled_out(self) -> bool:
@@ -89,6 +99,13 @@ class Side:
     timeouts: int = TIMEOUTS
     last_change: float = -1e9  # game seconds of the last substitution
     held_out: set[int] = field(default_factory=set)  # players the coach told to sit
+    pinned: set[int] = field(default_factory=set)    # players the coach put in; the assistant leaves them be
+    directives: list[Directive] = field(default_factory=list)  # the coach's instructions still in force
+    tactics: dict[str, float] = field(default_factory=dict)    # team lever -> value, from the directives
+    player_tactics: dict[int, dict] = field(default_factory=dict)  # person id -> {lever: value}
+    focus: int | None = None        # run the offense through this player
+    double_team: int | None = None  # an opponent this defense doubles
+    late_foul: bool = False
 
 
 @dataclass
@@ -165,9 +182,11 @@ def default_roster(model: ActionModel, team_id: int, size: int = ROSTER_SIZE) ->
 
 class Game:
     def __init__(self, model: ActionModel, home_team_id: int, away_team_id: int, seed: int,
-                 home_roster: list[int] | None = None, away_roster: list[int] | None = None):
+                 home_roster: list[int] | None = None, away_roster: list[int] | None = None,
+                 limits: dict[str, list[float]] | None = None):
         self.model = model
         self.league = model.league
+        self.limits = limits  # how far each lever reaches (levers.lever_limits); needed only for instructions
         self.seed = seed
         self.rng = random.Random(seed)
         self.home = self._side(home_team_id, True, home_roster or default_roster(model, home_team_id))
@@ -180,6 +199,8 @@ class Game:
         self.done = False
         self.run = (None, 0)  # (side that scored, points) since the other side last scored
         self.timeout_windows: set[tuple[int, int]] = set()  # (period, mark) breaks already taken, see coach.py
+        self.leak_out: tuple[Side, float] | None = None  # a fast break earned against a team that crashed the glass
+        self.break_bonus = 1.0  # make-rate factor for the chance being played
         self.tip_winner = self.home if self.rng.random() < 0.5 else self.away
         self.offense = self.tip_winner
         league = self.league
@@ -248,26 +269,118 @@ class Game:
                 team.athletes[pid].rest(coach.TIMEOUT_REST_SECONDS)
         return True
 
+    def instruct(self, side: Side, instruction: Instruction) -> list[Event]:
+        """Apply a coach's instruction: timeouts and substitutions now, levers from the next possession."""
+        if self.limits is None:
+            raise ValueError("this game has no lever limits: pass limits=levers.lever_limits(...)")
+        start, now = len(self.events), self.game_seconds
+        until = {"game": None, "quarter": now + self.clock,
+                 "possessions": now + (instruction.possessions or 5) * 2 * 14.0}[instruction.duration]
+        self._log(side, instruction.words, "coach", other=instruction.addressed, zone=instruction.source)
+
+        def remember(lever, value, player=None, lapse=until):
+            side.directives = [d for d in side.directives if not (d.lever == lever and d.player == player)]
+            side.directives.append(Directive(lever, value, instruction.words, player, now, lapse))
+
+        for lever, value in instruction.team.items():
+            remember(lever, value)
+        for pid, values in instruction.players.items():
+            for lever, value in values.items():
+                remember(lever, value, pid)
+        for lever in ("focus", "double_team", "late_foul"):
+            value = getattr(instruction, lever)
+            if value is not None:
+                remember(lever, value)
+        for pid, minutes in instruction.rest.items():  # no minutes given: sit for as long as the instruction lasts
+            remember("rest", minutes, pid, until if minutes is None else now + 60 * minutes)
+        for pid, change in instruction.confidence.items():
+            for athlete in (side.athletes.values() if pid == "team" else [side.athletes[pid]]):
+                athlete.confidence = min(1.0, max(0.0, athlete.confidence + 0.15 * change))
+        self._refresh(side)
+        if instruction.reply:
+            self._log(side, instruction.reply, "reply", instruction.replier)
+        if instruction.timeout:
+            self.call_timeout(side, "coach")
+        for inn, out in instruction.substitutions:
+            if out in side.lineup and inn not in side.lineup and not side.athletes[inn].fouled_out:
+                remember("play", True, inn, now + COACH_SUB_SECONDS)
+                remember("rest", COACH_SUB_SECONDS / 60, out, now + COACH_SUB_SECONDS)
+                self._refresh(side)
+                self.substitute(side, [inn if pid == out else pid for pid in side.lineup], "coach's call")
+        if any(pid in side.held_out for pid in side.lineup):
+            coach.rotate(self, side, stopped=True)
+        return self.events[start:]
+
+    def _refresh(self, side: Side) -> None:
+        """Rebuild a team's tactics from the directives still in force."""
+        now = self.game_seconds
+        side.directives = [d for d in side.directives if d.until is None or d.until > now]
+        side.tactics, side.player_tactics = {}, {}
+        side.focus, side.double_team, side.late_foul = None, None, False
+        side.held_out, side.pinned = set(), set()
+        for d in side.directives:
+            if d.player is None and d.lever in levers.TEAM_LEVERS:
+                side.tactics[d.lever] = d.value
+            elif d.lever in ("focus", "double_team", "late_foul"):
+                setattr(side, d.lever, d.value)
+            elif d.lever == "rest":
+                side.held_out.add(d.player)
+            elif d.lever == "play":
+                side.pinned.add(d.player)
+            elif d.player is not None:
+                side.player_tactics.setdefault(d.player, {})[d.lever] = d.value
+
+    def memory(self, side: Side, pid: int, recent: int = 10) -> dict:
+        """What an athlete remembers: energy, fouls, confidence, the coach's directives and their last actions."""
+        athlete = side.athletes[pid]
+        mine = [e for e in self.events if pid in (e.actor, e.other) and e.kind != "chance"]
+        return {"name": athlete.profile.name, "energy": round(athlete.energy, 2), "fouls": athlete.stats["PF"],
+                "confidence": round(athlete.confidence, 2),
+                "directives": [d for d in side.directives if d.player in (None, pid)],
+                "recent": [e.text for e in mine[-recent:]]}
+
+    def _lever(self, side: Side, lever: str, invert: bool = False) -> float:
+        """A team lever's multiplier for this side (1 when the coach hasn't touched it)."""
+        value = side.tactics.get(lever, 0.0)
+        return levers.multiplier(-value if invert else value, self.limits[lever]) if value else 1.0
+
     # --- one chance --------------------------------------------------------------------------------
 
     def _chance(self, off: Side, dfn: Side) -> bool:
         """Play one chance. Returns True if the offense keeps the ball (offensive rebound)."""
         league = self.league
-        if self.rng.random() < self.silent_foul_rate:
-            fouler = self._pick(dfn, dfn.lineup, lambda p: p.foul)
+        silent = self.silent_foul_rate
+        if dfn.directives:
+            pressing = levers.PRESSURE_FOULS * max(0.0, dfn.tactics.get("pressure", 0.0))
+            silent *= self._lever(dfn, "foul_caution", invert=True) * levers.multiplier(pressing, self.limits["foul_caution"])
+        if self.rng.random() < silent:
+            fouler = self._fouler(dfn)
             dfn.athletes[fouler].stats["PF"] += 1
             self._log(dfn, f"{self._name(dfn, fouler)} personal foul", "foul", fouler, zone="personal")
         turnover_factor = dfn.defense.turnover_factor * (league.home_turnover_factor if off.is_home else league.away_turnover_factor)
         free_throw_factor = dfn.defense.free_throw_factor * (league.home_free_throw_factor if off.is_home else league.away_free_throw_factor)
+        coached = bool(off.directives or dfn.directives)
+        if coached:  # the coaches' levers: shot mix, getting to the line, ball security, pressure, the defense's shape
+            paint = self._lever(dfn, "protect_paint")  # packing the paint concedes threes
+            team_zones = {"rim": self._lever(off, "attack_rim") / paint, "mid": 1.0, "three": self._lever(off, "three_point_rate") * paint}
+            safe = levers.multiplier(-levers.SAFE_PLAY * off.tactics.get("ball_security", 0.0), self.limits["attack_rim"])
+            team_zones["rim"] *= safe
+            free_throw_factor *= self._lever(off, "attack_rim") * safe * self._lever(dfn, "foul_caution", invert=True)
+            turnover_factor *= self._lever(off, "ball_security", invert=True) * self._lever(dfn, "pressure")
         choices, weights = [], []
         for pid in off.lineup:
             profile = off.athletes[pid].profile
+            if coached:
+                event_weights = self._player_weights(off, dfn, pid, team_zones, turnover_factor, free_throw_factor)
             for event in EVENTS:
-                weight = profile.events[event]
-                if event == "turnover":
-                    weight *= turnover_factor
-                elif event == "free_throws":
-                    weight *= free_throw_factor
+                if coached:
+                    weight = event_weights[event]
+                else:
+                    weight = profile.events[event]
+                    if event == "turnover":
+                        weight *= turnover_factor
+                    elif event == "free_throws":
+                        weight *= free_throw_factor
                 choices.append((pid, event))
                 weights.append(weight)
         choices.append((None, "turnover"))
@@ -279,15 +392,58 @@ class Game:
             self._turnover(off, dfn, pid)
             return False
         shots = 3 if self.rng.random() < league.three_shot_trip_share else 2
-        fouler = self._pick(dfn, dfn.lineup, lambda p: p.foul)
+        fouler = self._fouler(dfn)
         dfn.athletes[fouler].stats["PF"] += 1
         self._log(dfn, f"{self._name(dfn, fouler)} shooting foul on {self._name(off, pid)}", "foul", fouler, pid, "shooting")
         return self._free_throws(off, dfn, pid, shots)
 
+    def _player_weights(self, off: Side, dfn: Side, pid: int, team_zones: dict, turnover_factor: float,
+                        free_throw_factor: float) -> dict[str, float]:
+        """One player's event weights under both coaches' levers.
+
+        The shot mix is renormalized, so "more threes" means fewer twos, not more shots; usage
+        (aggression, focus, a double team) scales all of a player's events against the other four.
+        """
+        profile = off.athletes[pid].profile
+        mine = off.player_tactics.get(pid, {})
+        zones = dict(team_zones)
+        preference = mine.get("shot_preference")
+        if preference:
+            zones[preference["zone"]] *= levers.multiplier(preference["value"], self.limits["shot_preference"])
+        before = sum(profile.events[z] for z in ZONES)
+        after = sum(profile.events[z] * zones[z] for z in ZONES)
+        aggression = mine.get("aggression", 0.0)
+        if off.focus is not None:
+            aggression += levers.FOCUS if pid == off.focus else levers.FOCUS_OTHERS
+        usage = levers.multiplier(aggression, self.limits["aggression"]) if aggression else 1.0
+        doubled = dfn.double_team == pid
+        if doubled:
+            usage *= levers.DOUBLE_TEAM_TOUCHES
+        weights = {z: profile.events[z] * zones[z] * before / after for z in ZONES}
+        weights["turnover"] = profile.events["turnover"] * turnover_factor * (levers.DOUBLE_TEAM_TURNOVERS if doubled else 1.0)
+        weights["free_throws"] = profile.events["free_throws"] * free_throw_factor
+        return {event: weight * usage for event, weight in weights.items()}
+
+    def _fouler(self, dfn: Side) -> int:
+        """Who commits a foul: by foul rate, less often for a player told to be careful."""
+        if not dfn.player_tactics:
+            return self._pick(dfn, dfn.lineup, lambda p: p.foul)
+        weights = [dfn.athletes[p].profile.foul * levers.multiplier(-dfn.player_tactics.get(p, {}).get("foul_caution", 0.0),
+                                                                     self.limits["foul_caution"]) for p in dfn.lineup]
+        return self.rng.choices(dfn.lineup, weights)[0]
+
     def _shot(self, off: Side, dfn: Side, pid: int, zone: str) -> bool:
         league, shooter = self.league, off.athletes[pid]
         home_factor = league.home_make_factor if off.is_home else league.away_make_factor
-        chance = min(0.98, max(0.02, shooter.profile.make[zone] * dfn.defense.make_factor[zone] * home_factor))
+        chance = shooter.profile.make[zone] * dfn.defense.make_factor[zone] * home_factor
+        chance *= self.break_bonus
+        if dfn.directives:
+            if zone == "three" and dfn.double_team in off.lineup and dfn.double_team != pid:
+                chance *= levers.DOUBLE_TEAM_OPEN_THREES
+            if zone == "rim":
+                chance *= 1 + levers.CAUTION_CONTEST * max(0.0, dfn.tactics.get("foul_caution", 0.0))
+                chance *= 1 + levers.PRESSURE_BEATEN * max(0.0, dfn.tactics.get("pressure", 0.0))
+        chance = min(0.98, max(0.02, chance))
         shooter.stats["FGA"] += 1
         if zone == "three":
             shooter.stats["3PA"] += 1
@@ -307,7 +463,7 @@ class Game:
                 text += f", assist {self._name(off, passer)}"
             self._log(off, text, "shot", pid, passer, zone, points)
             if self.rng.random() < league.and_one[zone]:
-                fouler = self._pick(dfn, dfn.lineup, lambda p: p.foul)
+                fouler = self._fouler(dfn)
                 dfn.athletes[fouler].stats["PF"] += 1
                 self._log(dfn, f"{self._name(dfn, fouler)} fouls: and-one", "foul", fouler, pid, "and-one")
                 return self._free_throws(off, dfn, pid, 1)
@@ -337,9 +493,11 @@ class Game:
         return False
 
     def _rebound(self, off: Side, dfn: Side) -> bool:
-        offense_weight = sum(off.athletes[p].profile.oreb for p in off.lineup)
+        offense_weight = sum(off.athletes[p].profile.oreb for p in off.lineup) * (self._lever(off, "crash_glass") if off.directives else 1.0)
         defense_weight = sum(dfn.athletes[p].profile.dreb for p in dfn.lineup)
         offense_keeps = self.rng.random() < offense_weight / (offense_weight + defense_weight)
+        if not offense_keeps and off.tactics.get("crash_glass", 0.0) > 0:  # everyone crashed: the other team leaks out
+            self.leak_out = (dfn, 1 + levers.LEAK_OUT * off.tactics["crash_glass"])
         side = off if offense_keeps else dfn
         kind = "offensive" if offense_keeps else "defensive"
         if self.rng.random() < self.league.team_rebound_share:
@@ -378,9 +536,16 @@ class Game:
     def _possession(self, off: Side, dfn: Side) -> bool:
         """Play one possession. Returns False if the period clock ran out first."""
         first = True
+        if (dfn.late_foul and self.period >= 4 and self.clock <= LATE_FOUL_SECONDS
+                and 0 < off.points - dfn.points <= LATE_FOUL_MARGIN and self.clock > 3):
+            if not self._intentional_foul(off, dfn):
+                return True
+            first = False  # a missed free throw rebounded by the offense: play on
         while True:
             durations = self.league.first_chance_seconds if first else self.league.second_chance_seconds
             seconds = self.rng.choice(durations)
+            if first and "pace" in off.tactics:
+                seconds /= self._lever(off, "pace")
             if seconds >= self.clock:
                 self._run_clock(self.clock)
                 return False
@@ -388,9 +553,27 @@ class Game:
             self._run_clock(seconds)
             if first:
                 off.possessions += 1
-            if not self._chance(off, dfn):
+            breaking = first and self.leak_out is not None and self.leak_out[0] is off
+            self.break_bonus, self.leak_out = (self.leak_out[1] if breaking else 1.0), None
+            keeps = self._chance(off, dfn)
+            self.break_bonus = 1.0
+            if not keeps:
                 return True
             first = False
+
+    def _intentional_foul(self, off: Side, dfn: Side) -> bool:
+        """Trailing late, the defense fouls at once and sends the worst free-throw shooter on the floor to the line.
+
+        Returns True if the offense keeps the ball (a missed last free throw that they rebound).
+        """
+        self._log(off, "", "chance", zone="first")
+        self._run_clock(3.0)
+        off.possessions += 1
+        shooter = min(off.lineup, key=lambda p: off.athletes[p].profile.ft_pct)
+        fouler = self._fouler(dfn)
+        dfn.athletes[fouler].stats["PF"] += 1
+        self._log(dfn, f"{self._name(dfn, fouler)} fouls {self._name(off, shooter)} on purpose", "foul", fouler, shooter, "intentional")
+        return self._free_throws(off, dfn, shooter, 2)
 
     def _start_period(self) -> None:
         self.clock = PERIOD_SECONDS if self.period <= 4 else OVERTIME_SECONDS
@@ -429,6 +612,9 @@ class Game:
         if self.done:
             return []
         start = len(self.events)
+        for side in (self.home, self.away):
+            if any(d.until is not None and d.until <= self.game_seconds for d in side.directives):
+                self._refresh(side)
         if not self.period_open:
             self._start_period()
         offense, defense = self.offense, self.other(self.offense)

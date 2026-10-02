@@ -65,6 +65,19 @@ def main(argv: list[str] | None = None) -> int:
     play.add_argument("--data-dir", type=Path, default=Path("data"))
     play.add_argument("--replay", type=Path, help="also write a Courtside replay page (HTML) here")
     play.add_argument("--rosters", help="play with this season's cached rosters, e.g. 2026-27 (fetch --rosters first)")
+    play.add_argument("--say", action="append", default=[], metavar="WHEN WORDS",
+                      help='the home coach speaks, e.g. "Q2 6:00 Push the pace" or "Q4 3:00 Shai Gilgeous-Alexander: take over"; repeatable')
+    play.add_argument("--use", choices=("auto", "qwen", "rules"), default="auto", help="translator for --say (auto: Qwen if a key is set)")
+
+    talk = commands.add_parser("coach", help="translate a coach's words into levers (Qwen, or keyword rules without a key)")
+    talk.add_argument("words", nargs="?", help='e.g. "Push the pace and run their shooters off the line"')
+    talk.add_argument("--to", help='the player you\'re talking to, e.g. "Shai Gilgeous-Alexander" (default: the whole team)')
+    talk.add_argument("--home", default="OKC", help="your team")
+    talk.add_argument("--away", default="BOS")
+    talk.add_argument("--season", default="2025-26")
+    talk.add_argument("--use", choices=("auto", "qwen", "rules"), default="auto")
+    talk.add_argument("--check", action="store_true", help="grade the translator on the 50 test phrases and the 30 held-out ones")
+    talk.add_argument("--data-dir", type=Path, default=Path("data"))
 
     args = parser.parse_args(argv)
     exit_code = 0
@@ -149,7 +162,10 @@ def main(argv: list[str] | None = None) -> int:
         if unknown:
             print(f"unknown team {unknown}; choose from {' '.join(sorted(by_code))}")
             return 1
-        result = Game(model, by_code[args.home], by_code[args.away], seed=args.seed).play()
+        if args.say:
+            result = coached_game(model, by_code[args.home], by_code[args.away], args)
+        else:
+            result = Game(model, by_code[args.home], by_code[args.away], seed=args.seed).play()
         if args.play_by_play:
             for event in (e for e in result.events if e.kind != "chance"):
                 minutes, seconds = divmod(int(event.clock), 60)
@@ -165,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"replay page: {args.replay}")
         overtime = f" after {result.periods - 4} overtime(s)" if result.periods > 4 else ""
         print(f"\nFinal{overtime}: {result.away.tricode} {result.away.points} @ {result.home.tricode} {result.home.points} (seed {args.seed})")
+    if args.command == "coach":
+        exit_code = coach_command(args)
     if args.command == "baselines":
         import pandas as pd
 
@@ -183,3 +201,80 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(report.to_string(index=False, float_format=lambda v: f"{v:.5f}"))
     return exit_code
+
+
+def coached_game(model, home: int, away: int, args):
+    """Play a game in which the home coach speaks at the given times (--say)."""
+    import re
+
+    from hoopformer.game.engine import Game
+    from hoopformer.game.levers import lever_limits
+    from hoopformer.game.replay import game_seconds
+    from hoopformer.game.translator import load_env, translate
+
+    load_env()
+    game = Game(model, home, away, seed=args.seed, limits=lever_limits(args.data_dir, model.season[:7]))
+    names = {a.profile.name.casefold(): pid for pid, a in game.home.athletes.items()}
+    pending = []
+    for said in args.say:
+        match = re.match(r"^Q(\d)\s+(\d{1,2}):(\d\d)\s+(.+)$", said.strip())
+        if not match:
+            raise SystemExit(f'--say needs "Q<period> <m:ss> words", got {said!r}')
+        period, minutes, seconds, words = int(match[1]), int(match[2]), int(match[3]), match[4]
+        name, colon, rest = words.partition(":")
+        addressed = names.get(name.strip().casefold()) if colon else None
+        pending.append((game_seconds(period, 60 * minutes + seconds), rest.strip() if addressed else words, addressed))
+    pending.sort()
+    while not game.done:
+        while pending and pending[0][0] <= game.game_seconds and game.period_open:
+            _, words, addressed = pending.pop(0)
+            instruction = translate(words, game, game.home, addressed, use=args.use,
+                                    unmapped_log=args.data_dir / "derived" / "unmapped.jsonl")
+            game.instruct(game.home, instruction)
+            names = {pid: a.profile.name for team in (game.home, game.away) for pid, a in team.athletes.items()}
+            print(f"Q{game.period} {int(game.clock) // 60}:{int(game.clock) % 60:02d} coach: {words!r} -> "
+                  f"{instruction.describe(names)} [{instruction.source}]")
+            if instruction.reply:
+                print(f"   {model.players[instruction.replier].name if instruction.replier else 'team'}: {instruction.reply}")
+        game.step()
+    return game.result()
+
+
+def coach_command(args) -> int:
+    """`hoopformer coach`: translate one instruction, or grade a translator on the test phrases."""
+    import json
+    from dataclasses import asdict
+
+    from hoopformer.game.engine import Game
+    from hoopformer.game.levers import lever_limits
+    from hoopformer.game.model import ActionModel
+    from hoopformer.game.translator import HOLDOUT_PHRASES, PHRASES, check_phrases, load_env, translate
+
+    load_env()
+    path = model_path(args.data_dir, args.season)
+    if not path.exists():
+        print(f"no action model at {path}: run `uv run hoopformer actions --season {args.season}` first")
+        return 1
+    model = ActionModel.load(path)
+    by_code = {team.tricode: team.team_id for team in model.teams.values()}
+    game = Game(model, by_code[args.home], by_code[args.away], seed=1, limits=lever_limits(args.data_dir, args.season))
+    for _ in range(60):  # into the second quarter, so there's a score and some fouls to talk about
+        game.step()
+    if args.check:
+        for label, phrases in (("test phrases", PHRASES), ("held-out phrases", HOLDOUT_PHRASES)):
+            passed, total, _ = check_phrases(game, game.home, args.use, phrases)
+            print(f"{label}: {passed}/{total}\n")
+        return 0
+    if not args.words:
+        print('say something, e.g. uv run hoopformer coach "Push the pace and run their shooters off the line"')
+        return 1
+    addressed = None
+    if args.to:
+        addressed = next((pid for pid, a in game.home.athletes.items() if a.profile.name.casefold() == args.to.casefold()), None)
+        if addressed is None:
+            print(f"{args.to!r} isn't on {args.home}: " + ", ".join(a.profile.name for a in game.home.athletes.values()))
+            return 1
+    instruction = translate(args.words, game, game.home, addressed, use=args.use,
+                            unmapped_log=args.data_dir / "derived" / "unmapped.jsonl")
+    print(json.dumps(asdict(instruction), indent=1, ensure_ascii=False, default=str))
+    return 0

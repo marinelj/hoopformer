@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 
 from hoopformer.fetch import BOX_SCORE, PLAY_BY_PLAY, SCHEDULE, raw_path
-from hoopformer.game.actions import EVENTS, ZONES, count_game, is_personal_foul, season_counts, shot_zone
+from hoopformer.game.actions import EVENTS, ZONES, count_game, is_personal_foul, shot_zone
 from hoopformer.game import coach
 from hoopformer.game.engine import Game, default_roster, minute_shares
-from hoopformer.game.model import ActionModel, fit_action_model, shrink
+from hoopformer.game.model import ActionModel, shrink
 from hoopformer.game.realism import (compare, real_per_team_game, real_rotations, simulate_league, simulated_per_team_game,
                                      simulated_rotations)
 
@@ -39,16 +39,6 @@ def load(game_id: str) -> tuple[dict, dict]:
     if not (pbp_path.exists() and box_path.exists()):
         pytest.skip(f"game {game_id} not cached")
     return json.loads(pbp_path.read_text()), json.loads(box_path.read_text())["boxScoreTraditional"]
-
-
-@pytest.fixture(scope="module")
-def fitted():
-    if not raw_path(DATA, SCHEDULE, "2025-26").exists():
-        pytest.skip("2025-26 not downloaded")
-    players, teams, extras = season_counts(DATA, "2025-26", log=print)
-    if extras["games"] < 300:
-        pytest.skip("need at least 300 cached 2025-26 games")
-    return fit_action_model(players, teams, extras, "2025-26"), extras
 
 
 def test_shot_zone_uses_coordinates_because_corner_threes_report_distance_zero():

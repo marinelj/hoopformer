@@ -866,6 +866,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         if (chance(0.5)) say(e.actor, pickLine(r, "subIn"));
         if (chance(0.35)) say(e.other, pickLine(r, "subOut", { s: name(e.actor) }), "talk", e.actor);
         break;
+      case "coach":   // the coach's instruction, as the engine received it (the reply is its own event)
+        lines.push({ t: e.t, seq: index * 12, speaker: team === "home" ? "coach" : "ai-coach", to: e.other || "team", text: e.text, kind: "coach" });
+        break;
+      case "reply":
+        if (e.actor) lines.push({ t: e.t + 0.01, seq: index * 12 + 1, speaker: e.actor, to: null, text: e.text, kind: "reply" });
+        break;
       case "timeout":
         if (chance(0.8)) say(anyMate(team), pickLine(r, "timeoutCalled"));
         if (chance(0.6)) say(anyMate(opp), pickLine(r, "timeoutOpp"));
@@ -941,7 +947,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (e.kind === "block") boxRow(e.actor).BLK++;
     if (e.kind === "turnover") { if (e.actor) boxRow(e.actor).TOV++; if (e.other) boxRow(e.other).STL++; }
     if (e.kind === "foul" && e.actor) boxRow(e.actor).PF++;
-    if (e.text) S.feed.push(e);
+    if (e.text && e.kind !== "coach" && e.kind !== "reply") S.feed.push(e);
     for (const line of chatterFor(e, S.applied)) S.chatter.push(line);
     S.applied++;
   }
@@ -1153,6 +1159,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       if (line.speaker !== "note") {
         const who = document.createElement("span"); who.className = "who";
         if (line.speaker === "coach") who.textContent = "You (coach)";
+        else if (line.speaker === "ai-coach") who.textContent = `${G.away.tricode} coach`;
         else { who.textContent = last(playerById[line.speaker].name); const c = sides[playerTeam[line.speaker]].primary; who.style.color = c === "#1A1A1A" ? "var(--text)" : c; }
         body.appendChild(who);
         if (line.to) { const to = document.createElement("span"); to.className = "to"; to.textContent = ` → ${line.to === "team" ? "everybody" : last(playerById[line.to].name)}`; body.appendChild(to); }

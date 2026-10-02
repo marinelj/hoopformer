@@ -166,6 +166,30 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - A game now takes about 4 ms (the coach checks both benches after every possession).
 - The realism check uses 2,000 games: with 1,000, home win share alone moves by ±1.6 points from seed to seed.
 
+**Day 3 result (coach language: levers, limits, translator, memory; done):**
+- **Levers** (`game/levers.py`), each a value from -1 to 1:
+
+  | Scope | Levers |
+  |---|---|
+  | Team offense | pace, three_point_rate, attack_rim, ball_security, crash_glass, focus (one player) |
+  | Team defense | pressure, protect_paint, foul_caution, double_team (one opponent), late_foul |
+  | One player | aggression, shot_preference (rim / mid / three), foul_caution, rest |
+  | Commands | timeout, substitutions |
+  | Memory only | confidence (changes how players talk, not how they play: no data shows an effect) |
+
+- **Limits from real data.** +1 moves a team as far from the league average as the most extreme real 2025-26 team went (from box scores), and a player as far as their own games swing (10th-90th percentile). Measured: pace 0.96-1.04 (real teams barely differ), three-point rate 0.82-1.20, getting to the line 0.79-1.21, turnovers 0.87-1.17, offensive rebounds 0.81-1.34, turnovers forced 0.82-1.16, threes allowed 0.91-1.09, fouls 0.90-1.11, a player's usage 0.68-1.33, a player's three-point share 0.53-1.49.
+- **Each lever, measured with common random numbers** (300 OKC-BOS games with and without it): threes +1 raises the 3PA share from 37.5% to 41.1%; ball security +1 cuts turnovers 11%; crash the glass +1 adds 30% offensive rebounds; pressure +1 forces 14% more turnovers; foul caution +1 cuts fouls 7%; "be aggressive" +1 gives SGA 18% more shots. All stay inside the real limits (`test_each_team_lever_moves_its_stat_within_real_limits`).
+- **No free wins.** Without side effects, crashing the glass was worth +3.7 points a game for nothing. Now crashing concedes better fast breaks, pressing concedes layups and fouls, and protecting the ball means attacking the rim less. These sizes are assumptions (named constants in levers.py) until the transformer can measure them.
+- **Memory.** `Game.instruct` stores each lever as a directive with the coach's own words, when it started and when it lapses (the rest of the game, the quarter, or N possessions). `Game.memory(side, player)` gives an athlete's energy, fouls, confidence, directives and last 10 actions. A coach's substitution sticks for 4 minutes before the assistant may undo it; "rest" keeps a player on the bench until it lapses.
+- **Translators** (`game/translator.py`), same output format:
+  - Qwen (`qwen3.8-max`, Alibaba Cloud Model Studio, OpenAI-compatible API with JSON output, thinking off), one call per instruction. Key: `DASHSCOPE_API_KEY` in the shell profile or a git-ignored `.env`.
+  - Keyword rules: no network; the baseline and the fallback when the API is down.
+  - Both go through `levers.validate`: values clamped, players checked against the rosters, anything else into `unmapped`, which is logged to `data/derived/unmapped.jsonl`. The most frequent unmapped phrases decide the next lever (today: box out, switch everything, move the ball).
+- **50 test phrases + 30 held out** (`game/coach_phrases*.json`). The rules score 50/50 on the phrases they were written against and 5/30 on the held-out ones. That's overfitting, the same lesson as the train/validation split: a score on data you tuned to means nothing. Qwen's score on both sets: run `uv run pytest -m network -k qwen` or `uv run hoopformer coach --check` (needs the key).
+- Commands:
+  - `uv run hoopformer coach "Push the pace and run their shooters off the line" [--to "Shai Gilgeous-Alexander"] [--use rules|qwen]` prints the levers and the reply.
+  - `uv run hoopformer play --home OKC --away BOS --say "Q2 6:00 Pack the paint" --say "Q4 3:00 Shai Gilgeous-Alexander: take over" --replay page.html` coaches a simulated game; the replay shows each instruction and the reply in the chatter.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).
