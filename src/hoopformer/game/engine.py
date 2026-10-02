@@ -68,6 +68,14 @@ class Event:
     text: str
     home_score: int
     away_score: int
+    kind: str = ""          # period_start, period_end, chance, shot, block, rebound, turnover, foul, free_throws, sub
+    actor: int | None = None  # who did it (shooter, rebounder, fouler, player coming in...)
+    other: int | None = None  # the second player involved (passer, thief, blocked shooter, fouled player, player going out)
+    zone: str | None = None   # shot zone; "offensive"/"defensive" for rebounds; foul type; "first"/"second" chance
+    value: int = 0            # points on a shot; free throws made
+    attempts: int = 0         # free throws attempted
+    home_lineup: tuple[int, ...] = ()
+    away_lineup: tuple[int, ...] = ()
 
 
 @dataclass
@@ -153,8 +161,11 @@ class Game:
 
     # --- bookkeeping -------------------------------------------------------------------------------
 
-    def _log(self, side: Side, text: str) -> None:
-        self.events.append(Event(self.period, round(self.clock, 1), side.tricode, text, self.home.points, self.away.points))
+    def _log(self, side: Side, text: str, kind: str = "", actor: int | None = None, other: int | None = None,
+             zone: str | None = None, value: int = 0, attempts: int = 0) -> None:
+        self.events.append(Event(self.period, round(self.clock, 1), side.tricode, text, self.home.points, self.away.points,
+                                 kind, actor, other, zone, value, attempts,
+                                 tuple(self.home.lineup), tuple(self.away.lineup)))
 
     def _name(self, side: Side, pid: int) -> str:
         return side.athletes[pid].profile.name
@@ -185,9 +196,9 @@ class Game:
                 bench.sort(key=need.get, reverse=True)
         leaving = [p for p in side.lineup if p not in new]
         entering = [p for p in new if p not in side.lineup]
-        for out, inn in zip(leaving, entering):
-            self._log(side, f"SUB: {self._name(side, inn)} for {self._name(side, out)}")
         side.lineup = new
+        for out, inn in zip(leaving, entering):
+            self._log(side, f"SUB: {self._name(side, inn)} for {self._name(side, out)}", "sub", inn, out)
 
     # --- one chance --------------------------------------------------------------------------------
 
@@ -197,6 +208,7 @@ class Game:
         if self.rng.random() < self.silent_foul_rate:
             fouler = self._pick(dfn, dfn.lineup, lambda p: p.foul)
             dfn.athletes[fouler].stats["PF"] += 1
+            self._log(dfn, f"{self._name(dfn, fouler)} personal foul", "foul", fouler, zone="personal")
         choices, weights = [], []
         for pid in off.lineup:
             profile = off.athletes[pid].profile
@@ -219,7 +231,7 @@ class Game:
         shots = 3 if self.rng.random() < league.three_shot_trip_share else 2
         fouler = self._pick(dfn, dfn.lineup, lambda p: p.foul)
         dfn.athletes[fouler].stats["PF"] += 1
-        self._log(dfn, f"{self._name(dfn, fouler)} shooting foul on {self._name(off, pid)}")
+        self._log(dfn, f"{self._name(dfn, fouler)} shooting foul on {self._name(off, pid)}", "foul", fouler, pid, "shooting")
         return self._free_throws(off, dfn, pid, shots)
 
     def _shot(self, off: Side, dfn: Side, pid: int, zone: str) -> bool:
@@ -237,24 +249,25 @@ class Game:
             shooter.stats["PTS"] += points
             off.points += points
             text = f"{shooter.profile.name} makes {label} ({shooter.stats['PTS']} PTS)"
+            passer = None
             if self.rng.random() < shooter.profile.assisted[zone]:
                 mates = [p for p in off.lineup if p != pid]
                 passer = self._pick(off, mates, lambda p: p.assist)
                 off.athletes[passer].stats["AST"] += 1
                 text += f", assist {self._name(off, passer)}"
-            self._log(off, text)
+            self._log(off, text, "shot", pid, passer, zone, points)
             if self.rng.random() < league.and_one[zone]:
                 fouler = self._pick(dfn, dfn.lineup, lambda p: p.foul)
                 dfn.athletes[fouler].stats["PF"] += 1
-                self._log(dfn, f"{self._name(dfn, fouler)} fouls: and-one")
+                self._log(dfn, f"{self._name(dfn, fouler)} fouls: and-one", "foul", fouler, pid, "and-one")
                 return self._free_throws(off, dfn, pid, 1)
             return False
-        self._log(off, f"{shooter.profile.name} misses {label}")
+        self._log(off, f"{shooter.profile.name} misses {label}", "shot", pid, None, zone, 0)
         block_chance = sum(dfn.athletes[p].profile.block for p in dfn.lineup)
         if self.rng.random() < block_chance:
             blocker = self._pick(dfn, dfn.lineup, lambda p: p.block)
             dfn.athletes[blocker].stats["BLK"] += 1
-            self._log(dfn, f"blocked by {self._name(dfn, blocker)}")
+            self._log(dfn, f"blocked by {self._name(dfn, blocker)}", "block", blocker, pid)
         return self._rebound(off, dfn)
 
     def _free_throws(self, off: Side, dfn: Side, pid: int, shots: int) -> bool:
@@ -268,9 +281,9 @@ class Game:
                 shooter.stats["PTS"] += 1
                 off.points += 1
             elif number == shots:
-                self._log(off, f"{shooter.profile.name} free throws {made}/{shots}")
+                self._log(off, f"{shooter.profile.name} free throws {made}/{shots}", "free_throws", pid, value=made, attempts=shots)
                 return self._rebound(off, dfn)
-        self._log(off, f"{shooter.profile.name} free throws {made}/{shots}")
+        self._log(off, f"{shooter.profile.name} free throws {made}/{shots}", "free_throws", pid, value=made, attempts=shots)
         return False
 
     def _rebound(self, off: Side, dfn: Side) -> bool:
@@ -278,28 +291,29 @@ class Game:
         defense_weight = sum(dfn.athletes[p].profile.dreb for p in dfn.lineup)
         offense_keeps = self.rng.random() < offense_weight / (offense_weight + defense_weight)
         side = off if offense_keeps else dfn
+        kind = "offensive" if offense_keeps else "defensive"
         if self.rng.random() < self.league.team_rebound_share:
-            self._log(side, f"{side.tricode} team rebound")
+            self._log(side, f"{side.tricode} team rebound", "rebound", None, zone=kind)
         else:
             weight = (lambda p: p.oreb) if offense_keeps else (lambda p: p.dreb)
             player = self._pick(side, side.lineup, weight)
             side.athletes[player].stats["OREB" if offense_keeps else "DREB"] += 1
-            self._log(side, f"{'offensive' if offense_keeps else 'defensive'} rebound {self._name(side, player)}")
+            self._log(side, f"{kind} rebound {self._name(side, player)}", "rebound", player, zone=kind)
         return offense_keeps
 
     def _turnover(self, off: Side, dfn: Side, pid: int | None) -> None:
         if pid is None:
             off.team_turnovers += 1
-            self._log(off, f"{off.tricode} team turnover")
+            self._log(off, f"{off.tricode} team turnover", "turnover")
             return
         off.athletes[pid].stats["TOV"] += 1
         steal_chance = sum(dfn.athletes[p].profile.steal for p in dfn.lineup)
         if self.rng.random() < steal_chance:
             thief = self._pick(dfn, dfn.lineup, lambda p: p.steal)
             dfn.athletes[thief].stats["STL"] += 1
-            self._log(off, f"{self._name(off, pid)} turnover, stolen by {self._name(dfn, thief)}")
+            self._log(off, f"{self._name(off, pid)} turnover, stolen by {self._name(dfn, thief)}", "turnover", pid, thief)
         else:
-            self._log(off, f"{self._name(off, pid)} turnover")
+            self._log(off, f"{self._name(off, pid)} turnover", "turnover", pid)
 
     # --- the game loop -----------------------------------------------------------------------------
 
@@ -319,6 +333,7 @@ class Game:
             if seconds >= self.clock:
                 self._run_clock(self.clock)
                 return False
+            self._log(off, "", "chance", zone="first" if first else "second")
             self._run_clock(seconds)
             if first:
                 off.possessions += 1
@@ -338,7 +353,7 @@ class Game:
                 offense = tip_winner if self.period in (1, 4) else tip_loser
             else:
                 offense = self.home if self.rng.random() < 0.5 else self.away
-            self._log(offense, f"Start of period {self.period}")
+            self._log(offense, f"Start of period {self.period}", "period_start")
             while self.clock > 0:
                 defense = self.away if offense is self.home else self.home
                 if not self._possession(offense, defense):
@@ -349,6 +364,6 @@ class Game:
                     for side in (self.home, self.away):
                         self._rotate(side)
                     self.last_rotation = self.game_seconds
-            self._log(offense, f"End of period {self.period}")
+            self._log(offense, f"End of period {self.period}", "period_end")
             self.period += 1
         return GameResult(self.seed, self.home, self.away, self.period - 1, self.events)

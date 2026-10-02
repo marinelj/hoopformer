@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     play.add_argument("--season", default="2025-26")
     play.add_argument("--play-by-play", action="store_true", help="print every event")
     play.add_argument("--data-dir", type=Path, default=Path("data"))
+    play.add_argument("--replay", type=Path, help="also write a Courtside replay page (HTML) here")
 
     args = parser.parse_args(argv)
     exit_code = 0
@@ -135,12 +136,18 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         result = Game(model, by_code[args.home], by_code[args.away], seed=args.seed).play()
         if args.play_by_play:
-            for event in result.events:
+            for event in (e for e in result.events if e.kind != "chance"):
                 minutes, seconds = divmod(int(event.clock), 60)
                 print(f"Q{event.period} {minutes:2d}:{seconds:02d}  {event.team}  {event.text}  ({event.home_score}-{event.away_score})")
         for side in (result.away, result.home):
             print(f"\n{side.name} {side.points}")
             print(result.box_score(side).to_string(index=False))
+        if args.replay:
+            from hoopformer.game.replay import replay_data, replay_html
+
+            args.replay.parent.mkdir(parents=True, exist_ok=True)
+            args.replay.write_text(replay_html(replay_data(result, model)), encoding="utf-8")
+            print(f"replay page: {args.replay}")
         overtime = f" after {result.periods - 4} overtime(s)" if result.periods > 4 else ""
         print(f"\nFinal{overtime}: {result.away.tricode} {result.away.points} @ {result.home.tricode} {result.home.points} (seed {args.seed})")
     if args.command == "baselines":

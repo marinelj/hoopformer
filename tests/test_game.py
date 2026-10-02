@@ -201,3 +201,39 @@ def test_cli_fits_the_model_and_plays_a_game(fitted, tmp_path, capsys):
     print(output[-600:])
     assert "Final" in output and "Shai Gilgeous-Alexander" in output
     assert main(["play", "--home", "XXX", "--away", "HOU", "--data-dir", str(tmp_path)]) == 1
+
+
+def test_events_carry_who_did_what_and_both_lineups(fitted):
+    model, _ = fitted
+    result = Game(model, OKC, HOU, seed=11).play()
+    shots = [e for e in result.events if e.kind == "shot"]
+    made_points = sum(e.value for e in shots) + sum(e.value for e in result.events if e.kind == "free_throws")
+    print(len(result.events), "events |", {k: sum(e.kind == k for e in result.events) for k in ("chance", "shot", "rebound", "turnover", "foul", "sub")})
+    assert made_points == result.home.points + result.away.points, "every point appears on exactly one event"
+    assert all(len(e.home_lineup) == 5 and len(e.away_lineup) == 5 for e in result.events if e.kind != "period_start")
+    assert all(e.actor is not None for e in shots)
+
+
+def test_replay_data_and_page(fitted, tmp_path):
+    from hoopformer.game.replay import TEAM_COLORS, replay_data, replay_html
+
+    model, _ = fitted
+    result = Game(model, OKC, HOU, seed=11).play()
+    data = replay_data(result, model)
+    times = [e["t"] for e in data["events"]]
+    print(len(times), "events, last at", times[-1], "s")
+    assert times == sorted(times), "events in time order"
+    assert data["final"] == {"home": result.home.points, "away": result.away.points}
+    assert {t.tricode for t in model.teams.values()} <= set(TEAM_COLORS)
+    page = replay_html(data)
+    assert "__GAME_DATA__" not in page and "<title>Hoopformer Courtside</title>" in page and "</script>" in page
+
+
+def test_cli_play_writes_a_replay_page(fitted, tmp_path):
+    from hoopformer.cli import main
+
+    (tmp_path / "raw").symlink_to((DATA / "raw").resolve())
+    assert main(["actions", "--season", "2025-26", "--games", "200", "--data-dir", str(tmp_path)]) == 0
+    page = tmp_path / "replay.html"
+    assert main(["play", "--home", "OKC", "--away", "BOS", "--seed", "264", "--data-dir", str(tmp_path), "--replay", str(page)]) == 0
+    assert page.exists() and page.stat().st_size > 50_000
