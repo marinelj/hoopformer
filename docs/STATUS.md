@@ -49,7 +49,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 
 - marinelj writes the model and training loop, following `docs/TRANSFORMER_GUIDE.md`.
 - Done: `hoopformer dataset` (`src/hoopformer/dataset.py`) writes `data/derived/possessions.parquet`, one row per possession with the split column. On 664 games of 2025-26: 134,426 rows, outcome shares 0:49.04% 1:3.24% 2:32.33% 3:15.15% 4+:0.24%.
-- Done: `notebooks/M1_M2.ipynb` (guided cells for marinelj, each with a check cell; verified end to end against a private reference solution) and `notebooks/playground.ipynb`. The Jupyter kernel is registered with `uv run python -m ipykernel install --user --name hoopformer --display-name "Hoopformer (.venv)"`.
+- Done: `notebooks/G1_game_engine.ipynb` (a guided tour of the game engine with 5 exercises: counting a game, shrinkage, fitting, one chance, a same-seed experiment; verified end to end). `notebooks/M1_M2.ipynb` (guided cells for marinelj, each with a check cell; verified end to end against a private reference solution) and `notebooks/playground.ipynb`. The Jupyter kernel is registered with `uv run python -m ipykernel install --user --name hoopformer --display-name "Hoopformer (.venv)"`.
 - Done: the grader, `hoopformer baselines` and `hoopformer evaluate` (`src/hoopformer/evaluate.py`): B0 shares, B1 situation, B2 linear lineup with its strength picked on validation; the test split is locked behind `--final` and logged. The dataset gained a `possession` column (the join key with `game_id`).
 - Next (Claude): multi-season RAPM and the season simulator for v0.1.
 
