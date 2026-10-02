@@ -111,13 +111,6 @@ tbody tr.on td:first-child { color: var(--led); }
 .boxteam { font-family: var(--display); font-weight: 600; font-size: 15px; padding: 8px 6px 2px; color: var(--text); }
 
 /* coach chat */
-.chat { display: grid; gap: 8px; padding: 10px 12px 12px; }
-.chat h2 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
-.msgs { display: grid; gap: 6px; max-height: 190px; overflow-y: auto; }
-.msg { font-size: 13px; padding: 6px 9px; border-radius: 8px; max-width: 92%; }
-.msg.me { background: var(--panel-2); justify-self: end; border: 1px solid var(--line); }
-.msg.them { background: rgba(255, 178, 62, 0.1); border: 1px solid rgba(255, 178, 62, 0.25); }
-.msg .who { display: block; font-size: 11px; color: var(--muted); }
 .compose { display: flex; gap: 6px; }
 .compose textarea { flex: 1; min-height: 40px; resize: vertical; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 13px; }
 .compose button { border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 0 12px; }
@@ -139,7 +132,6 @@ tbody tr.on td:first-child { color: var(--led); }
 .mentions button[aria-selected="true"], .mentions button:hover { background: var(--panel-2); }
 .mentions .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .mentions .meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.msg .at { color: var(--led); font-weight: 600; }
 .compose { align-items: stretch; }
 .compose .mention { flex: 1; display: flex; }
 .compose .mention textarea { flex: 1; }
@@ -162,6 +154,21 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 .resume { justify-self: start; background: var(--led); color: #15120c; border: 0; border-radius: 6px; padding: 8px 16px; font-weight: 600; }
 .plan { font-size: 12px; color: var(--text); }
 
+.chatter-panel { display: grid; gap: 8px; padding: 10px 12px 12px; }
+.chatter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.chatter-head h2 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
+.chatter { list-style: none; margin: 0; height: 300px; overflow-y: auto; display: grid; align-content: start; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: #0e1219; }
+.chatter li { display: grid; grid-template-columns: 54px 1fr; gap: 2px 8px; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
+.chatter li .clk { font-family: var(--mono); font-size: 10px; color: var(--muted); padding-top: 2px; font-variant-numeric: tabular-nums; }
+.chatter li .line { min-width: 0; }
+.chatter li .who { font-weight: 600; }
+.chatter li .to { color: var(--muted); font-weight: 500; }
+.chatter li.coach { background: rgba(255, 178, 62, 0.08); border: 1px solid rgba(255, 178, 62, 0.22); }
+.chatter li.coach .who { color: var(--led); }
+.chatter li.reply { background: var(--panel-2); }
+.chatter li.trash .said { font-style: italic; }
+.chatter li.note .said { color: var(--muted); }
+.chatter .at { color: var(--led); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .figure, .flash { transition: none; } }
 </style>
 
@@ -258,10 +265,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         <div class="boxwrap" id="box" hidden></div>
       </div>
 
-      <div class="panel chat">
-        <h2>Coach your team</h2>
+      <div class="panel chatter-panel">
+        <div class="chatter-head"><h2>Courtside chatter</h2><span class="note">Read-only · what players and coaches say</span></div>
+        <ol class="chatter" id="chatter" aria-live="polite"></ol>
         <div class="note" id="chat-note"></div>
-        <div class="msgs" id="msgs"></div>
         <form class="compose" id="compose">
           <div class="mention">
             <div class="mentions" id="mentions" role="listbox" hidden></div>
@@ -316,7 +323,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   $("paint").innerHTML = `<rect x="2" y="170" width="190" height="160" fill="${G.away.primary}" opacity="0.55"/>
     <rect x="748" y="170" width="190" height="160" fill="${G.home.primary}" opacity="0.55"/>`;
-  $("chat-note").textContent = `You coach ${G.home.name}. Preview: instructions are read back by a player but don't change the game yet. That arrives on day 3.`;
+  $("chat-note").textContent = `You coach ${G.home.name}. Mention a player with @ and they answer. Player talk is fictional, but it only reacts to what the engine already decided. Instructions start changing the game on day 3.`;
 
   // cartoon figures (generic: team colours, initials, no faces of real players)
   const court = $("court");
@@ -581,11 +588,101 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     return pos;
   }
 
+  // ---------- courtside chatter: fictional talk that only reacts to what the engine already decided ----------
+  // Every line is triggered by an event that has already happened, spoken by someone who took part in it,
+  // and never predicts what comes next, so it can't contradict the engine. Lines are seeded per event,
+  // so scrubbing the timeline replays the same chatter.
+  const LINES = {
+    threeSelf: ["Cash!", "Splash!", "Count it!", "Too easy.", "From downtown!"],
+    threeTrash: ["You left me open? Bad idea.", "Put a hand up next time.", "That's three more on you.", "Keep giving me that look."],
+    threeMate: ["{s} is heating up!", "Keep shooting, {s}!", "Wet! Again, {s}!"],
+    rimSelf: ["Too strong!", "Nobody home in the paint!", "Easy two.", "Can't stop that."],
+    rimMate: ["Great finish, {s}!", "That's how you attack, {s}!"],
+    missTrash: ["Not tonight.", "Keep shooting those.", "Nothing easy here.", "That all you got?"],
+    blockSelf: ["Not in my house!", "Get that weak stuff out of here!", "Denied!"],
+    blockVictim: ["That's a foul!", "Ref, that's my arm!"],
+    stealSelf: ["Too slow!", "Thanks for the gift.", "I'll take that."],
+    turnoverMate: ["Take care of the ball!", "Value it, value it!", "Slow down, {s}, we're fine."],
+    foulComplain: ["I got all ball!", "That's a flop!", "Clean, ref! Clean!"],
+    andOne: ["And one! Count it!", "Can't stop me!", "Through the contact!"],
+    ftBrick: ["Brick city.", "Rim's got a lid on it tonight?", "Free throws are free, you know."],
+    oreb: ["Second chance! Let's go!", "Crash the glass!", "Extra possession!"],
+    subIn: ["Let's bring some energy.", "I'm in, let's go.", "Locked in."],
+    runFor: ["Keep it rolling!", "Stops into scores!", "This is our run!"],
+    runAgainst: ["Lock in, lock in!", "We need one stop!", "Settle down, we're fine."],
+    milestone: ["{s} has {n}! Keep feeding the hot hand!", "{n} for {s}. Somebody guard {s}!"],
+    leadAfter: ["Good quarter. Same energy.", "Keep the foot on the gas."],
+    trailAfter: ["We're fine. One stop at a time.", "Shake it off, next quarter is ours."],
+    clutch: ["Get a stop! Get a stop!", "Talk on D, talk!", "Box out, nobody leaks!"],
+  };
+  const pickLine = (r, key, vars = {}) => { const list = LINES[key]; let s = list[Math.floor(r() * list.length)]; for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(v); return s; };
+  const otherKey = (key) => (key === "home" ? "away" : "home");
+  function matchupOf(e) {   // the defender guarding this player in this possession, from the choreography plan
+    const plan = planAt(e.t - 0.01);
+    if (!plan) return null;
+    const i = plan.off.indexOf(e.actor);
+    return i >= 0 ? plan.def[i] : null;
+  }
+  function chatterFor(e, index) {
+    const r = seeded(index * 7 + 3);
+    const lines = [];
+    const say = (speaker, text, kind = "talk", to = null) => lines.push({ t: e.t, seq: index * 4 + lines.length, speaker, to, text, kind });
+    const team = e.team === G.home.tricode ? "home" : "away";
+    const anyMate = (key, not) => { const m = S.lineups[key].filter((p) => p !== not); return m.length ? m[Math.floor(r() * m.length)] : null; };
+    const name = (id) => last(playerById[id].name);
+    if (e.kind === "shot" && e.value === 3) {
+      const roll = r(), d = matchupOf(e);
+      if (roll < 0.25) say(e.actor, pickLine(r, "threeSelf"));
+      else if (roll < 0.45 && d) say(e.actor, pickLine(r, "threeTrash"), "trash", d);
+      else if (roll < 0.6) { const m = anyMate(team, e.actor); if (m) say(m, pickLine(r, "threeMate", { s: name(e.actor) })); }
+    }
+    if (e.kind === "shot" && e.value === 2 && e.zone === "rim" && r() < 0.3) {
+      if (r() < 0.5) say(e.actor, pickLine(r, "rimSelf"));
+      else { const m = anyMate(team, e.actor); if (m) say(m, pickLine(r, "rimMate", { s: name(e.actor) })); }
+    }
+    if (e.kind === "shot" && e.value === 0 && r() < 0.16) { const d = matchupOf(e); if (d) say(d, pickLine(r, "missTrash"), "trash", e.actor); }
+    if (e.kind === "block" && r() < 0.8) { say(e.actor, pickLine(r, "blockSelf"), "trash", e.other); if (r() < 0.4) say(e.other, pickLine(r, "blockVictim")); }
+    if (e.kind === "turnover" && e.other && r() < 0.65) say(e.other, pickLine(r, "stealSelf"), "trash", e.actor);
+    if (e.kind === "turnover" && e.actor && !e.other && r() < 0.35) { const m = anyMate(team, e.actor); if (m) say(m, pickLine(r, "turnoverMate", { s: name(e.actor) })); }
+    if (e.kind === "foul" && e.zone === "shooting" && r() < 0.35) say(e.actor, pickLine(r, "foulComplain"));
+    if (e.kind === "foul" && e.zone === "and-one" && r() < 0.9) say(e.other, pickLine(r, "andOne"), "trash", e.actor);
+    if (e.kind === "free_throws" && e.value === 0 && e.attempts >= 2 && r() < 0.45) { const d = anyMate(otherKey(team)); if (d) say(d, pickLine(r, "ftBrick"), "trash", e.actor); }
+    if (e.kind === "rebound" && e.zone === "offensive" && e.actor && r() < 0.25) say(e.actor, pickLine(r, "oreb"));
+    if (e.kind === "sub" && r() < 0.22) say(e.actor, pickLine(r, "subIn"));
+    // runs, milestones, quarter ends and clutch time come from the running score
+    const scored = e.kind === "shot" || e.kind === "free_throws" ? e.value : 0;
+    if (scored) {
+      if (S.run.team === team) S.run.points += scored; else S.run = { team, points: scored, told: false };
+      if (S.run.points >= 8 && !S.run.told) {
+        S.run.told = true;
+        const a = anyMate(team), b = anyMate(otherKey(team));
+        if (a) say(a, pickLine(r, "runFor"));
+        if (b) say(b, pickLine(r, "runAgainst"));
+      }
+      const pts = (S.box[e.actor] || {}).PTS || 0;
+      for (const n of [20, 30, 40, 50]) {
+        if (pts >= n && !(S.milestones[e.actor] >= n)) {
+          S.milestones[e.actor] = n;
+          const m = anyMate(team, e.actor);
+          if (m) say(m, pickLine(r, "milestone", { s: name(e.actor), n }));
+        }
+      }
+    }
+    if (e.kind === "period_end") {
+      const lead = S.home === S.away ? null : S.home > S.away ? "home" : "away";
+      if (lead) { const a = anyMate(lead), b = anyMate(otherKey(lead)); if (a) say(a, pickLine(r, "leadAfter")); if (b) say(b, pickLine(r, "trailAfter")); }
+    }
+    if (e.kind === "chance" && e.period >= 4 && e.clock <= 120 && Math.abs(S.home - S.away) <= 5 && r() < 0.18) {
+      const d = anyMate(otherKey(team)); if (d) say(d, pickLine(r, "clutch"));
+    }
+    return lines;
+  }
+
   // ---------- event state (score, feed, box score) ----------
   let S;
   const TIMEOUTS = 7;
   let timeouts = { home: TIMEOUTS, away: TIMEOUTS };
-  function freshState() { return { applied: 0, home: 0, away: 0, offense: null, chanceT: 0, chanceLen: 24, lineups: { home: [], away: [] }, feed: [], box: {}, dead: null }; }
+  function freshState() { return { applied: 0, home: 0, away: 0, offense: null, chanceT: 0, chanceLen: 24, lineups: { home: [], away: [] }, feed: [], box: {}, dead: null, chatter: [], run: { team: null, points: 0, told: false }, milestones: {} }; }
   const boxRow = (id) => (S.box[id] ||= { PTS: 0, FGM: 0, FGA: 0, "3PM": 0, "3PA": 0, FTM: 0, FTA: 0, REB: 0, AST: 0, STL: 0, BLK: 0, TOV: 0, PF: 0 });
   function apply(e) {
     S.home = e.home_score; S.away = e.away_score;
@@ -605,6 +702,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (e.kind === "turnover") { if (e.actor) boxRow(e.actor).TOV++; if (e.other) boxRow(e.other).STL++; }
     if (e.kind === "foul" && e.actor) boxRow(e.actor).PF++;
     if (e.text) S.feed.push(e);
+    for (const line of chatterFor(e, S.applied)) S.chatter.push(line);
     S.applied++;
   }
   function minutesUpTo(t) {
@@ -660,6 +758,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       if (!$("box").hidden) renderBox(t);
     }
     if (Math.abs(t - lastBenchT) > 5) { lastBenchT = t; renderBenches(t); }
+    renderChatter();
   }
   function renderBenches(t) {
     const mins = minutesUpTo(t);
@@ -717,7 +816,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   $("ticks").innerHTML = Array.from({ length: G.periods }, (_, i) => i + 1).map((p) => `<span style="left:${(periodStart(p) / totalT) * 100}%">${periodLabel(p).replace(" QTR", "")}</span>`).join("");
   $("scrub").max = String(totalT);
   function seek(t) {
-    S = freshState(); lastFeedLen = -1; lastBenchT = -99;
+    S = freshState(); lastFeedLen = -1; lastBenchT = -99; lastChatterKey = "";
     while (S.applied < G.events.length && G.events[S.applied].t <= t) apply(G.events[S.applied]);
     T = t; render(T);
   }
@@ -750,25 +849,79 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   $("tab-feed").addEventListener("click", () => { $("tab-feed").setAttribute("aria-selected", "true"); $("tab-box").setAttribute("aria-selected", "false"); $("feed").hidden = false; $("box").hidden = true; });
   $("tab-box").addEventListener("click", () => { $("tab-box").setAttribute("aria-selected", "true"); $("tab-feed").setAttribute("aria-selected", "false"); $("feed").hidden = true; $("box").hidden = false; renderBox(T); });
 
-  // ---------- coach chat with @mentions ----------
-  const msgs = $("msgs"), say = $("say"), menu = $("mentions");
+  // ---------- the chatter window: coach messages, @mention replies and player talk ----------
+  const chatterEl = $("chatter"), say = $("say"), menu = $("mentions");
+  const humanLines = [];
+  let humanSeq = 0, lastChatterKey = "";
   const mentionName = (id) => playerById[id].name;
-  function addMsg(who, text, mine) {
-    const div = document.createElement("div");
-    div.className = `msg ${mine ? "me" : "them"}`;
-    const w = document.createElement("span"); w.className = "who"; w.textContent = who; div.appendChild(w);
-    const names = Object.values(playerById).map((p) => p.name).sort((a, b) => b.length - a.length);
+  const namesLongestFirst = Object.values(playerById).map((p) => p.name).sort((a, b) => b.length - a.length);
+  const idByName = Object.fromEntries(Object.values(playerById).map((p) => [p.name, p.id]));
+  function mentionedIds(text) {
+    const ids = [];
+    for (let i = text.indexOf("@"); i >= 0; i = text.indexOf("@", i + 1)) {
+      const hit = namesLongestFirst.find((n) => text.startsWith("@" + n, i));
+      if (hit && !ids.includes(idByName[hit])) ids.push(idByName[hit]);
+    }
+    return ids;
+  }
+  function withMentions(el, text) {
     let rest = text;
     while (rest.length) {
       const i = rest.indexOf("@");
-      if (i < 0) { div.append(rest); break; }
-      div.append(rest.slice(0, i));
-      const hit = names.find((n) => rest.startsWith("@" + n, i));
-      if (hit) { const s = document.createElement("span"); s.className = "at"; s.textContent = "@" + hit; div.appendChild(s); rest = rest.slice(i + 1 + hit.length); }
-      else { div.append("@"); rest = rest.slice(i + 1); }
+      if (i < 0) { el.append(rest); break; }
+      el.append(rest.slice(0, i));
+      const hit = namesLongestFirst.find((n) => rest.startsWith("@" + n, i));
+      if (hit) { const s = document.createElement("span"); s.className = "at"; s.textContent = "@" + hit; el.appendChild(s); rest = rest.slice(i + 1 + hit.length); }
+      else { el.append("@"); rest = rest.slice(i + 1); }
     }
-    msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
   }
+  function addHuman(line) { humanLines.push({ ...line, seq: 1e9 + humanSeq++ }); renderChatter(true); }
+  const clockAt = (t) => { const p = periodOf(Math.min(t, totalT - 0.01)); return `${periodLabel(p).replace(" QTR", "")} ${fmt(periodStart(p) + (p <= 4 ? PERIOD : OT) - t)}`; };
+  function renderChatter(force = false) {
+    const key = `${S.chatter.length}/${humanLines.length}`;
+    if (!force && key === lastChatterKey) return;
+    lastChatterKey = key;
+    const lines = [...S.chatter, ...humanLines].sort((a, b) => a.t - b.t || a.seq - b.seq).slice(-80);
+    chatterEl.innerHTML = "";
+    for (const line of lines) {
+      const li = document.createElement("li");
+      li.className = line.kind;
+      const clk = document.createElement("span"); clk.className = "clk"; clk.textContent = clockAt(line.t);
+      const body = document.createElement("span"); body.className = "line";
+      if (line.speaker !== "note") {
+        const who = document.createElement("span"); who.className = "who";
+        if (line.speaker === "coach") who.textContent = "You (coach)";
+        else { who.textContent = last(playerById[line.speaker].name); const c = sides[playerTeam[line.speaker]].primary; who.style.color = c === "#1A1A1A" ? "var(--text)" : c; }
+        body.appendChild(who);
+        if (line.to) { const to = document.createElement("span"); to.className = "to"; to.textContent = ` → ${last(playerById[line.to].name)}`; body.appendChild(to); }
+        body.append(": ");
+      }
+      const said = document.createElement("span"); said.className = "said"; withMentions(said, line.text); body.appendChild(said);
+      li.append(clk, body);
+      chatterEl.appendChild(li);
+    }
+    chatterEl.scrollTop = chatterEl.scrollHeight;
+  }
+  // How a mentioned player answers: an acknowledgement that fits the instruction, never a promise about what happens next.
+  const REPLIES = [
+    [/shoot|shot|score|attack|aggress|drive|rim|bucket/i, ["Got it, coach. I'll stay aggressive.", "Say less. Attacking."]],
+    [/defen|guard|stop|switch|double|lock|press|zone/i, ["On it. Locking in on D.", "Got it. They won't get anything easy."]],
+    [/rebound|board|glass|box/i, ["I'll crash the glass.", "Boxing out, every time."]],
+    [/pass|move|share|assist|swing|kick/i, ["I'll keep it moving.", "Got it, find the open man."]],
+    [/rest|sit|sub|tired|bench|breather/i, ["Ready whenever you need me.", "Understood, coach."]],
+    [/calm|focus|compos|relax|breathe/i, ["Staying composed, coach.", "We're good. Next play."]],
+  ];
+  const TRASH_BACK = ["Your coach is talking about me? Good.", "Bring it, coach.", "Draw up whatever you want.", "Scared of me already?"];
+  function replyTo(id, text, salt) {
+    const r = seeded(salt + (id % 997));
+    if (playerTeam[id] === "away") return { text: TRASH_BACK[Math.floor(r() * TRASH_BACK.length)], kind: "trash" };
+    const onFloor = S.lineups.home.includes(id);
+    const match = REPLIES.find(([re]) => re.test(text));
+    const options = match ? match[1] : ["Heard you, coach.", "Got it, coach."];
+    const line = options[Math.floor(r() * options.length)];
+    return { text: onFloor ? line : `From the bench: ${line}`, kind: "reply" };
+  }
+
   let options = [], active = 0;
   function mentionQuery() {
     const before = say.value.slice(0, say.selectionStart);
@@ -808,19 +961,20 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   });
   menu.addEventListener("mousedown", (ev) => { const b = ev.target.closest("button"); if (b) { ev.preventDefault(); insertMention(Number(b.dataset.id)); } });
   document.addEventListener("click", (ev) => { if (!ev.target.closest(".mention") && !ev.target.closest(".figure")) menu.hidden = true; });
-  const replyFrom = () => { const on = S.lineups.home.length ? S.lineups.home : G.home.players.map((p) => p.id); return last(playerById[on[Math.floor(Math.random() * on.length)]].name); };
-  const clockLabel = () => `${periodLabel(periodOf(Math.min(T, totalT - 0.01))).replace(" QTR", "")} ${$("game-clock").textContent}`;
+  function sendCoachLine(text) {
+    const at = T;
+    addHuman({ t: at, speaker: "coach", text, kind: "coach" });
+    const ids = mentionedIds(text);
+    const salt = [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 100003, 7);
+    ids.forEach((id, i) => setTimeout(() => { const r = replyTo(id, text, salt); addHuman({ t: at, speaker: id, text: r.text, kind: r.kind, to: r.to }); }, 450 + i * 350));
+  }
   $("compose").addEventListener("submit", (ev) => {
     ev.preventDefault();
     const text = say.value.trim(); if (!text) return;
-    addMsg(`You · ${clockLabel()}`, text, true);
     say.value = ""; menu.hidden = true;
-    const tagged = Object.values(playerById).find((p) => text.includes("@" + p.name) && playerTeam[p.id] === "home");
-    setTimeout(() => addMsg(`${tagged ? last(tagged.name) : replyFrom()} (preview)`, "Heard you, coach. From day 3, instructions like this change how we play.", false), 450);
+    sendCoachLine(text);
   });
-  $("mic").addEventListener("click", () => addMsg("Voice", "Voice input needs the microphone, which this page can't use. It comes with the local app on day 4.", false));
-  addMsg("You (example)", `Pound it inside to @${G.home.players.slice().sort((a, b) => b.big - a.big)[0].name} and switch everything on defense.`, true);
-  addMsg("Preview", "Players read your instructions back here. From day 3 the engine acts on them.", false);
+  $("mic").addEventListener("click", () => addHuman({ t: T, speaker: "note", text: "Voice input needs the microphone, which this page can't use. It comes with the local app on day 4.", kind: "note" }));
 
   // ---------- timeouts and tactics ----------
   const OFFENSE = [
@@ -871,15 +1025,16 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     $("banner").textContent = `TIMEOUT · ${G.home.tricode}`; $("banner").hidden = false;
     $("locked").hidden = true; $("timeout").hidden = true; $("tactics-body").hidden = false;
     fillTactics(); renderTimeouts();
-    addMsg(`You · ${clockLabel()}`, "Timeout!", true);
+    addHuman({ t: T, speaker: "coach", text: "Timeout! Bring it in.", kind: "coach" });
   });
   $("resume").addEventListener("click", () => {
     plan = { offense: document.querySelector('input[name="off"]:checked').value, defense: document.querySelector('input[name="def"]:checked').value,
              focus: $("focus").value, target: $("target").value, lateFoul: $("late-foul").checked };
     const subs = [...$("subs").querySelectorAll("select")].filter((s) => s.value).map((s) => `@${playerById[Number(s.value)].name} in for @${playerById[Number(s.dataset.out)].name}`);
     renderPlan();
-    addMsg(`You · timeout plan`, `${$("plan").textContent.replace("Current plan: ", "")}${subs.length ? ". Subs: " + subs.join(", ") : ""}`, true);
-    addMsg(`${replyFrom()} (preview)`, "Got the plan, coach. From day 3 the engine plays it; this replay was already decided.", false);
+    sendCoachLine(`New plan: ${$("plan").textContent.replace("Current plan: ", "")}${subs.length ? ". Subs: " + subs.join(", ") : ""}`);
+    const captain = S.lineups.home.length ? S.lineups.home[0] : G.home.players[0].id;
+    addHuman({ t: T, speaker: captain, text: "Let's go! Same page, everybody.", kind: "reply" });
     inTimeout = false; $("banner").hidden = true;
     $("tactics-body").hidden = true; $("locked").hidden = false; $("timeout").hidden = false;
     $("timeout").disabled = timeouts.home <= 0;
@@ -889,5 +1044,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
   // open at tip-off, positioned and ready
   seek(0.1);
+  addHuman({ t: 0, speaker: "note", text: "Players talk here as the game plays. Mention one of yours with @ and they answer.", kind: "note" });
 })();
 </script>
