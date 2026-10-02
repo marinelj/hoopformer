@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Hoopformer Courtside</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -110,11 +111,32 @@ thead th { color: var(--muted); font-weight: 500; position: sticky; top: 0; back
 tbody tr.on td:first-child { color: var(--led); }
 .boxteam { font-family: var(--display); font-weight: 600; font-size: 15px; padding: 8px 6px 2px; color: var(--text); }
 
-/* coach chat */
-.compose { display: flex; gap: 6px; }
-.compose textarea { flex: 1; min-height: 40px; resize: vertical; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 13px; }
-.compose button { border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 0 12px; }
-.compose button.mic { color: var(--muted); }
+/* talk rows: one per player on the floor, plus the whole team */
+.talk-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.talk-head h3 { font-family: var(--display); font-weight: 600; font-size: 16px; margin: 0; }
+.talk { display: grid; gap: 6px; }
+.talk-row { display: grid; grid-template-columns: minmax(84px, 118px) minmax(0, 1fr) 34px 38px; gap: 6px; align-items: center; margin: 0; }
+.talk-who { display: grid; grid-template-columns: 9px minmax(0, 1fr); gap: 0 6px; align-items: center; min-width: 0; }
+.talk-who .sw { width: 9px; height: 9px; border-radius: 3px; }
+.talk-who .nm { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talk-who .meta { grid-column: 2; font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.talk-row.team .nm { color: var(--led); }
+.talk-input { min-width: 0; height: 34px; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 9px; font: inherit; font-size: 13px; }
+.talk-input.suggested { color: #aab2bf; font-style: italic; }
+.talk-input.fresh { animation: fresh 1.4s ease; }
+@keyframes fresh { from { border-color: var(--led); } to { border-color: var(--line); } }
+.talk-row button { height: 34px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 0; display: grid; place-items: center; font-size: 14px; }
+.talk-row .send { color: var(--led); }
+.talk-row .mic { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.talk-row .mic.rec { background: #3a1513; border-color: var(--shot); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(255, 90, 71, 0.28); } }
+@media (max-width: 420px) {
+  .talk-row { grid-template-columns: minmax(0, 1fr) 34px 38px; }
+  .talk-who { grid-column: 1 / -1; grid-template-columns: 9px auto auto; gap: 6px; }
+  .talk-who .meta { grid-column: auto; }
+}
+.sound { background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font-size: 12px; color: var(--muted); }
+.sound[aria-pressed="true"] { color: var(--led); border-color: rgba(255, 178, 62, 0.5); }
 
 .figure { transition: opacity 0.35s ease; pointer-events: auto; cursor: pointer; }
 .figure.holder .tag { background: var(--led); color: #111; }
@@ -125,16 +147,6 @@ tbody tr.on td:first-child { color: var(--led); }
 .timeouts i.used { background: var(--line); opacity: 1; }
 .team-score.home .timeouts { justify-content: flex-end; }
 .banner { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); background: rgba(7, 9, 13, 0.86); border: 1px solid var(--led); color: var(--led); font-family: var(--display); font-weight: 800; font-size: clamp(18px, 3vw, 30px); letter-spacing: 0.08em; padding: 4px 18px; border-radius: 6px; z-index: 5; }
-.mention { position: relative; }
-.mentions { position: absolute; bottom: calc(100% + 6px); left: 0; width: min(320px, 100%); background: #0f131b; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); z-index: 10; padding: 4px; max-height: 260px; overflow-y: auto; }
-.mentions .grp { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--muted); padding: 6px 8px 2px; text-transform: uppercase; }
-.mentions button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
-.mentions button[aria-selected="true"], .mentions button:hover { background: var(--panel-2); }
-.mentions .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-.mentions .meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.compose { align-items: stretch; }
-.compose .mention { flex: 1; display: flex; }
-.compose .mention textarea { flex: 1; }
 .tactics { display: grid; gap: 10px; padding: 12px; }
 .tactics-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .tactics h2 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
@@ -168,8 +180,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 .chatter li.reply { background: var(--panel-2); }
 .chatter li.trash .said { font-style: italic; }
 .chatter li.note .said { color: var(--muted); }
+.chatter li.call .said { color: #c3cad6; }
 .chatter .at { color: var(--led); font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .figure, .flash { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .figure, .flash { transition: none; } .talk-input.fresh, .talk-row .mic.rec { animation: none; } }
 </style>
 
 <div class="wrap">
@@ -241,6 +254,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         <div class="controls-row">
           <button class="play" id="play" type="button">▶ Play</button>
           <div class="speeds" role="group" aria-label="Playback speed" id="speeds"></div>
+          <button class="sound" id="sound" type="button" aria-pressed="true">🔊 Sound</button>
           <div class="elapsed" id="elapsed"></div>
         </div>
         <div class="timeline">
@@ -268,15 +282,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       <div class="panel chatter-panel">
         <div class="chatter-head"><h2>Courtside chatter</h2><span class="note">Read-only · what players and coaches say</span></div>
         <ol class="chatter" id="chatter" aria-live="polite"></ol>
+        <div class="talk-head"><h3>Talk to your players</h3><span class="note">Suggestions follow the game · hold 🎙 to speak</span></div>
+        <div class="talk" id="talk"></div>
         <div class="note" id="chat-note"></div>
-        <form class="compose" id="compose">
-          <div class="mention">
-            <div class="mentions" id="mentions" role="listbox" hidden></div>
-            <textarea id="say" placeholder="Talk to your players. Type @ or click a player on the court."></textarea>
-          </div>
-          <button type="submit">Send</button>
-          <button type="button" class="mic" id="mic" title="Voice input comes with the local app">🎙</button>
-        </form>
       </div>
 
       <div class="panel tactics" id="tactics">
@@ -323,7 +331,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   $("paint").innerHTML = `<rect x="2" y="170" width="190" height="160" fill="${G.away.primary}" opacity="0.55"/>
     <rect x="748" y="170" width="190" height="160" fill="${G.home.primary}" opacity="0.55"/>`;
-  $("chat-note").textContent = `You coach ${G.home.name}. Mention a player with @ and they answer. Player talk is fictional, but it only reacts to what the engine already decided. Instructions start changing the game on day 3.`;
+  $("chat-note").textContent = `You coach ${G.home.name}. Each row talks to one player on the floor, the last one to everybody; the suggestion changes with the game every 15 to 30 seconds. Click a player on the court to talk to them. Player talk is fictional and only reacts to what the engine already decided. In this replay your words don't change the game yet; in the live game (day 4) they do.`;
 
   // cartoon figures (generic: team colours, initials, no faces of real players)
   const court = $("court");
@@ -341,10 +349,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const team = sides[playerTeam[id]];
       const el = document.createElement("div");
       el.className = "figure";
-      el.title = `${playerById[id].name}: click to mention`;
+      el.title = playerTeam[id] === "home" ? `Talk to ${playerById[id].name}` : `Mention ${playerById[id].name} to your team`;
       el.innerHTML = cartoon(team).replace("__INI__", initials(playerById[id].name)) + `<span class="tag">${last(playerById[id].name)}</span>`;
       el.style.opacity = "0";
-      el.addEventListener("click", () => insertMention(id));
+      el.addEventListener("click", () => talkTo(id));
       court.appendChild(el);
       figures[id] = el;
     }
@@ -588,32 +596,179 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     return pos;
   }
 
+  // ---------- sound: synthesized in the browser (no audio files), starts after the first click ----------
+  const Sound = (() => {
+    let ctx = null, out = null, noise = null, bed = null, lastAt = 0, on = true;
+    try { on = localStorage.getItem("courtside-sound") !== "off"; } catch { /* storage blocked: default on */ }
+    function unlock() {
+      if (!on) return;
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC();
+        out = ctx.createGain(); out.gain.value = 0.8;
+        const limiter = ctx.createDynamicsCompressor();
+        out.connect(limiter); limiter.connect(ctx.destination);
+        noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+        const d = noise.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      if (ctx.state === "suspended") ctx.resume();
+    }
+    const ready = () => on && ctx && ctx.state === "running";
+    function envelope(g, t, a, peak, hold, rel) {
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + a);
+      g.gain.setValueAtTime(peak, t + a + hold);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + a + hold + rel);
+      return t + a + hold + rel;
+    }
+    function hiss({ at = 0, type = "bandpass", f = 1000, f2 = null, q = 1, a = 0.005, peak = 0.3, hold = 0, rel = 0.2 }) {
+      const t = ctx.currentTime + at, src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = noise; src.loop = true;
+      filter.type = type; filter.Q.value = q; filter.frequency.setValueAtTime(f, t);
+      if (f2) filter.frequency.exponentialRampToValueAtTime(f2, t + a + hold + rel);
+      src.connect(filter); filter.connect(g); g.connect(out);
+      const end = envelope(g, t, a, peak, hold, rel);
+      src.start(t, Math.random()); src.stop(end + 0.05);
+    }
+    function tone({ at = 0, type = "sine", f = 440, f2 = null, a = 0.003, peak = 0.2, hold = 0, rel = 0.2, vib = 0, depth = 0 }) {
+      const t = ctx.currentTime + at, osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = type; osc.frequency.setValueAtTime(f, t);
+      if (f2) osc.frequency.exponentialRampToValueAtTime(f2, t + a + hold + rel);
+      if (vib) { const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = vib; lg.gain.value = depth; lfo.connect(lg); lg.connect(osc.frequency); lfo.start(t); lfo.stop(t + a + hold + rel + 0.05); }
+      osc.connect(g); g.connect(out);
+      const end = envelope(g, t, a, peak, hold, rel);
+      osc.start(t); osc.stop(end + 0.05);
+    }
+    const fx = {
+      swish: (at = 0) => { hiss({ at, f: 7000, f2: 2200, q: 0.8, a: 0.01, peak: 0.22, rel: 0.28 }); hiss({ at: at + 0.02, type: "highpass", f: 5000, q: 0.5, a: 0.002, peak: 0.07, rel: 0.08 }); },
+      clank: (at = 0) => { for (const [f, peak, rel] of [[480, 0.15, 0.45], [1210, 0.08, 0.3], [2280, 0.045, 0.18]]) tone({ at, type: "triangle", f, peak, rel }); hiss({ at, f: 900, q: 2, peak: 0.07, rel: 0.06 }); },
+      bounce: (at = 0, v = 1) => { tone({ at, f: 140, f2: 70, a: 0.002, peak: 0.26 * v, rel: 0.09 }); hiss({ at, type: "lowpass", f: 600, peak: 0.05 * v, rel: 0.03 }); },
+      thud: (at = 0) => { tone({ at, f: 95, f2: 55, peak: 0.32, rel: 0.16 }); hiss({ at, type: "lowpass", f: 400, peak: 0.1, rel: 0.08 }); },
+      whistle: (at = 0, long = false) => { for (const f of [2850, 3010]) tone({ at, f, a: 0.01, peak: f === 2850 ? 0.06 : 0.045, hold: long ? 0.38 : 0.16, rel: 0.05, vib: 34, depth: 110 }); },
+      buzzer: (at = 0) => { tone({ at, type: "sawtooth", f: 196, a: 0.01, peak: 0.085, hold: 0.95, rel: 0.08 }); tone({ at, type: "square", f: 199, a: 0.01, peak: 0.045, hold: 0.95, rel: 0.08 }); },
+      squeak: (at = 0) => tone({ at, f: 2300 + Math.random() * 600, f2: 3400, a: 0.004, peak: 0.03, rel: 0.06 }),
+      crowd: (level = 0.5, at = 0) => { hiss({ at, f: 520, q: 0.6, a: 0.12, peak: 0.05 + 0.2 * level, hold: 0.25 + 0.6 * level, rel: 1.1 }); hiss({ at, f: 1500, q: 0.8, a: 0.15, peak: 0.02 + 0.07 * level, hold: 0.2 + 0.4 * level, rel: 0.9 }); },
+      ooh: (at = 0) => hiss({ at, f: 420, f2: 300, q: 4, a: 0.12, peak: 0.14, hold: 0.25, rel: 0.6 }),
+    };
+    function startBed() {   // the arena's low murmur while the game plays
+      if (!ready() || bed) return;
+      const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = noise; src.loop = true; filter.type = "bandpass"; filter.frequency.value = 450; filter.Q.value = 0.5;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.03, ctx.currentTime + 0.8);
+      src.connect(filter); filter.connect(g); g.connect(out); src.start();
+      bed = { src, g };
+    }
+    function stopBed() {
+      if (!bed) return;
+      const { src, g } = bed, t = ctx.currentTime;
+      g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+      src.stop(t + 0.5); bed = null;
+    }
+    function event(e, speed) {   // the sound of one engine event; fast playback keeps only the big moments
+      if (!ready()) return;
+      const big = e.kind === "period_end" || e.kind === "timeout";
+      if (speed >= 64 && !big) return;
+      const now = ctx.currentTime;
+      if (!big && now - lastAt < (speed >= 16 ? 0.15 : 0.04)) return;
+      lastAt = now;
+      const homeTeam = e.team === G.home.tricode;   // it's the home crowd
+      switch (e.kind) {
+        case "shot":
+          if (!e.value) { fx.clank(); break; }
+          if (e.zone === "rim") { fx.thud(); fx.swish(0.03); } else fx.swish();
+          fx.crowd(homeTeam ? (e.value === 3 ? 0.9 : 0.55) : 0.1, 0.05);
+          break;
+        case "block": fx.thud(); fx.ooh(0.05); break;
+        case "foul": fx.whistle(0, e.zone !== "personal"); break;
+        case "turnover": if (e.other) { fx.squeak(); if (!homeTeam) fx.crowd(0.5, 0.1); } else fx.whistle(); break;
+        case "free_throws": {
+          const shots = speed >= 16 ? 1 : e.attempts;
+          for (let i = 0; i < shots; i++) (i < e.value ? fx.swish : fx.clank)(i * 0.5);
+          if (homeTeam && e.value) fx.crowd(0.3, 0.1);
+          break;
+        }
+        case "rebound": if (e.zone === "offensive" && e.actor) fx.squeak(); break;
+        case "chance": if (speed <= 4 && Math.random() < 0.35) fx.squeak(Math.random() * 0.4); break;
+        case "period_start": case "timeout": fx.whistle(0, true); break;
+        case "period_end": fx.buzzer(); if (e.period === G.periods) fx.crowd(1, 0.4); break;
+      }
+    }
+    return {
+      unlock, event, startBed, stopBed,
+      bounce: () => { if (ready()) fx.bounce(0, 0.8); },
+      whistle: () => { if (ready()) fx.whistle(0, true); },
+      get on() { return on; },
+      toggle() {
+        on = !on;
+        try { localStorage.setItem("courtside-sound", on ? "on" : "off"); } catch { /* not saved; still toggles */ }
+        if (on) unlock(); else stopBed();
+        return on;
+      },
+    };
+  })();
+
   // ---------- courtside chatter: fictional talk that only reacts to what the engine already decided ----------
-  // Every line is triggered by an event that has already happened, spoken by someone who took part in it,
-  // and never predicts what comes next, so it can't contradict the engine. Lines are seeded per event,
-  // so scrubbing the timeline replays the same chatter.
+  // Every line is triggered by an event that has already happened, spoken by someone who was part of it
+  // (or a teammate), and never predicts what comes next, so it can't contradict the engine. Calls on a
+  // possession ("Ball! Ball!") are generic and land before that possession ends. Lines are seeded per
+  // event, so scrubbing the timeline replays the same chatter.
   const LINES = {
-    threeSelf: ["Cash!", "Splash!", "Count it!", "Too easy.", "From downtown!"],
-    threeTrash: ["You left me open? Bad idea.", "Put a hand up next time.", "That's three more on you.", "Keep giving me that look."],
-    threeMate: ["{s} is heating up!", "Keep shooting, {s}!", "Wet! Again, {s}!"],
-    rimSelf: ["Too strong!", "Nobody home in the paint!", "Easy two.", "Can't stop that."],
-    rimMate: ["Great finish, {s}!", "That's how you attack, {s}!"],
-    missTrash: ["Not tonight.", "Keep shooting those.", "Nothing easy here.", "That all you got?"],
-    blockSelf: ["Not in my house!", "Get that weak stuff out of here!", "Denied!"],
-    blockVictim: ["That's a foul!", "Ref, that's my arm!"],
-    stealSelf: ["Too slow!", "Thanks for the gift.", "I'll take that."],
-    turnoverMate: ["Take care of the ball!", "Value it, value it!", "Slow down, {s}, we're fine."],
-    foulComplain: ["I got all ball!", "That's a flop!", "Clean, ref! Clean!"],
-    andOne: ["And one! Count it!", "Can't stop me!", "Through the contact!"],
+    callD: ["Ball! Ball!", "Screen left!", "Screen right!", "Switch!", "I got ball!", "Help's here!", "Talk, talk!", "Hands up!", "Wall up!", "No middle!", "I'm here, I'm here!", "Get back!", "Find a body!", "Stay down on the fake!", "Pick-up point, pick-up point!", "Shrink the floor!"],
+    callO: ["Spread it out!", "Run it!", "Here! Here!", "Swing it!", "Space, space!", "Set it up!", "Flow!", "Get to your spot!", "Move it!", "Go to work!", "Early! Early!", "Re-screen!", "Let's get a good one!"],
+    threeSelf: ["Cash!", "Splash!", "Count it!", "Too easy.", "From downtown!", "Bang!", "Nothing but net.", "Wet.", "Give me that every time."],
+    threeMate: ["{s} is heating up!", "Keep shooting, {s}!", "Wet! Again, {s}!", "Let it fly, {s}!", "That's what I'm talking about, {s}!", "Can't leave {s} open!"],
+    midSelf: ["Pull-up money.", "Cash from the elbow.", "Smooth.", "Bucket.", "Get that.", "My spot."],
+    midMate: ["Good look, {s}!", "Wet from the elbow, {s}!", "That's your spot, {s}!", "Smooth, {s}!"],
+    rimSelf: ["Too strong!", "Nobody home in the paint!", "Easy two.", "Can't stop that.", "Strong to the hole!", "Paint's mine."],
+    rimMate: ["Great finish, {s}!", "That's how you attack, {s}!", "Way to go up strong, {s}!", "Finish, {s}!"],
+    makeTrash: ["You can't guard me.", "Too small.", "Too slow.", "Again? Okay.", "Get a hand up next time.", "That's on you."],
+    defenseMad: ["Stay attached, {s}!", "Contest, {s}!", "Body up, {s}!", "Make it tough, {s}!"],
+    assistThanks: ["Great dime, {p}!", "Love that pass, {p}!", "Keep finding me, {p}!", "What a feed, {p}!"],
+    assistSelf: ["That's you!", "Told you I'd find you.", "Easy money.", "Look at that cut!"],
+    missTrash: ["Not tonight.", "Keep shooting those.", "Nothing easy here.", "That all you got?", "Brick.", "Not on me.", "Contested all day."],
+    missMate: ["Next one goes, {s}.", "Good look, keep shooting.", "Shake it off, {s}.", "Shoot it again, {s}!", "Right shot, {s}."],
+    blockSelf: ["Not in my house!", "Get that weak stuff out of here!", "Denied!", "Rejected!", "Not today!"],
+    blockVictim: ["That's a foul!", "Ref, that's my arm!", "Come on, ref!"],
+    blockMate: ["Get that out of here, {s}!", "Protect the rim, {s}!", "Great timing, {s}!"],
+    oreb: ["Second chance! Let's go!", "Crash the glass!", "Extra possession!", "Again!", "Reset! Reset!", "Thank you very much."],
+    orebMate: ["Great hustle, {s}!", "Way to fight, {s}!", "That's effort, {s}!"],
+    dreb: ["Got it! Go!", "Push it!", "Run! Run!", "Mine!", "Outlet!", "Rebound! Let's go!"],
+    stealSelf: ["Too slow!", "Thanks for the gift.", "I'll take that.", "Read it all the way.", "Pick-six!"],
+    stealMate: ["Great hands, {s}!", "Run, {s}, run!", "Pickpocket {s}!"],
+    turnoverMate: ["Take care of the ball!", "Value it, value it!", "Slow down, {s}, we're fine.", "Strong with it, {s}!"],
+    turnoverSelf: ["My bad, my bad.", "That's on me.", "I got the next one.", "Lazy pass. My fault."],
+    shotClock: ["Shot clock! Talk to each other!", "We gotta get a shot up!", "Watch the clock!"],
+    foulComplain: ["I got all ball!", "That's a flop!", "Clean, ref! Clean!", "Come on, ref!", "That's straight up!", "I was vertical!"],
+    foulDrawn: ["That's a hack!", "That's a foul every time.", "Arm, ref, arm!", "Thank you, ref."],
+    personalComplain: ["What? I barely touched anybody!", "Ref, that's nothing!", "Come on, that's a flop!", "That's a reach? Really?"],
+    personalMate: ["Hands off, {s}.", "Move your feet, {s}.", "Smart fouls, {s}.", "Shake it off, {s}."],
+    andOne: ["And one! Count it!", "Can't stop me!", "Through the contact!", "Too strong!"],
+    andOneMate: ["And one, {s}! Let's go!", "Big-time finish, {s}!"],
+    ftMake: ["Knock 'em down, {s}!", "Free money, {s}.", "Ice in the veins, {s}."],
+    ftMiss: ["Shake it off, {s}.", "Next one, {s}.", "Still got points, {s}."],
     ftBrick: ["Brick city.", "Rim's got a lid on it tonight?", "Free throws are free, you know."],
-    oreb: ["Second chance! Let's go!", "Crash the glass!", "Extra possession!"],
-    subIn: ["Let's bring some energy.", "I'm in, let's go.", "Locked in."],
-    runFor: ["Keep it rolling!", "Stops into scores!", "This is our run!"],
-    runAgainst: ["Lock in, lock in!", "We need one stop!", "Settle down, we're fine."],
-    milestone: ["{s} has {n}! Keep feeding the hot hand!", "{n} for {s}. Somebody guard {s}!"],
-    leadAfter: ["Good quarter. Same energy.", "Keep the foot on the gas."],
-    trailAfter: ["We're fine. One stop at a time.", "Shake it off, next quarter is ours."],
-    clutch: ["Get a stop! Get a stop!", "Talk on D, talk!", "Box out, nobody leaks!"],
+    ftTrash: ["Left some out there.", "Not so free, huh?"],
+    subIn: ["Let's bring some energy.", "I'm in, let's go.", "Locked in.", "Fresh legs!", "Let's work."],
+    subOut: ["Your turn, {s}. Bring it.", "Go get 'em, {s}.", "All yours, {s}.", "Bring the energy, {s}."],
+    runFor: ["Keep it rolling!", "Stops into scores!", "This is our run!", "Don't let up!", "They're rattled!"],
+    runAgainst: ["Lock in, lock in!", "We need one stop!", "Settle down, we're fine.", "Weather it. Weather it.", "Talk to each other!"],
+    milestone: ["{s} has {n}! Keep feeding the hot hand!", "{n} for {s}! Can't guard that!"],
+    milestoneOpp: ["{s} has {n}. Body up, every touch!", "No more easy ones for {s}!", "Somebody slow down {s}!"],
+    leadTake: ["We're back on top!", "That's the lead!", "Our game now!", "Got it back!"],
+    leadLost: ["Answer right back!", "It's one possession, let's go.", "Keep your heads up."],
+    tieUp: ["All square!", "Tie game, let's go!", "Back level!"],
+    periodStart: ["Let's go, defense first!", "Start strong!", "Big quarter, let's go!", "Same energy!", "Set the tone!"],
+    leadAfter: ["Good quarter. Same energy.", "Keep the foot on the gas.", "Nice work. Stay hungry.", "We're not done."],
+    trailAfter: ["We're fine. One stop at a time.", "Shake it off, next quarter is ours.", "Chip away. Plenty of time.", "Heads up, let's go."],
+    tieAfter: ["Dead even. Next quarter decides it.", "All square. Lock in."],
+    wonGame: ["Ballgame!", "Great win, everybody!", "That's how we do it!", "Big win. Enjoy it."],
+    lostGame: ["Tough one. We'll learn from it.", "Heads up. Next game.", "We'll be back."],
+    clutch: ["Get a stop! Get a stop!", "Talk on D, talk!", "Box out, nobody leaks!", "Every possession, let's go!", "Nobody gets free!", "No fouls, no fouls!"],
+    clutchO: ["Calm. Run our stuff.", "Take your time.", "Good shot, good shot.", "Be strong with it."],
+    timeoutCalled: ["Good call, we needed that.", "Bring it in, bring it in!", "Breathe. Reset."],
+    timeoutOpp: ["They're rattled!", "Keep the pressure on!", "That's right, call timeout!"],
   };
   const pickLine = (r, key, vars = {}) => { const list = LINES[key]; let s = list[Math.floor(r() * list.length)]; for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(v); return s; };
   const otherKey = (key) => (key === "home" ? "away" : "home");
@@ -623,57 +778,134 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const i = plan.off.indexOf(e.actor);
     return i >= 0 ? plan.def[i] : null;
   }
+  // When the next event that settles something (shot, turnover, foul, rebound...) happens, for each event:
+  // a call during a possession must land before the possession ends, a reaction before the next play.
+  const nextSettleT = new Array(G.events.length);
+  for (let i = G.events.length - 1, t = Infinity; i >= 0; i--) { nextSettleT[i] = t; if (!["chance", "sub", "period_start"].includes(G.events[i].kind)) t = G.events[i].t; }
   function chatterFor(e, index) {
     const r = seeded(index * 7 + 3);
     const lines = [];
-    const say = (speaker, text, kind = "talk", to = null) => lines.push({ t: e.t, seq: index * 4 + lines.length, speaker, to, text, kind });
-    const team = e.team === G.home.tricode ? "home" : "away";
+    const room = Math.max(0.3, Math.min(nextSettleT[index], totalT) - e.t);
+    const say = (speaker, text, kind = "talk", to = null) => {
+      if (speaker == null) return;
+      const delay = Math.min(2.4, 0.85 * room) * (0.15 + 0.85 * r());
+      lines.push({ t: Math.min(totalT, e.t + delay), seq: index * 12 + lines.length, speaker, to, text, kind });
+    };
+    const team = e.team === G.home.tricode ? "home" : "away", opp = otherKey(team);
     const anyMate = (key, not) => { const m = S.lineups[key].filter((p) => p !== not); return m.length ? m[Math.floor(r() * m.length)] : null; };
     const name = (id) => last(playerById[id].name);
-    if (e.kind === "shot" && e.value === 3) {
-      const roll = r(), d = matchupOf(e);
-      if (roll < 0.25) say(e.actor, pickLine(r, "threeSelf"));
-      else if (roll < 0.45 && d) say(e.actor, pickLine(r, "threeTrash"), "trash", d);
-      else if (roll < 0.6) { const m = anyMate(team, e.actor); if (m) say(m, pickLine(r, "threeMate", { s: name(e.actor) })); }
+    const chance = (p) => r() < p;
+    const clutchTime = e.period >= 4 && e.clock <= 120 && Math.abs(S.home - S.away) <= 6;
+    switch (e.kind) {
+      case "chance":
+        if (chance(0.42)) say(anyMate(opp), pickLine(r, "callD"), "call");
+        if (chance(0.3)) say(anyMate(team), pickLine(r, "callO"), "call");
+        if (clutchTime) { if (chance(0.7)) say(anyMate(opp), pickLine(r, "clutch")); if (chance(0.4)) say(anyMate(team), pickLine(r, "clutchO")); }
+        break;
+      case "shot": {
+        const d = matchupOf(e);
+        if (e.value) {
+          const zone = e.zone === "three" ? "three" : e.zone === "rim" ? "rim" : "mid";
+          if (chance(0.55)) say(e.actor, pickLine(r, zone + "Self"));
+          else if (d && chance(0.5)) say(e.actor, pickLine(r, "makeTrash"), "trash", d);
+          if (chance(0.45)) { const m = anyMate(team, e.actor); if (m && m !== e.other) say(m, pickLine(r, zone + "Mate", { s: name(e.actor) })); }
+          if (e.other && chance(0.35)) {
+            if (chance(0.5)) say(e.actor, pickLine(r, "assistThanks", { p: name(e.other) }), "talk", e.other);
+            else say(e.other, pickLine(r, "assistSelf"), "talk", e.actor);
+          }
+          if (d && chance(0.2)) { const m = anyMate(opp, d); if (m) say(m, pickLine(r, "defenseMad", { s: name(d) }), "talk", d); }
+        } else {
+          if (d && chance(0.4)) say(d, pickLine(r, "missTrash"), "trash", e.actor);
+          if (chance(0.3)) say(anyMate(team, e.actor), pickLine(r, "missMate", { s: name(e.actor) }));
+        }
+        break;
+      }
+      case "block":   // logged for the blocking team: actor blocked other
+        if (chance(0.9)) say(e.actor, pickLine(r, "blockSelf"), "trash", e.other);
+        if (chance(0.5)) say(e.other, pickLine(r, "blockVictim"));
+        if (chance(0.5)) say(anyMate(team, e.actor), pickLine(r, "blockMate", { s: name(e.actor) }));
+        break;
+      case "rebound":
+        if (!e.actor) break;
+        if (e.zone === "offensive") {
+          if (chance(0.55)) say(e.actor, pickLine(r, "oreb"));
+          if (chance(0.3)) say(anyMate(team, e.actor), pickLine(r, "orebMate", { s: name(e.actor) }));
+        } else if (chance(0.4)) say(e.actor, pickLine(r, "dreb"));
+        break;
+      case "turnover":   // logged for the team that lost it: actor lost it, other stole it
+        if (e.other) {
+          if (chance(0.85)) say(e.other, pickLine(r, "stealSelf"), "trash", e.actor);
+          if (chance(0.45)) say(anyMate(opp, e.other), pickLine(r, "stealMate", { s: name(e.other) }));
+          if (chance(0.3)) say(e.actor, pickLine(r, "turnoverSelf"));
+        } else if (e.actor) {
+          if (chance(0.5)) say(anyMate(team, e.actor), pickLine(r, "turnoverMate", { s: name(e.actor) }));
+          if (chance(0.4)) say(e.actor, pickLine(r, "turnoverSelf"));
+        } else if (chance(0.5)) say(anyMate(team), pickLine(r, "shotClock"));
+        break;
+      case "foul":   // logged for the fouling team: actor fouled other
+        if (e.zone === "shooting") {
+          if (chance(0.6)) say(e.actor, pickLine(r, "foulComplain"));
+          if (chance(0.35)) say(e.other, pickLine(r, "foulDrawn"));
+        } else if (e.zone === "and-one") {
+          if (chance(0.95)) say(e.other, pickLine(r, "andOne"), "trash", e.actor);
+          if (chance(0.5)) say(anyMate(opp, e.other), pickLine(r, "andOneMate", { s: name(e.other) }));
+        } else {
+          if (chance(0.55)) say(e.actor, pickLine(r, "personalComplain"));
+          if (chance(0.3)) say(anyMate(team, e.actor), pickLine(r, "personalMate", { s: name(e.actor) }));
+        }
+        break;
+      case "free_throws":
+        if (e.value === e.attempts) { if (chance(0.45)) say(anyMate(team, e.actor), pickLine(r, "ftMake", { s: name(e.actor) })); }
+        else if (e.value === 0 && e.attempts >= 2) { if (chance(0.8)) say(anyMate(opp), pickLine(r, "ftBrick"), "trash", e.actor); }
+        else {
+          if (chance(0.5)) say(anyMate(team, e.actor), pickLine(r, "ftMiss", { s: name(e.actor) }));
+          if (chance(0.3)) say(anyMate(opp), pickLine(r, "ftTrash"), "trash", e.actor);
+        }
+        break;
+      case "sub":   // actor comes in, other goes to the bench
+        if (chance(0.5)) say(e.actor, pickLine(r, "subIn"));
+        if (chance(0.35)) say(e.other, pickLine(r, "subOut", { s: name(e.actor) }), "talk", e.actor);
+        break;
+      case "timeout":
+        if (chance(0.8)) say(anyMate(team), pickLine(r, "timeoutCalled"));
+        if (chance(0.6)) say(anyMate(opp), pickLine(r, "timeoutOpp"));
+        break;
+      case "period_start":
+        for (const key of ["home", "away"]) if (chance(0.8)) say(anyMate(key), pickLine(r, "periodStart"));
+        break;
+      case "period_end": {
+        const lead = S.home === S.away ? null : S.home > S.away ? "home" : "away";
+        const final = e.period === G.periods;
+        if (!lead) { for (const key of ["home", "away"]) if (chance(0.8)) say(anyMate(key), pickLine(r, "tieAfter")); break; }
+        for (let k = 0; k < 2; k++) {
+          say(anyMate(lead), pickLine(r, final ? "wonGame" : "leadAfter"));
+          if (chance(0.75)) say(anyMate(otherKey(lead)), pickLine(r, final ? "lostGame" : "trailAfter"));
+        }
+        break;
+      }
     }
-    if (e.kind === "shot" && e.value === 2 && e.zone === "rim" && r() < 0.3) {
-      if (r() < 0.5) say(e.actor, pickLine(r, "rimSelf"));
-      else { const m = anyMate(team, e.actor); if (m) say(m, pickLine(r, "rimMate", { s: name(e.actor) })); }
-    }
-    if (e.kind === "shot" && e.value === 0 && r() < 0.16) { const d = matchupOf(e); if (d) say(d, pickLine(r, "missTrash"), "trash", e.actor); }
-    if (e.kind === "block" && r() < 0.8) { say(e.actor, pickLine(r, "blockSelf"), "trash", e.other); if (r() < 0.4) say(e.other, pickLine(r, "blockVictim")); }
-    if (e.kind === "turnover" && e.other && r() < 0.65) say(e.other, pickLine(r, "stealSelf"), "trash", e.actor);
-    if (e.kind === "turnover" && e.actor && !e.other && r() < 0.35) { const m = anyMate(team, e.actor); if (m) say(m, pickLine(r, "turnoverMate", { s: name(e.actor) })); }
-    if (e.kind === "foul" && e.zone === "shooting" && r() < 0.35) say(e.actor, pickLine(r, "foulComplain"));
-    if (e.kind === "foul" && e.zone === "and-one" && r() < 0.9) say(e.other, pickLine(r, "andOne"), "trash", e.actor);
-    if (e.kind === "free_throws" && e.value === 0 && e.attempts >= 2 && r() < 0.45) { const d = anyMate(otherKey(team)); if (d) say(d, pickLine(r, "ftBrick"), "trash", e.actor); }
-    if (e.kind === "rebound" && e.zone === "offensive" && e.actor && r() < 0.25) say(e.actor, pickLine(r, "oreb"));
-    if (e.kind === "sub" && r() < 0.22) say(e.actor, pickLine(r, "subIn"));
-    // runs, milestones, quarter ends and clutch time come from the running score
+    // runs, milestones and lead changes come from the running score
     const scored = e.kind === "shot" || e.kind === "free_throws" ? e.value : 0;
     if (scored) {
       if (S.run.team === team) S.run.points += scored; else S.run = { team, points: scored, told: false };
       if (S.run.points >= 8 && !S.run.told) {
         S.run.told = true;
-        const a = anyMate(team), b = anyMate(otherKey(team));
-        if (a) say(a, pickLine(r, "runFor"));
-        if (b) say(b, pickLine(r, "runAgainst"));
+        for (let k = 0; k < 2; k++) { if (chance(0.9)) say(anyMate(team), pickLine(r, "runFor")); if (chance(0.9)) say(anyMate(opp), pickLine(r, "runAgainst")); }
       }
       const pts = (S.box[e.actor] || {}).PTS || 0;
       for (const n of [20, 30, 40, 50]) {
         if (pts >= n && !(S.milestones[e.actor] >= n)) {
           S.milestones[e.actor] = n;
-          const m = anyMate(team, e.actor);
-          if (m) say(m, pickLine(r, "milestone", { s: name(e.actor), n }));
+          say(anyMate(team, e.actor), pickLine(r, "milestone", { s: name(e.actor), n }));
+          if (chance(0.8)) say(anyMate(opp), pickLine(r, "milestoneOpp", { s: name(e.actor), n }));
         }
       }
-    }
-    if (e.kind === "period_end") {
-      const lead = S.home === S.away ? null : S.home > S.away ? "home" : "away";
-      if (lead) { const a = anyMate(lead), b = anyMate(otherKey(lead)); if (a) say(a, pickLine(r, "leadAfter")); if (b) say(b, pickLine(r, "trailAfter")); }
-    }
-    if (e.kind === "chance" && e.period >= 4 && e.clock <= 120 && Math.abs(S.home - S.away) <= 5 && r() < 0.18) {
-      const d = anyMate(otherKey(team)); if (d) say(d, pickLine(r, "clutch"));
+      const leader = S.home === S.away ? "tie" : S.home > S.away ? "home" : "away";
+      if (leader !== S.leader) {
+        if (leader === "tie") { if (chance(0.6)) say(anyMate(team), pickLine(r, "tieUp")); }
+        else if (S.leader && S.leader !== "tie") { if (chance(0.8)) say(anyMate(team), pickLine(r, "leadTake")); if (chance(0.5)) say(anyMate(opp), pickLine(r, "leadLost")); }
+        S.leader = leader;
+      }
     }
     return lines;
   }
@@ -681,8 +913,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // ---------- event state (score, feed, box score) ----------
   let S;
   const TIMEOUTS = 7;
-  let timeouts = { home: TIMEOUTS, away: TIMEOUTS };
-  function freshState() { return { applied: 0, home: 0, away: 0, offense: null, chanceT: 0, chanceLen: 24, lineups: { home: [], away: [] }, feed: [], box: {}, dead: null, chatter: [], run: { team: null, points: 0, told: false }, milestones: {} }; }
+  const humanTimeouts = { home: 0, away: 0 };   // called on this page; the engine's own timeouts come as events
+  const timeoutsLeft = (key) => Math.max(0, TIMEOUTS - humanTimeouts[key] - (S ? S.timeouts[key] : 0));
+  function freshState() {
+    return { applied: 0, home: 0, away: 0, offense: null, chanceT: 0, chanceLen: 24, lineups: { home: [], away: [] }, feed: [], box: {}, dead: null,
+             chatter: [], run: { team: null, points: 0, told: false }, milestones: {}, leader: null,
+             shots: {}, teamOreb: { home: 0, away: 0 }, teamThrees: { home: 0, away: 0 }, timeouts: { home: 0, away: 0 } };
+  }
   const boxRow = (id) => (S.box[id] ||= { PTS: 0, FGM: 0, FGA: 0, "3PM": 0, "3PA": 0, FTM: 0, FTA: 0, REB: 0, AST: 0, STL: 0, BLK: 0, TOV: 0, PF: 0 });
   function apply(e) {
     S.home = e.home_score; S.away = e.away_score;
@@ -692,12 +929,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (e.kind === "period_start") { S.offense = team; S.chanceT = e.t; S.chanceLen = 24; S.dead = null; }
     if (e.kind === "shot") {
       const b = boxRow(e.actor); b.FGA++; if (e.zone === "three") b["3PA"]++;
+      (S.shots[e.actor] ||= []).push(e.value ? 1 : 0);
+      if (e.value === 3) S.teamThrees[team]++;
       if (e.value) { b.FGM++; b.PTS += e.value; if (e.zone === "three") b["3PM"]++; if (e.other) boxRow(e.other).AST++; }
     }
     if (e.kind === "foul" && e.zone === "shooting") S.dead = { shooter: e.other };
     if (e.kind === "free_throws") { const b = boxRow(e.actor); b.FTA += e.attempts; b.FTM += e.value; b.PTS += e.value; S.dead = { shooter: e.actor }; }
     if (e.kind === "foul" && e.zone === "and-one") S.dead = { shooter: e.other };
-    if (e.kind === "rebound") { if (e.actor) boxRow(e.actor).REB++; S.dead = null; if (e.zone === "defensive") S.offense = team; }
+    if (e.kind === "rebound") { if (e.actor) boxRow(e.actor).REB++; S.dead = null; if (e.zone === "defensive") S.offense = team; else S.teamOreb[team]++; }
+    if (e.kind === "timeout") S.timeouts[team]++;
     if (e.kind === "block") boxRow(e.actor).BLK++;
     if (e.kind === "turnover") { if (e.actor) boxRow(e.actor).TOV++; if (e.other) boxRow(e.other).STL++; }
     if (e.kind === "foul" && e.actor) boxRow(e.actor).PF++;
@@ -719,9 +959,14 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
   // ---------- render ----------
   const place = (el, p, show = true) => { el.style.left = `${(p.x / 94) * 100}%`; el.style.top = `${(p.y / 50) * 100}%`; el.style.opacity = show ? "1" : "0"; };
+  let lastTimeoutKey = "";
   function renderTimeouts() {
-    for (const key of ["home", "away"]) $(`${key}-to`).innerHTML = Array.from({ length: TIMEOUTS }, (_, i) => `<i class="${i >= timeouts[key] ? "used" : ""}"></i>`).join("");
-    $("to-left").textContent = `${timeouts.home} of ${TIMEOUTS} timeouts left`;
+    const key = `${timeoutsLeft("home")}/${timeoutsLeft("away")}`;
+    if (key === lastTimeoutKey) return;
+    lastTimeoutKey = key;
+    for (const side of ["home", "away"]) $(`${side}-to`).innerHTML = Array.from({ length: TIMEOUTS }, (_, i) => `<i class="${i >= timeoutsLeft(side) ? "used" : ""}"></i>`).join("");
+    $("to-left").textContent = `${timeoutsLeft("home")} of ${TIMEOUTS} timeouts left`;
+    $("timeout").disabled = timeoutsLeft("home") <= 0;
   }
   let lastFeedLen = -1, lastBenchT = -99;
   function render(t) {
@@ -758,6 +1003,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       if (!$("box").hidden) renderBox(t);
     }
     if (Math.abs(t - lastBenchT) > 5) { lastBenchT = t; renderBenches(t); }
+    renderTimeouts();
     renderChatter();
   }
   function renderBenches(t) {
@@ -806,7 +1052,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
   // ---------- playback ----------
   const SPEEDS = [1, 4, 16, 64, 240];
-  let speed = 16, playing = false, T = 0, lastFrame = null, hold = 0, inTimeout = false;
+  let speed = 16, playing = false, T = 0, lastFrame = null, hold = 0, inTimeout = false, dribble = 0, bannerTimer;
   $("speeds").innerHTML = SPEEDS.map((s) => `<button type="button" data-s="${s}" aria-pressed="${s === speed}">${s}×</button>`).join("");
   $("speeds").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
@@ -819,10 +1065,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     S = freshState(); lastFeedLen = -1; lastBenchT = -99; lastChatterKey = "";
     while (S.applied < G.events.length && G.events[S.applied].t <= t) apply(G.events[S.applied]);
     T = t; render(T);
+    if (typeof rows !== "undefined") { for (const row of rows) row.nextAt = 0; updateTalk(); }   // a jump in time: fresh suggestions
   }
   function setPlaying(on) {
     playing = on && !inTimeout;
     $("play").textContent = playing ? "❚❚ Pause" : (T >= totalT ? "↺ Replay" : "▶ Play");
+    if (playing) Sound.startBed(); else Sound.stopBed();
     lastFrame = null;
     if (playing) requestAnimationFrame(frame);
   }
@@ -834,26 +1082,39 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const target = Math.min(totalT, T + dt * speed);
     const next = G.events[S.applied];
     if (next && next.t <= target) {
-      T = next.t; apply(next); flash(next);
+      T = next.t; apply(next); flash(next); Sound.event(next, speed);
       // dead-ball moments (fouls, free throws, rebounds after the buzzer) get a short real-time pause
       hold = next.kind === "chance" || speed >= 240 ? 0 : Math.max(0.12, 0.45 - speed * 0.004);
+      if (next.kind === "timeout") {   // the engine's coach called it: show it and pause briefly
+        hold = 1.4;
+        $("banner").textContent = `TIMEOUT · ${next.team}`; $("banner").hidden = false;
+        clearTimeout(bannerTimer); bannerTimer = setTimeout(() => { if (!inTimeout) $("banner").hidden = true; }, 1600);
+      }
     } else T = target;
+    // a dribble now and then while the ball is live, at the slow speeds only
+    if (speed <= 4 && !S.dead && S.offense && T < totalT) { dribble -= dt; if (dribble <= 0) { Sound.bounce(); dribble = speed === 1 ? 0.55 : 0.42; } }
     render(T);
     if (T >= totalT && S.applied >= G.events.length) { setPlaying(false); return; }
     requestAnimationFrame(frame);
   }
-  $("play").addEventListener("click", () => { if (T >= totalT) seek(0); setPlaying(!playing); });
+  $("play").addEventListener("click", () => { Sound.unlock(); if (T >= totalT) seek(0); setPlaying(!playing); });
+  $("sound").setAttribute("aria-pressed", String(Sound.on));
+  $("sound").textContent = Sound.on ? "🔊 Sound" : "🔇 Sound";
+  $("sound").addEventListener("click", () => {
+    const on = Sound.toggle();
+    $("sound").setAttribute("aria-pressed", String(on)); $("sound").textContent = on ? "🔊 Sound" : "🔇 Sound";
+    if (on && playing) Sound.startBed();
+  });
   $("scrub").addEventListener("input", (ev) => seek(Number(ev.target.value)));
 
   // tabs
   $("tab-feed").addEventListener("click", () => { $("tab-feed").setAttribute("aria-selected", "true"); $("tab-box").setAttribute("aria-selected", "false"); $("feed").hidden = false; $("box").hidden = true; });
   $("tab-box").addEventListener("click", () => { $("tab-box").setAttribute("aria-selected", "true"); $("tab-feed").setAttribute("aria-selected", "false"); $("feed").hidden = true; $("box").hidden = false; renderBox(T); });
 
-  // ---------- the chatter window: coach messages, @mention replies and player talk ----------
-  const chatterEl = $("chatter"), say = $("say"), menu = $("mentions");
+  // ---------- the chatter window ----------
+  const chatterEl = $("chatter");
   const humanLines = [];
   let humanSeq = 0, lastChatterKey = "";
-  const mentionName = (id) => playerById[id].name;
   const namesLongestFirst = Object.values(playerById).map((p) => p.name).sort((a, b) => b.length - a.length);
   const idByName = Object.fromEntries(Object.values(playerById).map((p) => [p.name, p.id]));
   function mentionedIds(text) {
@@ -878,10 +1139,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   function addHuman(line) { humanLines.push({ ...line, seq: 1e9 + humanSeq++ }); renderChatter(true); }
   const clockAt = (t) => { const p = periodOf(Math.min(t, totalT - 0.01)); return `${periodLabel(p).replace(" QTR", "")} ${fmt(periodStart(p) + (p <= 4 ? PERIOD : OT) - t)}`; };
   function renderChatter(force = false) {
-    const key = `${S.chatter.length}/${humanLines.length}`;
+    const visible = S.chatter.filter((line) => line.t <= T);   // lines land a moment after their event
+    const key = `${visible.length}/${humanLines.length}`;
     if (!force && key === lastChatterKey) return;
     lastChatterKey = key;
-    const lines = [...S.chatter, ...humanLines].sort((a, b) => a.t - b.t || a.seq - b.seq).slice(-80);
+    const lines = [...visible, ...humanLines].sort((a, b) => a.t - b.t || a.seq - b.seq).slice(-120);
     chatterEl.innerHTML = "";
     for (const line of lines) {
       const li = document.createElement("li");
@@ -893,7 +1155,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         if (line.speaker === "coach") who.textContent = "You (coach)";
         else { who.textContent = last(playerById[line.speaker].name); const c = sides[playerTeam[line.speaker]].primary; who.style.color = c === "#1A1A1A" ? "var(--text)" : c; }
         body.appendChild(who);
-        if (line.to) { const to = document.createElement("span"); to.className = "to"; to.textContent = ` → ${last(playerById[line.to].name)}`; body.appendChild(to); }
+        if (line.to) { const to = document.createElement("span"); to.className = "to"; to.textContent = ` → ${line.to === "team" ? "everybody" : last(playerById[line.to].name)}`; body.appendChild(to); }
         body.append(": ");
       }
       const said = document.createElement("span"); said.className = "said"; withMentions(said, line.text); body.appendChild(said);
@@ -902,79 +1164,195 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
     chatterEl.scrollTop = chatterEl.scrollHeight;
   }
-  // How a mentioned player answers: an acknowledgement that fits the instruction, never a promise about what happens next.
-  const REPLIES = [
-    [/shoot|shot|score|attack|aggress|drive|rim|bucket/i, ["Got it, coach. I'll stay aggressive.", "Say less. Attacking."]],
-    [/defen|guard|stop|switch|double|lock|press|zone/i, ["On it. Locking in on D.", "Got it. They won't get anything easy."]],
+  // How a player answers the coach: an acknowledgement that fits the words, never a promise about what happens next.
+  const REPLIES = [   // checked in order: the first that matches answers
+    [/foul|reach|careful|smart/i, ["I'll keep my hands back.", "Got it. No cheap ones."]],
     [/rebound|board|glass|box/i, ["I'll crash the glass.", "Boxing out, every time."]],
-    [/pass|move|share|assist|swing|kick/i, ["I'll keep it moving.", "Got it, find the open man."]],
+    [/defen|guard|stop|switch|double|lock|press|zone|contest|help|off the line/i, ["On it. Locking in on D.", "Got it. Nothing easy."]],
+    [/turnover|value|strong with/i, ["Strong with it. Got it.", "No more giveaways."]],
+    [/pass|move|share|assist|swing|kick|open man|find/i, ["I'll keep it moving.", "Got it, find the open man."]],
+    [/shoot|shot|score|attack|aggress|drive|rim|bucket|hunt|to the line/i, ["Got it, coach. I'll stay aggressive.", "Say less. Attacking."]],
+    [/pace|push|run|transition/i, ["Pushing it.", "Let's run."]],
     [/rest|sit|sub|tired|bench|breather/i, ["Ready whenever you need me.", "Understood, coach."]],
-    [/calm|focus|compos|relax|breathe/i, ["Staying composed, coach.", "We're good. Next play."]],
+    [/calm|focus|compos|relax|breathe|settle|together/i, ["Staying composed, coach.", "We're good. Next play."]],
   ];
+  const TEAM_REPLIES = ["Let's go!", "Heard you, coach!", "Together!", "On it!", "We got this."];
   const TRASH_BACK = ["Your coach is talking about me? Good.", "Bring it, coach.", "Draw up whatever you want.", "Scared of me already?"];
-  function replyTo(id, text, salt) {
+  const hashText = (text) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 100003, 7);
+  function replyTo(id, text, salt, toTeam) {
     const r = seeded(salt + (id % 997));
     if (playerTeam[id] === "away") return { text: TRASH_BACK[Math.floor(r() * TRASH_BACK.length)], kind: "trash" };
-    const onFloor = S.lineups.home.includes(id);
     const match = REPLIES.find(([re]) => re.test(text));
-    const options = match ? match[1] : ["Heard you, coach.", "Got it, coach."];
+    const options = match ? match[1] : toTeam ? TEAM_REPLIES : ["Heard you, coach.", "Got it, coach."];
     const line = options[Math.floor(r() * options.length)];
-    return { text: onFloor ? line : `From the bench: ${line}`, kind: "reply" };
+    return { text: S.lineups.home.includes(id) ? line : `From the bench: ${line}`, kind: "reply" };
+  }
+  function sendCoachLine(text, to = null) {
+    const at = T, salt = hashText(text), r = seeded(salt);
+    addHuman({ t: at, speaker: "coach", to, text, kind: "coach" });
+    const responders = [];
+    if (to === "team") { const floor = homeFloor(); const a = floor[Math.floor(r() * floor.length)]; responders.push(a); if (r() < 0.6) { const b = floor.find((id) => id !== a); if (b) responders.push(b); } }
+    else if (to != null) responders.push(to);
+    for (const id of mentionedIds(text)) if (!responders.includes(id)) responders.push(id);
+    responders.forEach((id, i) => setTimeout(() => {
+      const reply = replyTo(id, text, salt + i, to === "team");
+      addHuman({ t: at, speaker: id, text: reply.text, kind: reply.kind });
+    }, 550 + i * 400));
   }
 
-  let options = [], active = 0;
-  function mentionQuery() {
-    const before = say.value.slice(0, say.selectionStart);
-    const m = before.match(/@([\p{L}.'-]*)$/u);
-    return m ? { text: m[1].toLowerCase(), start: before.length - m[0].length } : null;
+  // ---------- talk rows: five players on the floor and the whole team, each with a suggestion ----------
+  const homeFloor = () => (S.lineups.home.length ? S.lineups.home : G.home.players.slice(0, 5).map((p) => p.id));
+  // What a coach might say right now, most urgent first. Only reads the game so far.
+  function suggestionsFor(id) {
+    const b = S.box[id] || {}, out = [];
+    const period = periodOf(Math.min(T, totalT - 0.01)), left = periodStart(period) + (period <= 4 ? PERIOD : OT) - T;
+    const lead = S.home - S.away, late = period >= 4 && left < 180 && Math.abs(lead) <= 8;
+    const shots = S.shots[id] || [];
+    const plan = planAt(T);
+    let matchup = null;
+    if (plan) { const i = plan.def.indexOf(id) >= 0 ? plan.def.indexOf(id) : plan.off.indexOf(id); if (i >= 0) matchup = plan.def.includes(id) ? plan.off[i] : plan.def[i]; }
+    if (b.PF >= 5) out.push("One more and you're out. Play smart, no reaching.");
+    else if (b.PF >= 4 || (b.PF >= 3 && period <= 2)) out.push(`Careful with the fouls, you've got ${b.PF}. Move your feet.`);
+    if (late) out.push(lead >= 0 ? "Get a stop. Contest without fouling." : "We need a bucket. Be aggressive, attack the rim.");
+    if (shots.length >= 3 && shots.slice(-3).every(Boolean)) out.push("You're hot. Keep hunting your shot.");
+    if (shots.length >= 4 && !shots.slice(-4).some(Boolean)) out.push("Shot's not falling. Attack the rim, get to the line.");
+    if ((b.TOV || 0) >= 3) out.push("Value the ball. Strong with it, no lazy passes.");
+    if (matchup) { const m = S.box[matchup] || {}; if ((m.PTS || 0) >= 14 && playerTeam[matchup] === "away") out.push(`${last(playerById[matchup].name)} has ${m.PTS}. Make every shot tough.`); }
+    if ((b.PTS || 0) >= 20) out.push("They're keying on you. Draw two and find the open man.");
+    const p = playerById[id];
+    if (p.big >= 0.16 && S.teamOreb.away >= 6) out.push(`Box out. They have ${S.teamOreb.away} offensive boards.`);
+    if (p.handler >= 0.22) out.push("Push the pace off the rebound. Get us into our sets.");
+    if (p.big >= 0.16) out.push("Protect the rim and finish the play with the rebound.");
+    out.push("Good work. Talk on defense.", "Keep running hard. Stay ready.", "Make the extra pass. Trust your teammates.");
+    return out;
   }
-  function openMenu() {
-    const q = mentionQuery();
-    if (!q) { menu.hidden = true; return; }
-    const floor = (key) => (S.lineups[key].length ? S.lineups[key] : sides[key].players.slice(0, 5).map((p) => p.id));
-    const groups = [["Your players", "home"], ["Opponents", "away"]].map(([label, key]) => [label, key, floor(key).filter((id) => playerById[id].name.toLowerCase().split(" ").some((w) => w.startsWith(q.text)) || playerById[id].name.toLowerCase().startsWith(q.text))]);
-    options = groups.flatMap(([, , ids]) => ids);
-    if (!options.length) { menu.hidden = true; return; }
-    active = Math.min(active, options.length - 1);
-    const b = S.box;
-    menu.innerHTML = groups.filter(([, , ids]) => ids.length).map(([label, key, ids]) => `<div class="grp">${label}</div>` + ids.map((id) => {
-      const st = b[id] || {};
-      return `<button type="button" role="option" data-id="${id}" aria-selected="${options[active] === id}"><span class="sw" style="background:${sides[key].primary}"></span>${playerById[id].name}<span class="meta">${st.PTS || 0} pts · ${st.PF || 0} pf</span></button>`;
-    }).join("")).join("");
-    menu.hidden = false;
+  function teamSuggestions() {
+    const out = [];
+    const period = periodOf(Math.min(T, totalT - 0.01)), left = periodStart(period) + (period <= 4 ? PERIOD : OT) - T;
+    const lead = S.home - S.away;
+    if (T < 60) out.push("Set the tone. Defense first, run hard.");
+    if (period >= 4 && left < 180 && Math.abs(lead) <= 8) out.push("Every possession matters. Box out, no fouls.");
+    if (S.run.team === "away" && S.run.points >= 8) out.push(`Settle down. Good shots only, get back on defense. They're on a ${S.run.points}-0 run.`);
+    if (S.run.team === "home" && S.run.points >= 8) out.push("Keep it going. Same energy, don't relax.");
+    if (lead <= -10) out.push("Chip away. One stop at a time, no hero shots.");
+    if (lead >= 15) out.push("Don't let up. Keep moving the ball.");
+    const top = G.away.players.map((p) => p.id).sort((a, b) => ((S.box[b] || {}).PTS || 0) - ((S.box[a] || {}).PTS || 0))[0];
+    if (top && ((S.box[top] || {}).PTS || 0) >= 20) out.push(`Show help on ${last(playerById[top].name)}. Make someone else beat us.`);
+    if (S.teamThrees.away >= 8) out.push(`They've hit ${S.teamThrees.away} threes. Run them off the line.`);
+    out.push("Move the ball. Talk on defense.", "Run the floor. Rebound together.", "Stay together. Next play.");
+    return out;
   }
-  function insertMention(id) {
-    const q = mentionQuery();
-    const name = `@${mentionName(id)} `;
-    if (q) { say.value = say.value.slice(0, q.start) + name + say.value.slice(say.selectionStart); say.selectionStart = say.selectionEnd = q.start + name.length; }
-    else { const at = say.selectionStart ?? say.value.length; const pre = say.value.slice(0, at); const sep = pre && !/\s$/.test(pre) ? " " : ""; say.value = pre + sep + name + say.value.slice(at); say.selectionStart = say.selectionEnd = (pre + sep + name).length; }
-    menu.hidden = true; active = 0; say.focus();
+
+  const talkEl = $("talk");
+  const rows = [];
+  for (let i = 0; i < 6; i++) {
+    const form = document.createElement("form");
+    form.className = "talk-row" + (i === 5 ? " team" : "");
+    form.innerHTML = `<span class="talk-who"><span class="sw"></span><span class="nm"></span><span class="meta"></span></span>
+      <input class="talk-input suggested" type="text" autocomplete="off" enterkeyhint="send">
+      <button class="send" type="submit">➤</button>
+      <button class="mic" type="button">🎙</button>`;
+    talkEl.appendChild(form);
+    const row = { i, form, id: null, input: form.querySelector("input"), mic: form.querySelector(".mic"), dirty: false, recording: false, nextAt: 0, pick: 0 };
+    rows.push(row);
+    form.addEventListener("submit", (ev) => { ev.preventDefault(); sendFrom(row); });
+    row.input.addEventListener("input", () => { row.dirty = row.input.value.trim() !== ""; row.input.classList.toggle("suggested", !row.dirty); });
+    row.input.addEventListener("focus", () => { if (!row.dirty) row.input.select(); });
+    row.input.addEventListener("blur", () => { if (!row.dirty) row.nextAt = Math.min(row.nextAt, Date.now() + 2000); });
+    wireMic(row);
   }
-  say.addEventListener("input", () => { active = 0; openMenu(); });
-  say.addEventListener("click", openMenu);
-  say.addEventListener("keydown", (ev) => {
-    if (menu.hidden) { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); $("compose").requestSubmit(); } return; }
-    if (ev.key === "ArrowDown") { ev.preventDefault(); active = (active + 1) % options.length; openMenu(); }
-    else if (ev.key === "ArrowUp") { ev.preventDefault(); active = (active - 1 + options.length) % options.length; openMenu(); }
-    else if (ev.key === "Enter" || ev.key === "Tab") { ev.preventDefault(); insertMention(options[active]); }
-    else if (ev.key === "Escape") { menu.hidden = true; }
-  });
-  menu.addEventListener("mousedown", (ev) => { const b = ev.target.closest("button"); if (b) { ev.preventDefault(); insertMention(Number(b.dataset.id)); } });
-  document.addEventListener("click", (ev) => { if (!ev.target.closest(".mention") && !ev.target.closest(".figure")) menu.hidden = true; });
-  function sendCoachLine(text) {
-    const at = T;
-    addHuman({ t: at, speaker: "coach", text, kind: "coach" });
-    const ids = mentionedIds(text);
-    const salt = [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 100003, 7);
-    ids.forEach((id, i) => setTimeout(() => { const r = replyTo(id, text, salt); addHuman({ t: at, speaker: id, text: r.text, kind: r.kind, to: r.to }); }, 450 + i * 350));
+  const rowTarget = (row) => (row.i === 5 ? "team" : row.id);
+  function sendFrom(row) {
+    const text = row.input.value.trim();
+    if (!text || !row.id) return;
+    sendCoachLine(text, rowTarget(row));
+    row.input.value = ""; row.dirty = false; row.input.classList.add("suggested"); row.nextAt = Date.now() + 1800;
   }
-  $("compose").addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    const text = say.value.trim(); if (!text) return;
-    say.value = ""; menu.hidden = true;
-    sendCoachLine(text);
-  });
-  $("mic").addEventListener("click", () => addHuman({ t: T, speaker: "note", text: "Voice input needs the microphone, which this page can't use. It comes with the local app on day 4.", kind: "note" }));
+  function suggest(row) {
+    const options = row.i === 5 ? teamSuggestions() : suggestionsFor(row.id);
+    let text = options[0];
+    if (text === row.input.value) { row.pick = (row.pick + 1) % Math.min(options.length, 4); text = options[row.pick]; }   // nothing new: rotate through the top few
+    else row.pick = 0;
+    row.input.value = text;
+    row.input.classList.add("suggested");
+    row.input.classList.remove("fresh"); void row.input.offsetWidth; row.input.classList.add("fresh");
+  }
+  function updateTalk() {   // match the rows to the players on the floor; refresh each suggestion every 15 to 30 seconds
+    const floor = homeFloor(), now = Date.now();
+    for (const row of rows) {
+      const id = row.i === 5 ? "team" : floor[row.i];
+      if (id !== row.id) {
+        row.id = id; row.nextAt = 0;
+        const color = G.home.primary === "#1A1A1A" ? "#ffffff" : G.home.primary;
+        row.form.querySelector(".sw").style.background = row.i === 5 ? "var(--led)" : color;
+        row.form.querySelector(".nm").textContent = row.i === 5 ? "All team" : last(playerById[id].name);
+        row.form.querySelector(".nm").title = row.i === 5 ? "Everybody on the floor" : playerById[id].name;
+        row.input.setAttribute("aria-label", row.i === 5 ? "Message to the whole team" : `Message to ${playerById[id].name}`);
+        row.form.querySelector(".send").setAttribute("aria-label", row.i === 5 ? "Send to the whole team" : `Send to ${playerById[id].name}`);
+        row.mic.setAttribute("aria-label", row.i === 5 ? "Hold to talk to the whole team" : `Hold to talk to ${playerById[id].name}`);
+        row.mic.title = "Hold to talk, release to send";
+      }
+      const meta = row.form.querySelector(".meta");
+      if (row.i === 5) meta.textContent = `${S.home}–${S.away} · ${timeoutsLeft("home")} TO`;
+      else { const b = S.box[id] || {}; meta.textContent = `${b.PTS || 0} pts · ${b.PF || 0} pf`; }
+      const busy = row.dirty || row.recording || document.activeElement === row.input;
+      if (!busy && now >= row.nextAt) { suggest(row); row.nextAt = now + 15000 + Math.random() * 15000; }
+    }
+  }
+  setInterval(updateTalk, 1000);
+  function talkTo(id) {
+    const row = rows.find((x) => x.id === id);
+    if (row) { row.input.focus(); row.input.select(); return; }
+    // an opponent or a bench player: mention them to the whole team
+    const team = rows[5];
+    const before = team.dirty ? team.input.value.replace(/\s*$/, " ") : "";
+    team.input.value = `${before}@${playerById[id].name} `;
+    team.dirty = true; team.input.classList.remove("suggested");
+    team.input.focus(); team.input.selectionStart = team.input.selectionEnd = team.input.value.length;
+  }
+
+  // Hold to talk: press and hold records, release fills the row and sends it. Speech recognition is the
+  // browser's own; pages that can't use the microphone (like this hosted replay) say so instead.
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let voiceNoted = false;
+  function voiceNote() {
+    if (voiceNoted) return;
+    voiceNoted = true;
+    addHuman({ t: T, speaker: "note", text: "This page can't use the microphone, so hold-to-talk is off here. It works in the local app (day 4). Type for now.", kind: "note" });
+  }
+  function wireMic(row) {
+    let rec = null, heard = "", released = false;
+    const start = (ev) => {
+      ev.preventDefault();
+      Sound.unlock();
+      if (rec || !row.id) return;
+      if (!Recognition) { voiceNote(); return; }
+      heard = ""; released = false;
+      try { rec = new Recognition(); } catch { voiceNote(); return; }
+      rec.lang = "en-US"; rec.interimResults = true; rec.continuous = true;
+      rec.onresult = (e) => {
+        heard = Array.from(e.results, (x) => x[0].transcript).join(" ").replace(/\s+/g, " ").trim();
+        row.input.value = heard; row.input.classList.remove("suggested"); row.dirty = heard !== "";
+      };
+      rec.onerror = (e) => { if (["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error)) voiceNote(); };
+      rec.onend = () => {
+        rec = null; row.recording = false; row.mic.classList.remove("rec"); row.input.placeholder = "";
+        if (heard && released) sendFrom(row);
+        else if (!heard) { row.dirty = false; row.nextAt = 0; }
+      };
+      row.recording = true; row.mic.classList.add("rec");
+      row.input.value = ""; row.input.placeholder = "Listening…";
+      try { rec.start(); } catch { rec = null; row.recording = false; row.mic.classList.remove("rec"); voiceNote(); return; }
+      if (ev.pointerId != null && row.mic.setPointerCapture) row.mic.setPointerCapture(ev.pointerId);
+    };
+    const stop = () => { released = true; if (rec) rec.stop(); };
+    row.mic.addEventListener("pointerdown", start);
+    row.mic.addEventListener("pointerup", stop);
+    row.mic.addEventListener("pointercancel", stop);
+    row.mic.addEventListener("contextmenu", (ev) => ev.preventDefault());
+    row.mic.addEventListener("keydown", (ev) => { if ((ev.key === " " || ev.key === "Enter") && !ev.repeat) start(ev); });
+    row.mic.addEventListener("keyup", (ev) => { if (ev.key === " " || ev.key === "Enter") stop(); });
+  }
 
   // ---------- timeouts and tactics ----------
   const OFFENSE = [
@@ -1020,8 +1398,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     $("plan").innerHTML = `<b>Current plan:</b> ${off}${focus} · ${def}${target}${plan.lateFoul ? " · foul late" : ""}`;
   }
   $("timeout").addEventListener("click", () => {
-    if (timeouts.home <= 0 || inTimeout) return;
-    timeouts.home -= 1; inTimeout = true; setPlaying(false);
+    if (timeoutsLeft("home") <= 0 || inTimeout) return;
+    humanTimeouts.home += 1; inTimeout = true; setPlaying(false);
+    Sound.unlock(); Sound.whistle();
     $("banner").textContent = `TIMEOUT · ${G.home.tricode}`; $("banner").hidden = false;
     $("locked").hidden = true; $("timeout").hidden = true; $("tactics-body").hidden = false;
     fillTactics(); renderTimeouts();
@@ -1032,18 +1411,18 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
              focus: $("focus").value, target: $("target").value, lateFoul: $("late-foul").checked };
     const subs = [...$("subs").querySelectorAll("select")].filter((s) => s.value).map((s) => `@${playerById[Number(s.value)].name} in for @${playerById[Number(s.dataset.out)].name}`);
     renderPlan();
-    sendCoachLine(`New plan: ${$("plan").textContent.replace("Current plan: ", "")}${subs.length ? ". Subs: " + subs.join(", ") : ""}`);
-    const captain = S.lineups.home.length ? S.lineups.home[0] : G.home.players[0].id;
-    addHuman({ t: T, speaker: captain, text: "Let's go! Same page, everybody.", kind: "reply" });
+    sendCoachLine(`New plan: ${$("plan").textContent.replace("Current plan: ", "")}${subs.length ? ". Subs: " + subs.join(", ") : ""}`, "team");
     inTimeout = false; $("banner").hidden = true;
     $("tactics-body").hidden = true; $("locked").hidden = false; $("timeout").hidden = false;
-    $("timeout").disabled = timeouts.home <= 0;
+    lastTimeoutKey = "";
     setPlaying(true);
   });
-  renderTimeouts(); renderPlan();
+  renderPlan();
 
   // open at tip-off, positioned and ready
   seek(0.1);
-  addHuman({ t: 0, speaker: "note", text: "Players talk here as the game plays. Mention one of yours with @ and they answer.", kind: "note" });
+  updateTalk();
+  addHuman({ t: 0, speaker: "note", text: "Players talk here as the game plays. Talk to yours with the rows below; they answer.", kind: "note" });
+  window.courtside = { lines: () => S.chatter.length, seek, rows };   // for checking the page from the console
 })();
 </script>
