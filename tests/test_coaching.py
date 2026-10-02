@@ -14,7 +14,8 @@ import pytest
 
 from hoopformer.game.engine import Game
 from hoopformer.game.levers import TEAM_LEVERS, lever_limits, measure_limits, multiplier, validate
-from hoopformer.game.translator import HOLDOUT_PHRASES, PHRASES, check_phrases, find_players, load_env, translate
+from hoopformer.game.translator import (HOLDOUT2_PHRASES, HOLDOUT_PHRASES, PHRASES, check_phrases, find_players, load_env,
+                                         translate)
 
 DATA = Path("data")
 OKC, BOS, SGA, TATUM, HOLMGREN = 1610612760, 1610612738, 1628983, 1628369, 1631096
@@ -250,12 +251,15 @@ def test_llm_translates_coach_phrases(fitted, limits, provider):
         pytest.skip(f"set {PROVIDERS[provider]['key']} (shell profile or .env) to test {provider}")
     model, _ = fitted
     game = mid_game(model, limits)
-    seen, total, rows = check_phrases(game, game.home, provider, PHRASES)
-    held_out, total_held, rows_held = check_phrases(game, game.home, provider, HOLDOUT_PHRASES)
-    seconds = np.mean([r["seconds"] for r in rows + rows_held])
-    print(f"{provider}: {seen}/{total} and {held_out}/{total_held} held out; {seconds:.1f} s per instruction")
+    scores, rows = {}, []
+    for label, path in (("test", PHRASES), ("held out", HOLDOUT_PHRASES), ("held out 2", HOLDOUT2_PHRASES)):
+        passed, total, these = check_phrases(game, game.home, provider, path)
+        scores[label] = (passed, total)
+        rows += these
+    print(f"{provider}:", {label: f"{p}/{t}" for label, (p, t) in scores.items()},
+          f"{np.mean([r['seconds'] for r in rows]):.1f} s per instruction")
     print("sample replies:", [r["reply"] for r in rows[:5]])
-    assert seen >= 0.9 * total and held_out >= 0.85 * total_held
+    assert all(p >= 0.85 * t for p, t in scores.values())
 
 def test_cli_coach_and_play_with_instructions(fitted, tmp_path, capsys):
     from hoopformer.cli import main, model_path

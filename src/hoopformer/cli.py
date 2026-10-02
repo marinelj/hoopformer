@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     talk.add_argument("--away", default="BOS")
     talk.add_argument("--season", default="2025-26")
     talk.add_argument("--use", choices=("auto", "qwen", "openai", "rules"), default="auto")
-    talk.add_argument("--check", action="store_true", help="grade the translator on the 50 test phrases and the 30 held-out ones")
+    talk.add_argument("--check", action="store_true", help="grade the translator on the 50 test phrases and both held-out sets (30 + 20)")
     talk.add_argument("--data-dir", type=Path, default=Path("data"))
 
     args = parser.parse_args(argv)
@@ -249,7 +249,7 @@ def coach_command(args) -> int:
     from hoopformer.game.engine import Game
     from hoopformer.game.levers import lever_limits
     from hoopformer.game.model import ActionModel
-    from hoopformer.game.translator import HOLDOUT_PHRASES, PHRASES, check_phrases, load_env, translate
+    from hoopformer.game.translator import HOLDOUT2_PHRASES, HOLDOUT_PHRASES, PHRASES, check_phrases, load_env, translate
 
     load_env()
     path = model_path(args.data_dir, args.season)
@@ -262,7 +262,7 @@ def coach_command(args) -> int:
     for _ in range(60):  # into the second quarter, so there's a score and some fouls to talk about
         game.step()
     if args.check:
-        for label, phrases in (("test phrases", PHRASES), ("held-out phrases", HOLDOUT_PHRASES)):
+        for label, phrases in (("test phrases", PHRASES), ("held-out phrases", HOLDOUT_PHRASES), ("second held-out set", HOLDOUT2_PHRASES)):
             passed, total, _ = check_phrases(game, game.home, args.use, phrases)
             print(f"{label}: {passed}/{total}\n")
         return 0

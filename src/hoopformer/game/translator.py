@@ -42,7 +42,8 @@ PROVIDERS = {
                "settings": {"reasoning_effort": "low"}},  # a reasoning model: low effort keeps it quick; no custom temperature
 }
 PHRASES = Path(__file__).parent / "coach_phrases.json"                  # 50 phrases the rules were written against
-HOLDOUT_PHRASES = Path(__file__).parent / "coach_phrases_holdout.json"  # 30 written afterwards, never used to tune
+HOLDOUT_PHRASES = Path(__file__).parent / "coach_phrases_holdout.json"  # 30 written afterwards; their misses shaped the prompt
+HOLDOUT2_PHRASES = Path(__file__).parent / "coach_phrases_holdout2.json"  # 20 written before the prompt fix: the honest score
 
 SYSTEM = f"""You turn a basketball coach's words into engine levers for a simulated NBA game.
 Reply with one JSON object and nothing else, with these keys (leave out what the coach didn't ask for):
@@ -68,6 +69,13 @@ Reply with one JSON object and nothing else, with these keys (leave out what the
   "make every shot". For an impossible request, map the closest real lever if one fits and still list the phrase.
 
 Rules: use only person_ids from the lists you are given. "Him/her/you" means the player the coach is addressing.
+When the coach is talking to one player (addressed_to is a player), anything about that player's own game goes in
+"players" for that person_id, not in "team": taking or passing up shots, forcing it, sharing the ball, shot selection,
+fouls, rest, morale. Use team levers only for the whole team ("everybody", "we", "let's") or for team tactics.
+aggression: + look for your shot, attack, take over; - stop forcing, pass more, swing it, find the open man.
+shot_preference zones: rim = drives, layups, dunks, downhill, the paint; mid = pull-ups, elbows, floaters, 15 feet;
+three = the arc, corners, from deep, spot-ups.
+There is no lever for ball movement, boxing out, switching or matchups: put those phrases in "unmapped".
 Typical strengths: a plain request 0.5, an emphatic one ("every time", "all game", "!!") 0.8-1.
 Team levers: {", ".join(TEAM_LEVERS)}. Player levers: {", ".join(PLAYER_LEVERS)}, rest_minutes, confidence."""
 

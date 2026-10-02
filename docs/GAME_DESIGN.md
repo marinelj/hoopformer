@@ -186,7 +186,15 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - OpenAI (`gpt-6-astra`, its most capable model, reasoning effort low; about $0.03 an instruction at $10/$50 per million tokens), same API shape. Key: `OPENAI_API_KEY`. `--use openai`, or `auto` picks the first provider with a key set.
   - Keyword rules: no network; the baseline and the fallback when the API is down.
   - Both go through `levers.validate`: values clamped, players checked against the rosters, anything else into `unmapped`, which is logged to `data/derived/unmapped.jsonl`. The most frequent unmapped phrases decide the next lever (today: box out, switch everything, move the ball).
-- **50 test phrases + 30 held out** (`game/coach_phrases*.json`). The rules score 50/50 on the phrases they were written against and 5/30 on the held-out ones. That's overfitting, the same lesson as the train/validation split: a score on data you tuned to means nothing. An LLM's score on both sets: `uv run pytest -m network -k llm` or `uv run hoopformer coach --check --use openai` (needs the key).
+- **50 test phrases + 30 held out** (`game/coach_phrases*.json`). The rules score 50/50 on the phrases they were written against and 5/30 on the held-out ones. That's overfitting, the same lesson as the train/validation split: a score on data you tuned to means nothing. Qwen (`qwen3.8-max`, 2026-10-02), about 3 seconds and 1,600 tokens an instruction:
+
+    | Phrase set | Rules | Qwen, first prompt | Qwen, fixed prompt |
+    |---|---|---|---|
+    | 50 test phrases (the rules were written against them) | 50/50 | 47/50 | 50/50 |
+    | 30 held out (their misses shaped the fixed prompt) | 5/30 | 28/30 | 30/30 |
+    | 20 held out, written before the fix: **the honest score** | 5/20 | not run | **19/20** |
+
+    The first prompt's misses were one pattern: told something by one player's talk row ("stop forcing it"), Qwen changed the whole team instead of that player. The fix states the rule (one player's own game goes on that player) and what rim, mid and three mean. Once a set's misses have shaped the prompt, its score stops being an honest measure, so a fresh set was written before testing the fix. Re-run: `uv run pytest -m network -k llm` or `uv run hoopformer coach --check --use qwen`.
 - Commands:
   - `uv run hoopformer coach "Push the pace and run their shooters off the line" [--to "Shai Gilgeous-Alexander"] [--use rules|qwen]` prints the levers and the reply.
   - `uv run hoopformer play --home OKC --away BOS --say "Q2 6:00 Pack the paint" --say "Q4 3:00 Shai Gilgeous-Alexander: take over" --replay page.html` coaches a simulated game; the replay shows each instruction and the reply in the chatter.

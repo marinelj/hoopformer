@@ -1,0 +1,22 @@
+[
+  {"text": "Quit settling for jumpers, get in the paint.", "to": "Shai Gilgeous-Alexander", "expect": {"player.shot_preference": "rim"}},
+  {"text": "Be careful, you've got three fouls already.", "to": "Chet Holmgren", "expect": {"player.foul_caution": "+"}},
+  {"text": "You're too unselfish, look for your own offense.", "to": "Jalen Williams", "expect": {"player.aggression": "+"}},
+  {"text": "Stop chucking. Swing it to the open guy.", "to": "Luguentz Dort", "expect": {"player.aggression": "-"}},
+  {"text": "Let it rain from deep.", "to": "Isaiah Joe", "expect": {"player.shot_preference": "three"}},
+  {"text": "Pull up from fifteen feet, they're giving it to you.", "to": "Shai Gilgeous-Alexander", "expect": {"player.shot_preference": "mid"}},
+  {"text": "You look gassed. Grab a seat.", "to": "Isaiah Hartenstein", "expect": {"rest": "Isaiah Hartenstein"}},
+  {"text": "Awesome hustle, keep that up.", "to": "Cason Wallace", "expect": {"confidence": "+"}},
+  {"text": "Dunk everything around the basket.", "to": "Chet Holmgren", "expect": {"player.shot_preference": "rim"}},
+  {"text": "Don't gamble for steals, you'll pick up silly fouls.", "to": "Alex Caruso", "expect": {"player.foul_caution": "+"}},
+  {"text": "Let's run, run, run.", "to": null, "expect": {"pace": "+"}},
+  {"text": "Kill some clock on every trip.", "to": null, "expect": {"pace": "-"}},
+  {"text": "Get to the line, draw fouls.", "to": null, "expect": {"attack_rim": "+"}},
+  {"text": "No sloppy passes tonight.", "to": null, "expect": {"ball_security": "+"}},
+  {"text": "Hit the offensive glass hard.", "to": null, "expect": {"crash_glass": "+"}},
+  {"text": "Pressure full court after every make.", "to": null, "expect": {"pressure": "+"}},
+  {"text": "Clog the lane.", "to": null, "expect": {"protect_paint": "+"}},
+  {"text": "Put two on Tatum.", "to": null, "expect": {"double_team": "Jayson Tatum"}},
+  {"text": "Timeout, we need to regroup.", "to": null, "expect": {"timeout": true}},
+  {"text": "Hug the shooters, no clean looks from three.", "to": null, "expect": {"protect_paint": "-"}}
+]
