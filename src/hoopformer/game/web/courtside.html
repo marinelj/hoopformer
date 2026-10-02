@@ -122,7 +122,47 @@ tbody tr.on td:first-child { color: var(--led); }
 .compose textarea { flex: 1; min-height: 40px; resize: vertical; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 13px; }
 .compose button { border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 0 12px; }
 .compose button.mic { color: var(--muted); }
-@media (prefers-reduced-motion: reduce) { .figure, .ball, .flash { transition: none; } }
+
+.figure { transition: opacity 0.35s ease; pointer-events: auto; cursor: pointer; }
+.figure.holder .tag { background: var(--led); color: #111; }
+.figure:hover .tag { outline: 1px solid var(--led); }
+.ball { transition: none; }
+.timeouts { display: flex; gap: 3px; margin-top: 3px; }
+.timeouts i { width: 7px; height: 4px; border-radius: 1px; background: var(--led); opacity: 0.85; }
+.timeouts i.used { background: var(--line); opacity: 1; }
+.team-score.home .timeouts { justify-content: flex-end; }
+.banner { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); background: rgba(7, 9, 13, 0.86); border: 1px solid var(--led); color: var(--led); font-family: var(--display); font-weight: 800; font-size: clamp(18px, 3vw, 30px); letter-spacing: 0.08em; padding: 4px 18px; border-radius: 6px; z-index: 5; }
+.mention { position: relative; }
+.mentions { position: absolute; bottom: calc(100% + 6px); left: 0; width: min(320px, 100%); background: #0f131b; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); z-index: 10; padding: 4px; max-height: 260px; overflow-y: auto; }
+.mentions .grp { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--muted); padding: 6px 8px 2px; text-transform: uppercase; }
+.mentions button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+.mentions button[aria-selected="true"], .mentions button:hover { background: var(--panel-2); }
+.mentions .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.mentions .meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.msg .at { color: var(--led); font-weight: 600; }
+.compose { align-items: stretch; }
+.compose .mention { flex: 1; display: flex; }
+.compose .mention textarea { flex: 1; }
+.tactics { display: grid; gap: 10px; padding: 12px; }
+.tactics-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tactics h2 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
+.timeout-btn { justify-self: start; background: transparent; color: var(--led); border: 1px solid var(--led); border-radius: 6px; padding: 7px 14px; font-weight: 600; }
+.timeout-btn:disabled { color: var(--muted); border-color: var(--line); cursor: not-allowed; }
+.locked { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0; padding: 8px 10px 10px; display: grid; gap: 6px; }
+legend { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding: 0 4px; }
+.opt { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: start; font-size: 13px; padding: 4px 2px; border-radius: 6px; cursor: pointer; }
+.opt input { margin-top: 3px; accent-color: var(--led); }
+.opt .lever { grid-column: 2; font-size: 12px; color: var(--muted); }
+.opt:has(input:checked) { background: rgba(255, 178, 62, 0.08); }
+.inline { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; }
+select { background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 13px; }
+.subs { display: grid; gap: 6px; }
+.subs .row { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; font-size: 13px; }
+.resume { justify-self: start; background: var(--led); color: #15120c; border: 0; border-radius: 6px; padding: 8px 16px; font-weight: 600; }
+.plan { font-size: 12px; color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) { .figure, .flash { transition: none; } }
 </style>
 
 <div class="wrap">
@@ -137,7 +177,7 @@ tbody tr.on td:first-child { color: var(--led); }
   <section class="board" aria-label="Scoreboard">
     <div class="team-score away">
       <div class="stripe" id="away-stripe"></div>
-      <div class="who"><div class="code" id="away-code">AWY</div><div class="coach" id="away-coach"></div></div>
+      <div class="who"><div class="code" id="away-code">AWY</div><div class="coach" id="away-coach"></div><div class="timeouts" id="away-to" title="Timeouts left"></div></div>
       <div class="poss" id="away-poss" title="Has the ball"></div>
       <div class="pts" id="away-pts">0</div>
     </div>
@@ -149,7 +189,7 @@ tbody tr.on td:first-child { color: var(--led); }
     <div class="team-score home">
       <div class="pts" id="home-pts">0</div>
       <div class="poss" id="home-poss" title="Has the ball"></div>
-      <div class="who"><div class="code" id="home-code">HOM</div><div class="coach" id="home-coach"></div></div>
+      <div class="who"><div class="code" id="home-code">HOM</div><div class="coach" id="home-coach"></div><div class="timeouts" id="home-to" title="Timeouts left"></div></div>
       <div class="stripe" id="home-stripe"></div>
     </div>
   </section>
@@ -186,6 +226,7 @@ tbody tr.on td:first-child { color: var(--led); }
           <text x="470" y="258" text-anchor="middle" font-family="Big Shoulders Display, Impact, sans-serif" font-size="28" font-weight="800" fill="rgba(255,255,255,0.35)" letter-spacing="2">HOOPFORMER</text>
         </svg>
         <div class="flash" id="flash"></div>
+        <div class="banner" id="banner" hidden>TIMEOUT</div>
         <div class="ball" id="ball"></div>
       </div>
 
@@ -222,10 +263,28 @@ tbody tr.on td:first-child { color: var(--led); }
         <div class="note" id="chat-note"></div>
         <div class="msgs" id="msgs"></div>
         <form class="compose" id="compose">
-          <textarea id="say" placeholder="Talk to your players, e.g. 'Attack the rim, switch everything on D'"></textarea>
+          <div class="mention">
+            <div class="mentions" id="mentions" role="listbox" hidden></div>
+            <textarea id="say" placeholder="Talk to your players. Type @ or click a player on the court."></textarea>
+          </div>
           <button type="submit">Send</button>
           <button type="button" class="mic" id="mic" title="Voice input comes with the local app">🎙</button>
         </form>
+      </div>
+
+      <div class="panel tactics" id="tactics">
+        <div class="tactics-head"><h2>Tactics</h2><span class="note" id="to-left"></span></div>
+        <div class="plan" id="plan"></div>
+        <div class="locked" id="locked">🔒 Locked. Call a timeout to change tactics or your lineup.</div>
+        <button class="timeout-btn" id="timeout" type="button">Call timeout</button>
+        <div id="tactics-body" hidden>
+          <div style="display:grid;gap:10px">
+            <fieldset id="offense"><legend>Offense</legend></fieldset>
+            <fieldset id="defense"><legend>Defense</legend></fieldset>
+            <fieldset><legend>Lineup</legend><div class="subs" id="subs"></div></fieldset>
+            <button class="resume" id="resume" type="button">Resume play</button>
+          </div>
+        </div>
       </div>
     </aside>
   </div>
@@ -268,70 +327,282 @@ tbody tr.on td:first-child { color: var(--led); }
       <rect x="9" y="19" width="22" height="22" rx="6" fill="${team.primary}" stroke="${team.secondary}" stroke-width="2"/>
       <circle cx="20" cy="11" r="8" fill="#e8c9a8" stroke="#2b2b2b" stroke-width="1"/>
       <path d="M13 9 Q20 2 27 9" fill="none" stroke="#2b2b2b" stroke-width="2"/>
-      <text x="20" y="34" text-anchor="middle" font-family="Big Shoulders Display, Impact, sans-serif" font-weight="800" font-size="10" fill="${team.secondary === "#FFFFFF" || team.secondary === "#EEE1C6" ? "#ffffff" : "#ffffff"}">__INI__</text>
+      <text x="20" y="34" text-anchor="middle" font-family="Big Shoulders Display, Impact, sans-serif" font-weight="800" font-size="10" fill="#ffffff">__INI__</text>
     </svg>`;
   function figureFor(id) {
     if (!figures[id]) {
       const team = sides[playerTeam[id]];
       const el = document.createElement("div");
       el.className = "figure";
+      el.title = `${playerById[id].name}: click to mention`;
       el.innerHTML = cartoon(team).replace("__INI__", initials(playerById[id].name)) + `<span class="tag">${last(playerById[id].name)}</span>`;
       el.style.opacity = "0";
+      el.addEventListener("click", () => insertMention(id));
       court.appendChild(el);
       figures[id] = el;
     }
     return figures[id];
   }
 
-  // illustrative positions (feet; court is 94 x 50, baskets at x = 5.25 and 88.75)
-  const attacksRight = (key, period) => {
-    const homeRight = period <= 2 || period >= 5;
-    return key === "home" ? homeRight : !homeRight;
-  };
-  const toCourt = (right, dx, dy) => ({ x: right ? 88.75 - dx : 5.25 + dx, y: 25 + dy });
+  // ---------- choreography: positions are a function of game time ----------
+  // Court in feet: 94 x 50, baskets at x = 5.25 and 88.75. Every possession gets a plan built from
+  // the engine's events: a run to the attacking end on curved paths, a few illustrative passes, and a
+  // final action that matches the engine (shooter, passer, turnover, stealer, foul, rebounder).
+  const attacksRight = (key, period) => { const homeRight = period <= 2 || period >= 5; return key === "home" ? homeRight : !homeRight; };
+  const toCourt = (right, dx, dy) => ({ x: right ? 88.75 - dx : 5.25 + dx, y: 25 + (right ? dy : -dy) });
+  const basketOf = (right) => toCourt(right, 0, 0);
   const SPOTS = [[23, 0], [19, -14], [19, 14], [2.5, -21.5], [4.5, 7]];
-  let rng = 1;
-  const rand = () => { rng = (rng * 16807) % 2147483647; return rng / 2147483647; };
-  function shotSpot(zone) {
-    if (zone === "rim") return [2 + rand() * 2, (rand() - 0.5) * 6];
-    if (zone === "mid") { const a = (rand() - 0.5) * 2.4; return [12 * Math.cos(a) + 2, 12 * Math.sin(a) * 1.1]; }
-    const a = (rand() - 0.5) * 2.9; const dy = 23.75 * Math.sin(a); const dx = Math.max(1.5, 23.75 * Math.cos(a));
-    return [dx, Math.max(-22, Math.min(22, dy))];
-  }
+  const LANE = [[11, -7], [11, 7], [7, -7], [7, 7], [16, -9], [16, 9], [24, -3], [24, 3]];
+  function seeded(n) { let s = (n * 9301 + 49297) % 233280 || 1; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; }
   function roles(ids) {
-    const sorted = [...ids];
-    const handler = sorted.reduce((a, b) => (playerById[b].handler > playerById[a].handler ? b : a));
-    const rest = sorted.filter((p) => p !== handler);
+    if (ids.length < 5) return [...ids];
+    const handler = ids.reduce((a, b) => (playerById[b].handler > playerById[a].handler ? b : a));
+    const rest = ids.filter((p) => p !== handler);
     const big = rest.reduce((a, b) => (playerById[b].big > playerById[a].big ? b : a));
     const wings = rest.filter((p) => p !== big);
     return [handler, wings[0], wings[1], wings[2], big];
   }
-
-  // state
-  let S;
-  function freshState() {
-    return { applied: 0, home: 0, away: 0, offense: null, chanceT: 0, chanceLen: 24, lineups: { home: [], away: [] },
-             feed: [], box: {}, actor: null, ball: null, period: 1, onSpot: {} };
+  function shotSpot(zone, r) {
+    if (zone === "rim") return [1.5 + r() * 2.5, (r() - 0.5) * 6];
+    if (zone === "mid") { const a = (r() - 0.5) * 2.6; return [2 + 13 * Math.cos(a), 13 * Math.sin(a)]; }
+    const a = (r() - 0.5) * 2.9;
+    return [Math.max(1.5, 23.75 * Math.cos(a)), Math.max(-22, Math.min(22, 23.75 * Math.sin(a)))];
   }
-  const boxRow = (id) => (S.box[id] ||= { MIN: 0, PTS: 0, FGM: 0, FGA: 0, "3PM": 0, "3PA": 0, FTM: 0, FTA: 0, REB: 0, AST: 0, STL: 0, BLK: 0, TOV: 0, PF: 0 });
+  const ease = (u) => u * u * (3 - 2 * u);
+  const lerp = (a, b, u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+  const clampCourt = (p) => ({ x: Math.max(1, Math.min(93, p.x)), y: Math.max(1, Math.min(49, p.y)) });
+  function track(keys, t) {
+    if (t <= keys[0][0]) return { x: keys[0][1], y: keys[0][2] };
+    for (let i = 1; i < keys.length; i++) {
+      if (t <= keys[i][0]) {
+        const [t0, x0, y0] = keys[i - 1], [t1, x1, y1] = keys[i];
+        const u = t1 > t0 ? ease((t - t0) / (t1 - t0)) : 1;
+        return { x: x0 + (x1 - x0) * u, y: y0 + (y1 - y0) * u };
+      }
+    }
+    const k = keys[keys.length - 1]; return { x: k[1], y: k[2] };
+  }
 
+  const RESOLVE = new Set(["shot", "turnover", "free_throws"]);
+  // the opening tip: starters stand around the centre circle
+  const TIP = {};
+  { const ids = [...G.events[0].home_lineup, ...G.events[0].away_lineup];
+    ids.forEach((id, i) => { const a = (i / ids.length) * Math.PI * 2 + 0.3; TIP[id] = { x: 47 + Math.cos(a) * 9, y: 25 + Math.sin(a) * 9 }; }); }
+  function buildPlans() {
+    const plans = [];
+    const where = { ...TIP };    // last known position of every player
+    let carrier = null;          // who has the ball when the next possession starts
+    const chanceAt = G.events.map((e, i) => (e.kind === "chance" ? i : -1)).filter((i) => i >= 0);
+    chanceAt.forEach((s, k) => {
+      const ev = G.events[s], next = k + 1 < chanceAt.length ? chanceAt[k + 1] : G.events.length;
+      const r = seeded(k + 1);
+      const offKey = ev.team === G.home.tricode ? "home" : "away", defKey = offKey === "home" ? "away" : "home";
+      const right = attacksRight(offKey, ev.period);
+      const basket = basketOf(right);
+      const off = roles(ev[offKey + "_lineup"]), def = roles(ev[defKey + "_lineup"]);
+      let resolve = null, shootingFoul = null, rebound = null;
+      for (let j = s + 1; j < next; j++) {
+        const e = G.events[j];
+        if (!resolve && e.kind === "foul" && e.zone === "shooting") shootingFoul = e;
+        if (!resolve && RESOLVE.has(e.kind)) resolve = e;
+        if (e.kind === "rebound" && !rebound) rebound = e;
+      }
+      const t0 = ev.t;
+      const t1 = resolve ? resolve.t : (next < G.events.length ? G.events[next].t : t0 + 6);
+      const dur = Math.max(0.5, t1 - t0);
+      const firstChance = ev.zone !== "second";
+      const travel = firstChance ? Math.min(7, dur * 0.45) : Math.min(1.5, dur * 0.4);
+      const bench = { x: 47 + (r() - 0.5) * 6, y: 49 };
+
+      // offense: start where they were, run to their spots on a curved path, then keep moving
+      const keys = {};
+      const homeSpot = {};
+      off.forEach((id, i) => {
+        const [dx, dy] = SPOTS[i] || [20, 0];
+        const spot = clampCourt(toCourt(right, dx + (r() - 0.5) * 3, dy + (r() - 0.5) * 3));
+        homeSpot[id] = spot;
+        const start = where[id] || bench;
+        const mid = lerp(start, spot, 0.5);
+        const bend = (r() - 0.5) * 14;
+        const curve = clampCourt({ x: mid.x + bend * 0.25, y: mid.y + bend });
+        const k0 = [[t0, start.x, start.y]];
+        if (travel > 1.2) k0.push([t0 + travel * (0.4 + r() * 0.2), curve.x, curve.y]);
+        k0.push([t0 + travel, spot.x, spot.y]);
+        let tt = t0 + travel;
+        while (tt + 2.2 < t1 - 1.6) {
+          tt += 1.8 + r() * 2.2;
+          if (tt > t1 - 1.6) break;
+          const cut = clampCourt({ x: spot.x + (r() - 0.5) * 9, y: spot.y + (r() - 0.5) * 9 });
+          k0.push([tt, cut.x, cut.y]);
+        }
+        keys[id] = k0;
+      });
+
+      // the final action, as the engine says it happened
+      const final = { t: t1, kind: resolve ? resolve.kind : "none", shooter: null, passer: null, zone: null, made: false, loser: null, thief: null };
+      if (resolve && resolve.kind === "shot") Object.assign(final, { shooter: resolve.actor, passer: resolve.other, zone: resolve.zone, made: resolve.value > 0 });
+      if (resolve && resolve.kind === "free_throws") Object.assign(final, { kind: "drive_foul", shooter: resolve.actor, zone: "rim" });
+      if (resolve && resolve.kind === "turnover") Object.assign(final, { loser: resolve.actor, thief: resolve.other });
+      const target = final.shooter || final.loser;
+      if (final.shooter && keys[final.shooter]) {
+        const [dx, dy] = shotSpot(final.zone, r);
+        const spot = clampCourt(toCourt(right, dx, dy));
+        const ks = keys[final.shooter].filter((k) => k[0] < t1 - 1.4);
+        ks.push([Math.max(t0 + 0.2, t1 - 1.3), spot.x, spot.y], [t1, spot.x, spot.y]);
+        keys[final.shooter] = ks;
+      }
+
+      // the ball: who holds it when, passes in between, and the last touch the engine recorded
+      const ball = [];
+      let holder = carrier && off.includes(carrier) ? carrier : off[0];
+      let tb = t0;
+      const pass = (to, when, flight = 0.55) => {
+        if (to === holder || when <= tb + 0.2 || when + flight > t1) return;
+        ball.push({ hold: holder, from: tb, to: when });
+        ball.push({ pass: [holder, to], from: when, to: when + flight });
+        holder = to; tb = when + flight;
+      };
+      if (holder !== off[0] && firstChance) pass(off[0], t0 + Math.min(1.2, dur * 0.2));
+      const passes = Math.max(0, Math.min(4, Math.round((dur - travel - 2.5) / 4)));
+      for (let i = 0; i < passes; i++) {
+        const when = t0 + travel + (dur - travel - 2.8) * ((i + 0.5 + (r() - 0.5) * 0.4) / passes);
+        const choices = off.filter((p) => p !== holder);
+        pass(choices[Math.floor(r() * choices.length)], when);
+      }
+      // The last touches are fixed by the engine. Schedule them backwards from the end of the
+      // possession, shortening pass flights when the clock is short, so they always fit.
+      const f = Math.max(0.12, Math.min(0.55, (t1 - tb) / 6));
+      const forcePass = (to, when) => {
+        when = Math.max(when, tb + 0.02);
+        ball.push({ hold: holder, from: tb, to: when });
+        ball.push({ pass: [holder, to], from: when, to: when + f });
+        holder = to; tb = when + f;
+      };
+      const finale = (receivers, endAt) => {
+        let end = endAt - 0.1;
+        const plan = [];
+        for (let i = receivers.length - 1; i >= 0; i--) { plan.unshift([receivers[i], end - f]); end -= f + 0.12; }
+        for (const [to, when] of plan) forcePass(to, when);
+      };
+      if (final.kind === "shot") {
+        const release = t1 - Math.min(0.6, f * 1.2);
+        const receivers = [];
+        if (final.passer && final.passer !== final.shooter) { if (holder !== final.passer) receivers.push(final.passer); receivers.push(final.shooter); }
+        else if (holder !== final.shooter) receivers.push(final.shooter);
+        finale(receivers, release);
+        ball.push({ hold: holder, from: tb, to: release });
+        ball.push({ shot: holder, from: release, to: t1, made: final.made });
+      } else if (final.kind === "turnover" && final.loser) {
+        const lose = t1 - Math.min(0.5, f);
+        if (holder !== final.loser) finale([final.loser], lose);
+        ball.push({ hold: holder, from: tb, to: lose });
+        if (final.thief) { ball.push({ pass: [holder, final.thief], from: lose, to: t1 }); holder = final.thief; }
+        else ball.push({ loose: holder, from: lose, to: t1 });
+      } else if (final.kind === "drive_foul") {
+        if (holder !== final.shooter) finale([final.shooter], t1 - 0.8);
+        ball.push({ hold: holder, from: tb, to: t1 });
+      } else {
+        ball.push({ hold: holder, from: tb, to: t1 });
+      }
+
+      const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul };
+      plans.push(plan);
+
+      // where everyone ends up, and who starts the next possession with the ball
+      for (const id of off) where[id] = track(keys[id], t1);
+      for (let i = 0; i < def.length; i++) where[def[i]] = defenderAt(plan, i, t1);
+      if (rebound && rebound.actor) {
+        where[rebound.actor] = clampCourt({ x: basket.x + (right ? -4 : 4) * r(), y: basket.y + (r() - 0.5) * 8 });
+        carrier = rebound.actor;
+      } else if (final.kind === "turnover" && final.thief) {
+        carrier = final.thief;
+      } else {
+        carrier = null; // inbound after a make, free throws or a dead ball
+      }
+    });
+    return plans;
+  }
+  function defenderAt(plan, i, t) {
+    const mark = plan.off[i];
+    if (!mark || !plan.keys[mark]) return plan.basket;
+    const o = track(plan.keys[mark], t - 0.45);
+    const b = plan.basket;
+    return clampCourt({ x: o.x + (b.x - o.x) * 0.3, y: o.y + (b.y - o.y) * 0.3 + 1.2 });
+  }
+  const plans = buildPlans();
+  const startOf = plans.map((p) => p.t0);
+  function planAt(t) {
+    let lo = 0, hi = plans.length - 1, ans = -1;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (startOf[m] <= t) { ans = m; lo = m + 1; } else hi = m - 1; }
+    return ans >= 0 ? plans[ans] : null;
+  }
+  function positionsAt(t) {
+    const plan = planAt(t);
+    const pos = {};
+    if (!plan) {   // before the opening tip: line up around the centre circle
+      const ids = [...(G.events[0].home_lineup || []), ...(G.events[0].away_lineup || [])];
+      ids.forEach((id, i) => { const a = (i / ids.length) * Math.PI * 2; pos[id] = { x: 47 + Math.cos(a) * 8, y: 25 + Math.sin(a) * 8 }; });
+      return { pos, plan: null };
+    }
+    const prevPlan = plans[plan.k - 1];
+    const blendIn = plan.t0 + 1.2;
+    plan.off.forEach((id) => { pos[id] = track(plan.keys[id], t); });
+    plan.def.forEach((id, i) => {
+      let p = defenderAt(plan, i, t);
+      if (t < blendIn) {  // defenders were somewhere else a moment ago: ease them over
+        const was = !prevPlan ? (TIP[id] || { x: 47, y: 49 })
+          : prevPlan.off.includes(id) ? track(prevPlan.keys[id], prevPlan.t1)
+          : prevPlan.def.includes(id) ? defenderAt(prevPlan, prevPlan.def.indexOf(id), prevPlan.t1) : { x: 47, y: 49 };
+        p = lerp(was, p, ease(Math.max(0, (t - plan.t0) / 1.2)));
+      }
+      pos[id] = p;
+    });
+    return { pos, plan };
+  }
+  function ballAt(t, plan, pos) {
+    if (!plan) return { x: 47, y: 25, holder: null };
+    for (const seg of plan.ball) {
+      if (t < seg.from || t > seg.to) continue;
+      const u = seg.to > seg.from ? (t - seg.from) / (seg.to - seg.from) : 1;
+      if (seg.hold !== undefined) { const p = pos[seg.hold] || plan.basket; return { x: p.x + 0.6, y: p.y - 1.4 + Math.abs(Math.sin(t * 7)) * 0.9, holder: seg.hold }; }
+      if (seg.pass) { const a = pos[seg.pass[0]] || plan.basket, b = pos[seg.pass[1]] || plan.basket; const p = lerp(a, b, u); return { x: p.x, y: p.y - 1.4 - Math.sin(Math.PI * u) * 1.8, holder: null }; }
+      if (seg.shot !== undefined) { const a = pos[seg.shot] || plan.basket; const p = lerp(a, plan.basket, ease(u)); return { x: p.x, y: p.y - 1.4 - Math.sin(Math.PI * u) * 5, holder: null }; }
+      if (seg.loose !== undefined) { const a = pos[seg.loose] || plan.basket; const out = { x: a.x, y: a.y < 25 ? 0.5 : 49.5 }; const p = lerp(a, out, u); return { x: p.x, y: p.y - 1.4, holder: null }; }
+    }
+    const lastSeg = plan.ball[plan.ball.length - 1];
+    if (lastSeg && lastSeg.shot !== undefined && t >= lastSeg.to) return { ...plan.basket, holder: null };
+    const h = plan.off[0]; const p = pos[h] || plan.basket; return { x: p.x + 0.6, y: p.y - 1.4, holder: h };
+  }
+  function freeThrowFormation(plan, shooter) {
+    const pos = {};
+    const others = [...plan.off.filter((p) => p !== shooter), ...plan.def];
+    pos[shooter] = toCourt(plan.right, 15, 0);
+    others.forEach((id, i) => { const [dx, dy] = LANE[i] || [26, 0]; pos[id] = toCourt(plan.right, dx, dy); });
+    return pos;
+  }
+
+  // ---------- event state (score, feed, box score) ----------
+  let S;
+  const TIMEOUTS = 7;
+  let timeouts = { home: TIMEOUTS, away: TIMEOUTS };
+  function freshState() { return { applied: 0, home: 0, away: 0, offense: null, chanceT: 0, chanceLen: 24, lineups: { home: [], away: [] }, feed: [], box: {}, dead: null }; }
+  const boxRow = (id) => (S.box[id] ||= { PTS: 0, FGM: 0, FGA: 0, "3PM": 0, "3PA": 0, FTM: 0, FTA: 0, REB: 0, AST: 0, STL: 0, BLK: 0, TOV: 0, PF: 0 });
   function apply(e) {
-    S.home = e.home_score; S.away = e.away_score; S.period = e.period;
+    S.home = e.home_score; S.away = e.away_score;
     S.lineups.home = e.home_lineup; S.lineups.away = e.away_lineup;
     const team = e.team === G.home.tricode ? "home" : "away";
-    S.actor = e.actor; S.spot = null;
-    if (e.kind === "chance") { S.offense = team; S.chanceT = e.t; S.chanceLen = e.zone === "second" ? 14 : 24; S.ball = null; S.onSpot = {}; }
-    if (e.kind === "period_start") { S.offense = team; S.chanceT = e.t; S.chanceLen = 24; }
+    if (e.kind === "chance") { S.offense = team; S.chanceT = e.t; S.chanceLen = e.zone === "second" ? 14 : 24; S.dead = null; }
+    if (e.kind === "period_start") { S.offense = team; S.chanceT = e.t; S.chanceLen = 24; S.dead = null; }
     if (e.kind === "shot") {
       const b = boxRow(e.actor); b.FGA++; if (e.zone === "three") b["3PA"]++;
       if (e.value) { b.FGM++; b.PTS += e.value; if (e.zone === "three") b["3PM"]++; if (e.other) boxRow(e.other).AST++; }
-      S.spot = { id: e.actor, zone: e.zone, made: e.value > 0 };
     }
-    if (e.kind === "free_throws") { const b = boxRow(e.actor); b.FTA += e.attempts; b.FTM += e.value; b.PTS += e.value; S.spot = { id: e.actor, zone: "ft" }; }
-    if (e.kind === "rebound" && e.actor) { boxRow(e.actor).REB++; S.ball = e.actor; if (e.zone === "defensive") S.offense = team; }
-    if (e.kind === "rebound" && !e.actor && e.zone === "defensive") S.offense = team;
+    if (e.kind === "foul" && e.zone === "shooting") S.dead = { shooter: e.other };
+    if (e.kind === "free_throws") { const b = boxRow(e.actor); b.FTA += e.attempts; b.FTM += e.value; b.PTS += e.value; S.dead = { shooter: e.actor }; }
+    if (e.kind === "foul" && e.zone === "and-one") S.dead = { shooter: e.other };
+    if (e.kind === "rebound") { if (e.actor) boxRow(e.actor).REB++; S.dead = null; if (e.zone === "defensive") S.offense = team; }
     if (e.kind === "block") boxRow(e.actor).BLK++;
-    if (e.kind === "turnover") { if (e.actor) boxRow(e.actor).TOV++; if (e.other) { boxRow(e.other).STL++; S.ball = e.other; } }
+    if (e.kind === "turnover") { if (e.actor) boxRow(e.actor).TOV++; if (e.other) boxRow(e.other).STL++; }
     if (e.kind === "foul" && e.actor) boxRow(e.actor).PF++;
     if (e.text) S.feed.push(e);
     S.applied++;
@@ -348,69 +619,47 @@ tbody tr.on td:first-child { color: var(--led); }
     return mins;
   }
 
-  // render
-  function place(el, pos, show = true) { el.style.left = `${(pos.x / 94) * 100}%`; el.style.top = `${(pos.y / 50) * 100}%`; el.style.opacity = show ? "1" : "0"; }
-  function render(t, animate = true) {
+  // ---------- render ----------
+  const place = (el, p, show = true) => { el.style.left = `${(p.x / 94) * 100}%`; el.style.top = `${(p.y / 50) * 100}%`; el.style.opacity = show ? "1" : "0"; };
+  function renderTimeouts() {
+    for (const key of ["home", "away"]) $(`${key}-to`).innerHTML = Array.from({ length: TIMEOUTS }, (_, i) => `<i class="${i >= timeouts[key] ? "used" : ""}"></i>`).join("");
+    $("to-left").textContent = `${timeouts.home} of ${TIMEOUTS} timeouts left`;
+  }
+  let lastFeedLen = -1, lastBenchT = -99;
+  function render(t) {
     const period = periodOf(Math.min(t, totalT - 0.01));
     const left = periodStart(period) + (period <= 4 ? PERIOD : OT) - t;
     $("period").textContent = periodLabel(period);
     $("game-clock").textContent = fmt(left);
-    const shot = S.chanceLen - (t - S.chanceT);
-    $("shot-clock").textContent = String(Math.max(0, Math.min(S.chanceLen, Math.ceil(shot))));
+    $("shot-clock").textContent = String(Math.max(0, Math.min(S.chanceLen, Math.ceil(S.chanceLen - (t - S.chanceT)))));
     $("home-pts").textContent = S.home; $("away-pts").textContent = S.away;
     $("home-poss").classList.toggle("on", S.offense === "home"); $("away-poss").classList.toggle("on", S.offense === "away");
     $("elapsed").textContent = `${fmt(t)} of ${fmt(totalT)} played`;
     $("scrub").value = String(Math.floor(t));
 
-    // figures
+    let { pos, plan } = positionsAt(t);
+    if (S.dead && plan) pos = { ...pos, ...freeThrowFormation(plan, S.dead.shooter) };
     const onFloor = new Set([...S.lineups.home, ...S.lineups.away]);
     for (const id of Object.keys(figures)) if (!onFloor.has(Number(id))) figures[id].style.opacity = "0";
-    const offenseKey = S.offense || "home", defenseKey = offenseKey === "home" ? "away" : "home";
-    const right = attacksRight(offenseKey, period);
-    const off = S.lineups[offenseKey], def = S.lineups[defenseKey];
-    if (off.length === 5 && def.length === 5) {
-      const order = roles(off);
-      const positions = {};
-      order.forEach((id, i) => { const [dx, dy] = SPOTS[i]; positions[id] = toCourt(right, dx, dy * (right ? 1 : -1)); });
-      if (S.spot) {
-        let dx, dy;
-        if (S.spot.zone === "ft") { dx = 15; dy = 0; } else { [dx, dy] = (S.onSpot[S.spot.id + S.spot.zone] ||= shotSpot(S.spot.zone)); }
-        positions[S.spot.id] = toCourt(right, dx, dy);
-      }
-      order.forEach((id, i) => {
-        const el = figureFor(id); el.classList.toggle("actor", id === S.actor);
-        if (!animate) el.style.transition = "none";
-        place(el, positions[id]);
-        if (!animate) requestAnimationFrame(() => (el.style.transition = ""));
-      });
-      const basket = toCourt(right, 0, 0);
-      const defOrder = roles(def);
-      defOrder.forEach((id, i) => {
-        const o = positions[order[i]];
-        const el = figureFor(id); el.classList.toggle("actor", id === S.actor);
-        if (!animate) el.style.transition = "none";
-        place(el, { x: o.x + (basket.x - o.x) * 0.28, y: o.y + (basket.y - o.y) * 0.28 + 1.2 });
-        if (!animate) requestAnimationFrame(() => (el.style.transition = ""));
-      });
-      const ballEl = $("ball");
-      let holder = S.ball && onFloor.has(S.ball) ? S.ball : order[0];
-      let ballPos = positions[holder] || (defOrder.includes(holder) ? null : positions[order[0]]);
-      if (S.spot && S.spot.zone !== "ft") ballPos = basket;
-      if (S.spot && S.spot.zone === "ft") ballPos = positions[S.spot.id];
-      if (!ballPos && figures[holder]) ballPos = { x: parseFloat(figures[holder].style.left) * 0.94, y: parseFloat(figures[holder].style.top) * 0.5 };
-      if (ballPos) place(ballEl, { x: ballPos.x, y: ballPos.y - 1.8 });
+    const ball = S.dead && plan ? { ...toCourt(plan.right, 15, 0), y: toCourt(plan.right, 15, 0).y - 1.4, holder: S.dead.shooter } : ballAt(t, plan, pos);
+    for (const id of onFloor) {
+      const p = pos[id]; if (!p) continue;
+      const el = figureFor(id);
+      place(el, p);
+      el.classList.toggle("holder", ball.holder === id);
     }
+    place($("ball"), { x: ball.x, y: ball.y });
 
-    // feed
-    const feed = $("feed");
-    const items = S.feed.slice(-40).reverse();
-    feed.innerHTML = items.map((e) => {
-      const scoring = (e.kind === "shot" && e.value) || (e.kind === "free_throws" && e.value);
-      return `<li class="${scoring ? "scoring" : ""}"><span class="clk">${periodLabel(e.period).replace(" QTR", "")} ${fmt(e.clock)}</span><span class="tm" style="color:${sides[e.team === G.home.tricode ? "home" : "away"].primary === "#1A1A1A" ? "var(--text)" : sides[e.team === G.home.tricode ? "home" : "away"].primary}">${e.team}</span><span class="txt">${e.text}</span><span class="score">${G.away.tricode} ${e.away_score} – ${e.home_score} ${G.home.tricode}</span></li>`;
-    }).join("");
-
-    renderBenches(t);
-    if (!$("box").hidden) renderBox(t);
+    if (S.feed.length !== lastFeedLen) {
+      lastFeedLen = S.feed.length;
+      const color = (e) => { const c = sides[e.team === G.home.tricode ? "home" : "away"].primary; return c === "#1A1A1A" ? "var(--text)" : c; };
+      $("feed").innerHTML = S.feed.slice(-40).reverse().map((e) => {
+        const scoring = (e.kind === "shot" && e.value) || (e.kind === "free_throws" && e.value);
+        return `<li class="${scoring ? "scoring" : ""}"><span class="clk">${periodLabel(e.period).replace(" QTR", "")} ${fmt(e.clock)}</span><span class="tm" style="color:${color(e)}">${e.team}</span><span class="txt">${e.text}</span><span class="score">${G.away.tricode} ${e.away_score} – ${e.home_score} ${G.home.tricode}</span></li>`;
+      }).join("");
+      if (!$("box").hidden) renderBox(t);
+    }
+    if (Math.abs(t - lastBenchT) > 5) { lastBenchT = t; renderBenches(t); }
   }
   function renderBenches(t) {
     const mins = minutesUpTo(t);
@@ -420,7 +669,7 @@ tbody tr.on td:first-child { color: var(--led); }
       const players = [...team.players].sort((a, b) => b.minutesShare - a.minutesShare);
       $(`${key}-bench`).innerHTML = `<div class="bench-head">
           <svg viewBox="0 0 34 40" aria-hidden="true"><circle cx="17" cy="9" r="7" fill="#e8c9a8" stroke="#2b2b2b"/><rect x="7" y="17" width="20" height="20" rx="5" fill="#2b2f3a"/><rect x="20" y="20" width="10" height="13" rx="1.5" fill="#f2efe6" stroke="${team.primary}" stroke-width="1.5"/></svg>
-          <div><div class="label">${team.coach === "You" ? "You" : team.coach} · ${team.tricode}</div><div class="sub">${team.coach === "You" ? "Human coach" : "Scripted for now; reinforcement learning later"}</div></div>
+          <div><div class="label">${team.coach} · ${team.tricode}</div><div class="sub">${team.coach === "You" ? "Human coach" : "Scripted for now; reinforcement learning later"}</div></div>
         </div>
         <div class="chips">${players.map((p) => {
           const b = S.box[p.id] || {};
@@ -445,8 +694,6 @@ tbody tr.on td:first-child { color: var(--led); }
     }
     $("box").innerHTML = html;
   }
-
-  // flash for made shots
   let flashTimer;
   function flash(e) {
     if (!(e.kind === "shot" && e.value)) return;
@@ -458,9 +705,9 @@ tbody tr.on td:first-child { color: var(--led); }
     el.classList.add("show"); clearTimeout(flashTimer); flashTimer = setTimeout(() => el.classList.remove("show"), 900);
   }
 
-  // playback
+  // ---------- playback ----------
   const SPEEDS = [1, 4, 16, 64, 240];
-  let speed = 16, playing = false, T = 0, lastFrame = null, queueGap = 0;
+  let speed = 16, playing = false, T = 0, lastFrame = null, hold = 0, inTimeout = false;
   $("speeds").innerHTML = SPEEDS.map((s) => `<button type="button" data-s="${s}" aria-pressed="${s === speed}">${s}×</button>`).join("");
   $("speeds").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
@@ -469,70 +716,176 @@ tbody tr.on td:first-child { color: var(--led); }
   });
   $("ticks").innerHTML = Array.from({ length: G.periods }, (_, i) => i + 1).map((p) => `<span style="left:${(periodStart(p) / totalT) * 100}%">${periodLabel(p).replace(" QTR", "")}</span>`).join("");
   $("scrub").max = String(totalT);
-
   function seek(t) {
-    S = freshState(); rng = 1;
+    S = freshState(); lastFeedLen = -1; lastBenchT = -99;
     while (S.applied < G.events.length && G.events[S.applied].t <= t) apply(G.events[S.applied]);
-    T = t; render(T, false);
+    T = t; render(T);
+  }
+  function setPlaying(on) {
+    playing = on && !inTimeout;
+    $("play").textContent = playing ? "❚❚ Pause" : (T >= totalT ? "↺ Replay" : "▶ Play");
+    lastFrame = null;
+    if (playing) requestAnimationFrame(frame);
   }
   function frame(now) {
     if (!playing) return;
-    const dt = lastFrame == null ? 0 : (now - lastFrame) / 1000;
+    const dt = lastFrame == null ? 0 : Math.min(0.1, (now - lastFrame) / 1000);
     lastFrame = now;
-    queueGap -= dt;
-    const next = G.events[S.applied];
+    if (hold > 0) { hold -= dt; render(T); requestAnimationFrame(frame); return; }
     const target = Math.min(totalT, T + dt * speed);
+    const next = G.events[S.applied];
     if (next && next.t <= target) {
-      T = next.t;
-      if (queueGap <= 0 || speed >= 240) {
-        apply(next); flash(next);
-        queueGap = next.kind === "chance" ? 0 : Math.max(0, 0.35 - speed * 0.002);
-      }
-    } else {
-      T = target;
-    }
+      T = next.t; apply(next); flash(next);
+      // dead-ball moments (fouls, free throws, rebounds after the buzzer) get a short real-time pause
+      hold = next.kind === "chance" || speed >= 240 ? 0 : Math.max(0.12, 0.45 - speed * 0.004);
+    } else T = target;
     render(T);
-    if (T >= totalT && S.applied >= G.events.length) { playing = false; $("play").textContent = "↺ Replay"; return; }
+    if (T >= totalT && S.applied >= G.events.length) { setPlaying(false); return; }
     requestAnimationFrame(frame);
   }
-  $("play").addEventListener("click", () => {
-    if (T >= totalT) seek(0);
-    playing = !playing;
-    $("play").textContent = playing ? "❚❚ Pause" : "▶ Play";
-    lastFrame = null;
-    if (playing) requestAnimationFrame(frame);
-  });
-  $("scrub").addEventListener("input", (ev) => { seek(Number(ev.target.value)); });
+  $("play").addEventListener("click", () => { if (T >= totalT) seek(0); setPlaying(!playing); });
+  $("scrub").addEventListener("input", (ev) => seek(Number(ev.target.value)));
 
   // tabs
   $("tab-feed").addEventListener("click", () => { $("tab-feed").setAttribute("aria-selected", "true"); $("tab-box").setAttribute("aria-selected", "false"); $("feed").hidden = false; $("box").hidden = true; });
   $("tab-box").addEventListener("click", () => { $("tab-box").setAttribute("aria-selected", "true"); $("tab-feed").setAttribute("aria-selected", "false"); $("feed").hidden = true; $("box").hidden = false; renderBox(T); });
 
-  // coach chat (preview)
-  const msgs = $("msgs");
+  // ---------- coach chat with @mentions ----------
+  const msgs = $("msgs"), say = $("say"), menu = $("mentions");
+  const mentionName = (id) => playerById[id].name;
   function addMsg(who, text, mine) {
     const div = document.createElement("div");
     div.className = `msg ${mine ? "me" : "them"}`;
-    div.innerHTML = `<span class="who"></span>`;
-    div.querySelector(".who").textContent = who;
-    div.append(text);
+    const w = document.createElement("span"); w.className = "who"; w.textContent = who; div.appendChild(w);
+    const names = Object.values(playerById).map((p) => p.name).sort((a, b) => b.length - a.length);
+    let rest = text;
+    while (rest.length) {
+      const i = rest.indexOf("@");
+      if (i < 0) { div.append(rest); break; }
+      div.append(rest.slice(0, i));
+      const hit = names.find((n) => rest.startsWith("@" + n, i));
+      if (hit) { const s = document.createElement("span"); s.className = "at"; s.textContent = "@" + hit; div.appendChild(s); rest = rest.slice(i + 1 + hit.length); }
+      else { div.append("@"); rest = rest.slice(i + 1); }
+    }
     msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
   }
-  const replyFrom = () => {
-    const on = S.lineups.home.length ? S.lineups.home : G.home.players.map((p) => p.id);
-    const id = on[Math.floor(Math.random() * on.length)];
-    return last(playerById[id].name);
-  };
-  addMsg("You (example)", "Pound it inside to Holmgren and switch everything on defense.", true);
-  addMsg("Holmgren (preview)", "Got it, coach. (From day 3, instructions like this change how the team plays.)", false);
+  let options = [], active = 0;
+  function mentionQuery() {
+    const before = say.value.slice(0, say.selectionStart);
+    const m = before.match(/@([\p{L}.'-]*)$/u);
+    return m ? { text: m[1].toLowerCase(), start: before.length - m[0].length } : null;
+  }
+  function openMenu() {
+    const q = mentionQuery();
+    if (!q) { menu.hidden = true; return; }
+    const floor = (key) => (S.lineups[key].length ? S.lineups[key] : sides[key].players.slice(0, 5).map((p) => p.id));
+    const groups = [["Your players", "home"], ["Opponents", "away"]].map(([label, key]) => [label, key, floor(key).filter((id) => playerById[id].name.toLowerCase().split(" ").some((w) => w.startsWith(q.text)) || playerById[id].name.toLowerCase().startsWith(q.text))]);
+    options = groups.flatMap(([, , ids]) => ids);
+    if (!options.length) { menu.hidden = true; return; }
+    active = Math.min(active, options.length - 1);
+    const b = S.box;
+    menu.innerHTML = groups.filter(([, , ids]) => ids.length).map(([label, key, ids]) => `<div class="grp">${label}</div>` + ids.map((id) => {
+      const st = b[id] || {};
+      return `<button type="button" role="option" data-id="${id}" aria-selected="${options[active] === id}"><span class="sw" style="background:${sides[key].primary}"></span>${playerById[id].name}<span class="meta">${st.PTS || 0} pts · ${st.PF || 0} pf</span></button>`;
+    }).join("")).join("");
+    menu.hidden = false;
+  }
+  function insertMention(id) {
+    const q = mentionQuery();
+    const name = `@${mentionName(id)} `;
+    if (q) { say.value = say.value.slice(0, q.start) + name + say.value.slice(say.selectionStart); say.selectionStart = say.selectionEnd = q.start + name.length; }
+    else { const at = say.selectionStart ?? say.value.length; const pre = say.value.slice(0, at); const sep = pre && !/\s$/.test(pre) ? " " : ""; say.value = pre + sep + name + say.value.slice(at); say.selectionStart = say.selectionEnd = (pre + sep + name).length; }
+    menu.hidden = true; active = 0; say.focus();
+  }
+  say.addEventListener("input", () => { active = 0; openMenu(); });
+  say.addEventListener("click", openMenu);
+  say.addEventListener("keydown", (ev) => {
+    if (menu.hidden) { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); $("compose").requestSubmit(); } return; }
+    if (ev.key === "ArrowDown") { ev.preventDefault(); active = (active + 1) % options.length; openMenu(); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); active = (active - 1 + options.length) % options.length; openMenu(); }
+    else if (ev.key === "Enter" || ev.key === "Tab") { ev.preventDefault(); insertMention(options[active]); }
+    else if (ev.key === "Escape") { menu.hidden = true; }
+  });
+  menu.addEventListener("mousedown", (ev) => { const b = ev.target.closest("button"); if (b) { ev.preventDefault(); insertMention(Number(b.dataset.id)); } });
+  document.addEventListener("click", (ev) => { if (!ev.target.closest(".mention") && !ev.target.closest(".figure")) menu.hidden = true; });
+  const replyFrom = () => { const on = S.lineups.home.length ? S.lineups.home : G.home.players.map((p) => p.id); return last(playerById[on[Math.floor(Math.random() * on.length)]].name); };
+  const clockLabel = () => `${periodLabel(periodOf(Math.min(T, totalT - 0.01))).replace(" QTR", "")} ${$("game-clock").textContent}`;
   $("compose").addEventListener("submit", (ev) => {
     ev.preventDefault();
-    const text = $("say").value.trim(); if (!text) return;
-    addMsg(`You · ${periodLabel(periodOf(Math.min(T, totalT - 0.01))).replace(" QTR", "")} ${$("game-clock").textContent}`, text, true);
-    $("say").value = "";
-    setTimeout(() => addMsg(`${replyFrom()} (preview)`, "Heard you, coach. This preview logs the instruction; the engine starts acting on it on day 3.", false), 450);
+    const text = say.value.trim(); if (!text) return;
+    addMsg(`You · ${clockLabel()}`, text, true);
+    say.value = ""; menu.hidden = true;
+    const tagged = Object.values(playerById).find((p) => text.includes("@" + p.name) && playerTeam[p.id] === "home");
+    setTimeout(() => addMsg(`${tagged ? last(tagged.name) : replyFrom()} (preview)`, "Heard you, coach. From day 3, instructions like this change how we play.", false), 450);
   });
   $("mic").addEventListener("click", () => addMsg("Voice", "Voice input needs the microphone, which this page can't use. It comes with the local app on day 4.", false));
+  addMsg("You (example)", `Pound it inside to @${G.home.players.slice().sort((a, b) => b.big - a.big)[0].name} and switch everything on defense.`, true);
+  addMsg("Preview", "Players read your instructions back here. From day 3 the engine acts on them.", false);
+
+  // ---------- timeouts and tactics ----------
+  const OFFENSE = [
+    ["man_default", "Keep it as is", "No change to how the team attacks."],
+    ["pnr", "Pick-and-roll", "Handler and screener attack together: more drives, rim attempts and lobs for the pair."],
+    ["pop", "Pick-and-pop", "The screener spots up: more open jumpers for a shooting big."],
+    ["iso", "Isolation", "Clear a side for one scorer: their share of shots rises, assists fall."],
+    ["post", "Post-up", "Feed the big inside: more rim attempts and fouls drawn, slower pace."],
+    ["five_out", "Five-out, drive and kick", "Spread the floor: more threes and kick-out assists."],
+    ["motion", "Motion offense", "Keep the ball moving: more assisted shots, fewer isolations."],
+    ["push", "Push the pace", "Run before the defense sets: shorter possessions, more transition."],
+    ["slow", "Slow it down", "Use the shot clock: fewer possessions, protect a lead."],
+  ];
+  const DEFENSE = [
+    ["man", "Man-to-man", "Each defender guards one player. The default."],
+    ["switch", "Switch everything", "Swap assignments on every screen: fewer open looks, more mismatches."],
+    ["drop", "Drop coverage", "The big stays near the rim: protects the paint, concedes midrange."],
+    ["blitz", "Blitz the ball handler", "Trap pick-and-rolls: more turnovers forced, more open shooters."],
+    ["zone23", "2-3 zone", "Pack the paint: fewer rim attempts, more threes allowed."],
+    ["press", "Full-court press", "Pressure the inbound: more turnovers, more easy baskets allowed."],
+    ["box1", "Box-and-one", "Zone plus one chaser on their best scorer."],
+  ];
+  let plan = { offense: "man_default", defense: "man", focus: "", target: "", lateFoul: false };
+  const optionHTML = (group, [value, name, lever]) => `<label class="opt"><input type="radio" name="${group}" value="${value}"><span>${name}</span><span class="lever">${lever}</span></label>`;
+  function fillTactics() {
+    const homeOn = S.lineups.home.length ? S.lineups.home : G.home.players.slice(0, 5).map((p) => p.id);
+    const awayOn = S.lineups.away.length ? S.lineups.away : G.away.players.slice(0, 5).map((p) => p.id);
+    $("offense").innerHTML = `<legend>Offense</legend>${OFFENSE.map((o) => optionHTML("off", o)).join("")}
+      <div class="inline">Run it through <select id="focus"><option value="">Nobody in particular</option>${homeOn.map((id) => `<option value="${id}">${playerById[id].name}</option>`).join("")}</select></div>`;
+    $("defense").innerHTML = `<legend>Defense</legend>${DEFENSE.map((o) => optionHTML("def", o)).join("")}
+      <div class="inline">Double-team <select id="target"><option value="">Nobody</option>${awayOn.map((id) => `<option value="${id}">${playerById[id].name}</option>`).join("")}</select></div>
+      <label class="inline"><input type="checkbox" id="late-foul"> Foul to stop the clock when trailing late</label>`;
+    document.querySelector(`input[name="off"][value="${plan.offense}"]`).checked = true;
+    document.querySelector(`input[name="def"][value="${plan.defense}"]`).checked = true;
+    $("focus").value = plan.focus; $("target").value = plan.target; $("late-foul").checked = plan.lateFoul;
+    const benchIds = G.home.players.map((p) => p.id).filter((id) => !homeOn.includes(id) && !((S.box[id] || {}).PF >= 6));
+    $("subs").innerHTML = homeOn.map((id) => `<div class="row"><span>${playerById[id].name}</span><span class="note">→</span><select data-out="${id}"><option value="">Stays in</option>${benchIds.map((b) => `<option value="${b}">${playerById[b].name}</option>`).join("")}</select></div>`).join("");
+  }
+  function renderPlan() {
+    const off = OFFENSE.find((o) => o[0] === plan.offense)[1], def = DEFENSE.find((o) => o[0] === plan.defense)[1];
+    const focus = plan.focus ? ` through ${last(playerById[plan.focus].name)}` : "";
+    const target = plan.target ? `, double ${last(playerById[plan.target].name)}` : "";
+    $("plan").innerHTML = `<b>Current plan:</b> ${off}${focus} · ${def}${target}${plan.lateFoul ? " · foul late" : ""}`;
+  }
+  $("timeout").addEventListener("click", () => {
+    if (timeouts.home <= 0 || inTimeout) return;
+    timeouts.home -= 1; inTimeout = true; setPlaying(false);
+    $("banner").textContent = `TIMEOUT · ${G.home.tricode}`; $("banner").hidden = false;
+    $("locked").hidden = true; $("timeout").hidden = true; $("tactics-body").hidden = false;
+    fillTactics(); renderTimeouts();
+    addMsg(`You · ${clockLabel()}`, "Timeout!", true);
+  });
+  $("resume").addEventListener("click", () => {
+    plan = { offense: document.querySelector('input[name="off"]:checked').value, defense: document.querySelector('input[name="def"]:checked').value,
+             focus: $("focus").value, target: $("target").value, lateFoul: $("late-foul").checked };
+    const subs = [...$("subs").querySelectorAll("select")].filter((s) => s.value).map((s) => `@${playerById[Number(s.value)].name} in for @${playerById[Number(s.dataset.out)].name}`);
+    renderPlan();
+    addMsg(`You · timeout plan`, `${$("plan").textContent.replace("Current plan: ", "")}${subs.length ? ". Subs: " + subs.join(", ") : ""}`, true);
+    addMsg(`${replyFrom()} (preview)`, "Got the plan, coach. From day 3 the engine plays it; this replay was already decided.", false);
+    inTimeout = false; $("banner").hidden = true;
+    $("tactics-body").hidden = true; $("locked").hidden = false; $("timeout").hidden = false;
+    $("timeout").disabled = timeouts.home <= 0;
+    setPlaying(true);
+  });
+  renderTimeouts(); renderPlan();
 
   // open at tip-off, positioned and ready
   seek(0.1);
