@@ -47,7 +47,7 @@ h1 span { color: var(--led); }
 .clocks .shot small { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; margin-right: 6px; font-weight: 500; }
 
 /* main grid */
-.main { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr); gap: 14px; align-items: start; }
+.main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); gap: 14px; align-items: start; }
 @media (max-width: 980px) { .main { grid-template-columns: minmax(0, 1fr); } }
 
 /* court */
@@ -97,13 +97,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .tabs { display: flex; border-bottom: 1px solid var(--line); }
 .tabs button { flex: 1; background: transparent; border: 0; padding: 9px 8px; font-weight: 600; color: var(--muted); }
 .tabs button[aria-selected="true"] { color: var(--text); box-shadow: inset 0 -2px 0 var(--led); }
-.feed { list-style: none; margin: 0; padding: 6px 0; height: 330px; overflow-y: auto; }
+.feed { list-style: none; margin: 0; padding: 6px 0; height: 190px; overflow-y: auto; }
 .feed li { display: grid; grid-template-columns: 58px 40px 1fr; gap: 8px; padding: 5px 12px; font-size: 13px; border-bottom: 1px solid rgba(38, 47, 63, 0.55); }
 .feed li .clk, .feed li .score { font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .feed li .tm { font-family: var(--display); font-weight: 600; }
 .feed li.scoring .txt { color: var(--led); }
 .feed li .score { grid-column: 3; }
-.boxwrap { height: 330px; overflow: auto; }
+.boxwrap { height: 280px; overflow: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 th, td { padding: 4px 6px; text-align: right; white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--panel); }
@@ -113,7 +113,8 @@ tbody tr.on td:first-child { color: var(--led); }
 
 /* talk rows: one per player on the floor, plus the whole team */
 .talk-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.talk-head h3 { font-family: var(--display); font-weight: 600; font-size: 16px; margin: 0; }
+.talk-head h2 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
+.talk-panel { display: grid; gap: 8px; padding: 10px 12px 12px; }
 .talk { display: grid; gap: 6px; }
 .talk-row { display: grid; grid-template-columns: minmax(84px, 118px) minmax(0, 1fr) 34px 38px; gap: 6px; align-items: center; margin: 0; }
 .talk-who { display: grid; grid-template-columns: 9px minmax(0, 1fr); gap: 0 6px; align-items: center; min-width: 0; }
@@ -169,7 +170,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 .chatter-panel { display: grid; gap: 8px; padding: 10px 12px 12px; }
 .chatter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .chatter-head h2 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
-.chatter { list-style: none; margin: 0; height: 300px; overflow-y: auto; display: grid; align-content: start; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: #0e1219; }
+.chatter { list-style: none; margin: 0; height: 200px; overflow-y: auto; display: grid; align-content: start; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: #0e1219; }
 .chatter li { display: grid; grid-template-columns: 54px 1fr; gap: 2px 8px; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
 .chatter li .clk { font-family: var(--mono); font-size: 10px; color: var(--muted); padding-top: 2px; font-variant-numeric: tabular-nums; }
 .chatter li .line { min-width: 0; }
@@ -270,6 +271,17 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     </div>
 
     <aside class="side">
+      <div class="panel talk-panel">
+        <div class="talk-head"><h2>Talk to your players</h2><span class="note">Suggestions follow the game · hold 🎙 to speak</span></div>
+        <div class="talk" id="talk"></div>
+        <div class="note" id="chat-note"></div>
+      </div>
+
+      <div class="panel chatter-panel">
+        <div class="chatter-head"><h2>Courtside chatter</h2><span class="note">Read-only · fictional, reacts to plays only</span></div>
+        <ol class="chatter" id="chatter" aria-live="polite"></ol>
+      </div>
+
       <div class="panel">
         <div class="tabs" role="tablist">
           <button role="tab" id="tab-feed" aria-selected="true" type="button">Play-by-play</button>
@@ -277,14 +289,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         </div>
         <ul class="feed" id="feed" aria-live="polite"></ul>
         <div class="boxwrap" id="box" hidden></div>
-      </div>
-
-      <div class="panel chatter-panel">
-        <div class="chatter-head"><h2>Courtside chatter</h2><span class="note">Read-only · what players and coaches say</span></div>
-        <ol class="chatter" id="chatter" aria-live="polite"></ol>
-        <div class="talk-head"><h3>Talk to your players</h3><span class="note">Suggestions follow the game · hold 🎙 to speak</span></div>
-        <div class="talk" id="talk"></div>
-        <div class="note" id="chat-note"></div>
       </div>
 
       <div class="panel tactics" id="tactics">
@@ -331,7 +335,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   $("paint").innerHTML = `<rect x="2" y="170" width="190" height="160" fill="${G.away.primary}" opacity="0.55"/>
     <rect x="748" y="170" width="190" height="160" fill="${G.home.primary}" opacity="0.55"/>`;
-  $("chat-note").textContent = `You coach ${G.home.name}. Each row talks to one player on the floor, the last one to everybody; the suggestion changes with the game every 15 to 30 seconds. Click a player on the court to talk to them. Player talk is fictional and only reacts to what the engine already decided. In this replay your words don't change the game yet; in the live game (day 4) they do.`;
+  $("chat-note").textContent = `You coach ${G.home.name}: one row per player on the floor, the last to everybody. Click a player on the court to talk to them. In this replay your words don't change the game; in the live game (day 4) they do.`;
 
   // cartoon figures (generic: team colours, initials, no faces of real players)
   const court = $("court");

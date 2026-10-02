@@ -1,7 +1,7 @@
 """The translator: a coach's free words in, levers out.
 
 Two translators share one output format (see `SYSTEM`):
-- `ask_qwen`: an LLM (Qwen, through Alibaba Cloud Model Studio's OpenAI-compatible
+- `ask_qwen`: an LLM (Qwen, through the Qianwen AI platform's OpenAI-compatible
   API) with JSON output. One call per instruction, never one per decision.
 - `ask_rules`: keyword rules, no network. It's the baseline the LLM has to beat
   (the same idea as B0-B2 for the transformer) and the fallback when the API is down.
@@ -11,7 +11,9 @@ sends anything that doesn't fit to `unmapped`. Unmapped phrases are logged: the
 most frequent ones decide which lever gets built next.
 
 The API key comes from the environment (DASHSCOPE_API_KEY) or a git-ignored .env
-file. It is never printed, logged or written anywhere.
+file. It is never printed, logged or written anywhere. It must be a pay-as-you-go
+key (sk-...): Token Plan keys (sk-sp-...) are for interactive coding tools only, and
+using one in an application like this one breaks the plan's rules.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from hoopformer.game.levers import PLAYER_LEVERS, TEAM_LEVERS, Instruction, vali
 from hoopformer.lineups import plain
 
 DEFAULT_MODEL = "qwen3.8-max"  # Qwen's most capable model (Qwen3.8-Max, August 2026)
-DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"  # Model Studio, international (Singapore)
+DEFAULT_BASE_URL = "https://maas.qianwenaiapi.com/compatible-mode/v1"  # Qianwen AI platform, pay-as-you-go keys
 PHRASES = Path(__file__).parent / "coach_phrases.json"                  # 50 phrases the rules were written against
 HOLDOUT_PHRASES = Path(__file__).parent / "coach_phrases_holdout.json"  # 30 written afterwards, never used to tune
 
@@ -100,6 +102,8 @@ def ask_qwen(words: str, context: dict, model: str | None = None, timeout: float
     key = os.environ.get("DASHSCOPE_API_KEY")
     if not key:
         raise RuntimeError("DASHSCOPE_API_KEY is not set (put it in your shell profile or a git-ignored .env)")
+    if key.startswith("sk-sp-"):
+        raise RuntimeError("that's a Token Plan key, which may only be used in coding tools: create a pay-as-you-go key")
     model = model or os.environ.get("QWEN_MODEL", DEFAULT_MODEL)
     base_url = os.environ.get("QWEN_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     body = {
