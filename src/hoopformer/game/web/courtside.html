@@ -315,7 +315,16 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const G = JSON.parse(document.getElementById("game-data").textContent);
   const $ = (id) => document.getElementById(id);
   const PERIOD = 720, OT = 300;
-  const totalT = 4 * PERIOD + (G.periods - 4) * OT;
+  // Live mode (hoopformer serve): events arrive one possession at a time from the server, and the coach's
+  // words go to the server. Replay mode: every event is in the page from the start.
+  const LIVE = G.live === true;
+  let totalT = 4 * PERIOD + (Math.max(4, G.periods) - 4) * OT;
+  async function api(path, body) {
+    const response = await fetch(`/api/${path}`, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }
   const sides = { home: G.home, away: G.away };
   const playerTeam = {}, playerById = {};
   for (const key of ["home", "away"]) for (const p of sides[key].players) { playerTeam[p.id] = key; playerById[p.id] = p; }
@@ -327,7 +336,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const periodLabel = (p) => p <= 4 ? ["1ST", "2ND", "3RD", "4TH"][p - 1] + " QTR" : (p === 5 ? "OT" : `${p - 4}OT`);
 
   // header, scoreboard, paint
-  $("meta").textContent = `Simulated game · ${G.away.name} at ${G.home.name} · seed ${G.seed} · ${G.season}`;
+  $("meta").textContent = `${LIVE ? "Live game" : "Simulated game"} · ${G.away.name} at ${G.home.name} · seed ${G.seed} · ${G.season}`;
+  if (LIVE) {
+    $("source-note").innerHTML = `Live: the engine plays one possession at a time, and what you say changes the game from the next one. <a href="/?home=${G.home.tricode}&away=${G.away.tricode}" style="color:var(--led)">New game</a>`;
+  }
   for (const key of ["home", "away"]) {
     $(`${key}-code`).textContent = sides[key].tricode;
     $(`${key}-coach`).textContent = `${sides[key].name} · coach: ${sides[key].coach}`;
@@ -335,7 +347,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   $("paint").innerHTML = `<rect x="2" y="170" width="190" height="160" fill="${G.away.primary}" opacity="0.55"/>
     <rect x="748" y="170" width="190" height="160" fill="${G.home.primary}" opacity="0.55"/>`;
-  $("chat-note").textContent = `You coach ${G.home.name}: one row per player on the floor, the last to everybody. Click a player on the court to talk to them. In this replay your words don't change the game; in the live game (day 4) they do.`;
+  $("chat-note").textContent = LIVE
+    ? `You coach ${G.home.name}: one row per player on the floor, the last to everybody. Hold 🎙 to speak (the browser asks for the microphone once). Each message is one call to the language model, a few seconds.`
+    : `You coach ${G.home.name}: one row per player on the floor, the last to everybody. Click a player on the court to talk to them. In this replay your words don't change the game; in the live game (hoopformer serve) they do.`;
 
   // cartoon figures (generic: team colours, initials, no faces of real players)
   const court = $("court");
@@ -548,8 +562,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const b = plan.basket;
     return clampCourt({ x: o.x + (b.x - o.x) * 0.3, y: o.y + (b.y - o.y) * 0.3 + 1.2 });
   }
-  const plans = buildPlans();
-  const startOf = plans.map((p) => p.t0);
+  let plans = buildPlans();
+  let startOf = plans.map((p) => p.t0);
   function planAt(t) {
     let lo = 0, hi = plans.length - 1, ans = -1;
     while (lo <= hi) { const m = (lo + hi) >> 1; if (startOf[m] <= t) { ans = m; lo = m + 1; } else hi = m - 1; }
@@ -696,7 +710,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         case "rebound": if (e.zone === "offensive" && e.actor) fx.squeak(); break;
         case "chance": if (speed <= 4 && Math.random() < 0.35) fx.squeak(Math.random() * 0.4); break;
         case "period_start": case "timeout": fx.whistle(0, true); break;
-        case "period_end": fx.buzzer(); if (e.period === G.periods) fx.crowd(1, 0.4); break;
+        case "period_end": fx.buzzer(); if (e.period === G.periods && G.done !== false) fx.crowd(1, 0.4); break;
       }
     }
     return {
@@ -784,8 +798,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   // When the next event that settles something (shot, turnover, foul, rebound...) happens, for each event:
   // a call during a possession must land before the possession ends, a reaction before the next play.
-  const nextSettleT = new Array(G.events.length);
-  for (let i = G.events.length - 1, t = Infinity; i >= 0; i--) { nextSettleT[i] = t; if (!["chance", "sub", "period_start"].includes(G.events[i].kind)) t = G.events[i].t; }
+  let nextSettleT = [];
+  function settleTimes() {
+    nextSettleT = new Array(G.events.length);
+    for (let i = G.events.length - 1, t = Infinity; i >= 0; i--) { nextSettleT[i] = t; if (!["chance", "sub", "period_start"].includes(G.events[i].kind)) t = G.events[i].t; }
+  }
+  settleTimes();
   function chatterFor(e, index) {
     const r = seeded(index * 7 + 3);
     const lines = [];
@@ -885,7 +903,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         break;
       case "period_end": {
         const lead = S.home === S.away ? null : S.home > S.away ? "home" : "away";
-        const final = e.period === G.periods;
+        const final = e.period === G.periods && G.done !== false;
         if (!lead) { for (const key of ["home", "away"]) if (chance(0.8)) say(anyMate(key), pickLine(r, "tieAfter")); break; }
         for (let k = 0; k < 2; k++) {
           say(anyMate(lead), pickLine(r, final ? "wonGame" : "leadAfter"));
@@ -1062,15 +1080,38 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
   // ---------- playback ----------
   const SPEEDS = [1, 4, 16, 64, 240];
-  let speed = 16, playing = false, T = 0, lastFrame = null, hold = 0, inTimeout = false, dribble = 0, bannerTimer;
+  let speed = LIVE ? 4 : 16, playing = false, T = 0, lastFrame = null, hold = 0, inTimeout = false, dribble = 0, bannerTimer;
   $("speeds").innerHTML = SPEEDS.map((s) => `<button type="button" data-s="${s}" aria-pressed="${s === speed}">${s}×</button>`).join("");
   $("speeds").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
     speed = Number(b.dataset.s);
     for (const x of $("speeds").children) x.setAttribute("aria-pressed", String(x === b));
   });
-  $("ticks").innerHTML = Array.from({ length: G.periods }, (_, i) => i + 1).map((p) => `<span style="left:${(periodStart(p) / totalT) * 100}%">${periodLabel(p).replace(" QTR", "")}</span>`).join("");
-  $("scrub").max = String(totalT);
+  function renderTicks() {
+    $("ticks").innerHTML = Array.from({ length: Math.max(4, G.periods) }, (_, i) => i + 1).map((p) => `<span style="left:${(periodStart(p) / totalT) * 100}%">${periodLabel(p).replace(" QTR", "")}</span>`).join("");
+    $("scrub").max = String(totalT);
+    $("scrub").disabled = LIVE && !G.done;   // no fast-forwarding a live game; scrub it once it's over
+  }
+  renderTicks();
+  // Live: add a possession's events from the server. The coach's own words and replies are already in the
+  // chatter (shown when sent), so only the plays, substitutions and timeouts are added.
+  function ingest(data) {
+    for (const e of data.events) if (e.kind !== "coach" && e.kind !== "reply") G.events.push(e);
+    G.periods = Math.max(4, data.periods); G.done = data.done;
+    if (data.done) G.final = data.final;
+    totalT = 4 * PERIOD + (G.periods - 4) * OT;
+    plans = buildPlans(); startOf = plans.map((p) => p.t0); settleTimes(); renderTicks();
+  }
+  let fetching = false;
+  async function fetchNext() {
+    if (fetching || G.done) return;
+    fetching = true;
+    try { ingest(await api("next")); }
+    catch (err) { setPlaying(false); addHuman({ t: T, speaker: "note", text: `Lost the game server (${err.message}). Is hoopformer serve still running?`, kind: "note" }); }
+    finally { fetching = false; }
+  }
+  const ended = () => !LIVE || G.done;
+  const bufferEnd = () => (ended() ? totalT : (G.events.length ? G.events.at(-1).t : 0));
   function seek(t) {
     S = freshState(); lastFeedLen = -1; lastBenchT = -99; lastChatterKey = "";
     while (S.applied < G.events.length && G.events[S.applied].t <= t) apply(G.events[S.applied]);
@@ -1079,7 +1120,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   function setPlaying(on) {
     playing = on && !inTimeout;
-    $("play").textContent = playing ? "❚❚ Pause" : (T >= totalT ? "↺ Replay" : "▶ Play");
+    $("play").textContent = playing ? "❚❚ Pause" : (ended() && T >= totalT ? "↺ Replay" : "▶ Play");
     if (playing) Sound.startBed(); else Sound.stopBed();
     lastFrame = null;
     if (playing) requestAnimationFrame(frame);
@@ -1089,13 +1130,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const dt = lastFrame == null ? 0 : Math.min(0.1, (now - lastFrame) / 1000);
     lastFrame = now;
     if (hold > 0) { hold -= dt; render(T); requestAnimationFrame(frame); return; }
-    const target = Math.min(totalT, T + dt * speed);
+    const target = Math.min(bufferEnd(), T + dt * speed);
     const next = G.events[S.applied];
     if (next && next.t <= target) {
       T = next.t; apply(next); flash(next); Sound.event(next, speed);
       // dead-ball moments (fouls, free throws, rebounds after the buzzer) get a short real-time pause
       hold = next.kind === "chance" || speed >= 240 ? 0 : Math.max(0.12, 0.45 - speed * 0.004);
-      if (next.kind === "timeout") {   // the engine's coach called it: show it and pause briefly
+      if (next.kind === "timeout" && !(LIVE && next.zone === "coach")) {   // the engine's coach called it: show it and pause briefly
         hold = 1.4;
         $("banner").textContent = `TIMEOUT · ${next.team}`; $("banner").hidden = false;
         clearTimeout(bannerTimer); bannerTimer = setTimeout(() => { if (!inTimeout) $("banner").hidden = true; }, 1600);
@@ -1104,10 +1145,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     // a dribble now and then while the ball is live, at the slow speeds only
     if (speed <= 4 && !S.dead && S.offense && T < totalT) { dribble -= dt; if (dribble <= 0) { Sound.bounce(); dribble = speed === 1 ? 0.55 : 0.42; } }
     render(T);
-    if (T >= totalT && S.applied >= G.events.length) { setPlaying(false); return; }
+    if (LIVE && !G.done && S.applied >= G.events.length) fetchNext();   // shown everything we have: the next possession
+    if (ended() && T >= totalT && S.applied >= G.events.length) { setPlaying(false); return; }
     requestAnimationFrame(frame);
   }
-  $("play").addEventListener("click", () => { Sound.unlock(); if (T >= totalT) seek(0); setPlaying(!playing); });
+  $("play").addEventListener("click", () => { Sound.unlock(); if (ended() && T >= totalT) seek(0); setPlaying(!playing); });
   $("sound").setAttribute("aria-pressed", String(Sound.on));
   $("sound").textContent = Sound.on ? "🔊 Sound" : "🔇 Sound";
   $("sound").addEventListener("click", () => {
@@ -1199,6 +1241,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     return { text: S.lineups.home.includes(id) ? line : `From the bench: ${line}`, kind: "reply" };
   }
   function sendCoachLine(text, to = null) {
+    if (LIVE) return sendLive(text, to);
     const at = T, salt = hashText(text), r = seeded(salt);
     addHuman({ t: at, speaker: "coach", to, text, kind: "coach" });
     const responders = [];
@@ -1209,6 +1252,25 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const reply = replyTo(id, text, salt + i, to === "team");
       addHuman({ t: at, speaker: id, text: reply.text, kind: reply.kind });
     }, 550 + i * 400));
+  }
+
+  // Live: the server translates the words (a language model, a few seconds) and the engine applies them
+  // from the next possession. The real reply comes back with the levers it set.
+  async function sendLive(text, to) {
+    addHuman({ t: T, speaker: "coach", to, text, kind: "coach" });
+    if (G.done) return;
+    try {
+      const data = await api("say", { text, to: to === "team" ? null : to });
+      if (data.reply && data.replier) addHuman({ t: T, speaker: data.replier, text: data.reply, kind: "reply" });
+      addHuman({ t: T, speaker: "note", text: `→ ${data.levers} · ${data.source} · from the next possession`, kind: "note" });
+      ingest(data);
+    } catch (err) {
+      addHuman({ t: T, speaker: "note", text: `Couldn't apply that (${err.message}).`, kind: "note" });
+    }
+    for (const id of mentionedIds(text)) if (playerTeam[id] === "away") {   // opponents still talk back (fiction)
+      const reply = replyTo(id, text, hashText(text), false);
+      setTimeout(() => addHuman({ t: T, speaker: id, text: reply.text, kind: reply.kind }), 500);
+    }
   }
 
   // ---------- talk rows: five players on the floor and the whole team, each with a suggestion ----------
@@ -1387,6 +1449,20 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     ["box1", "Box-and-one", "Zone plus one chaser on their best scorer."],
   ];
   let plan = { offense: "man_default", defense: "man", focus: "", target: "", lateFoul: false };
+  // The panel's choices as engine levers (levers.py). Motion offense and switching have no lever yet.
+  const TACTIC_LEVERS = { pnr: { attack_rim: 0.4 }, pop: { three_point_rate: 0.3 }, post: { attack_rim: 0.5, pace: -0.3 },
+    five_out: { three_point_rate: 0.6 }, push: { pace: 0.6 }, slow: { pace: -0.6 },
+    drop: { protect_paint: 0.4 }, blitz: { pressure: 0.5 }, zone23: { protect_paint: 0.7 }, press: { pressure: 0.8 }, box1: { protect_paint: 0.5 } };
+  function planLevers(p, swaps) {
+    const raw = { team: { ...(TACTIC_LEVERS[p.offense] || {}), ...(TACTIC_LEVERS[p.defense] || {}) },
+                  substitutions: swaps.map(([inn, out]) => ({ in: inn, out })), unmapped: [] };
+    if (p.focus) raw.focus = Number(p.focus);
+    if (p.target) raw.double_team = Number(p.target);
+    if (p.lateFoul) raw.late_foul = true;
+    if (p.offense === "motion") raw.unmapped.push("motion offense");
+    if (p.defense === "switch") raw.unmapped.push("switch everything");
+    return raw;
+  }
   const optionHTML = (group, [value, name, lever]) => `<label class="opt"><input type="radio" name="${group}" value="${value}"><span>${name}</span><span class="lever">${lever}</span></label>`;
   function fillTactics() {
     const homeOn = S.lineups.home.length ? S.lineups.home : G.home.players.slice(0, 5).map((p) => p.id);
@@ -1409,8 +1485,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     $("plan").innerHTML = `<b>Current plan:</b> ${off}${focus} · ${def}${target}${plan.lateFoul ? " · foul late" : ""}`;
   }
   $("timeout").addEventListener("click", () => {
-    if (timeoutsLeft("home") <= 0 || inTimeout) return;
-    humanTimeouts.home += 1; inTimeout = true; setPlaying(false);
+    if (timeoutsLeft("home") <= 0 || inTimeout || (LIVE && G.done)) return;
+    if (LIVE) api("timeout", {}).then(ingest).catch((err) => addHuman({ t: T, speaker: "note", text: `Timeout failed (${err.message}).`, kind: "note" }));
+    else humanTimeouts.home += 1;   // live, the server's timeout event counts it
+    inTimeout = true; setPlaying(false);
     Sound.unlock(); Sound.whistle();
     $("banner").textContent = `TIMEOUT · ${G.home.tricode}`; $("banner").hidden = false;
     $("locked").hidden = true; $("timeout").hidden = true; $("tactics-body").hidden = false;
@@ -1422,7 +1500,14 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
              focus: $("focus").value, target: $("target").value, lateFoul: $("late-foul").checked };
     const subs = [...$("subs").querySelectorAll("select")].filter((s) => s.value).map((s) => `@${playerById[Number(s.value)].name} in for @${playerById[Number(s.dataset.out)].name}`);
     renderPlan();
-    sendCoachLine(`New plan: ${$("plan").textContent.replace("Current plan: ", "")}${subs.length ? ". Subs: " + subs.join(", ") : ""}`, "team");
+    const words = `New plan: ${$("plan").textContent.replace("Current plan: ", "")}${subs.length ? ". Subs: " + subs.join(", ") : ""}`;
+    if (LIVE) {   // the panel already speaks in levers: no language model needed
+      addHuman({ t: T, speaker: "coach", to: "team", text: words, kind: "coach" });
+      const swaps = [...$("subs").querySelectorAll("select")].filter((s) => s.value).map((s) => [Number(s.value), Number(s.dataset.out)]);
+      api("tactics", { raw: planLevers(plan, swaps), words })
+        .then((data) => { addHuman({ t: T, speaker: "note", text: `→ ${data.levers}`, kind: "note" }); ingest(data); })
+        .catch((err) => addHuman({ t: T, speaker: "note", text: `Couldn't apply the plan (${err.message}).`, kind: "note" }));
+    } else sendCoachLine(words, "team");
     inTimeout = false; $("banner").hidden = true;
     $("tactics-body").hidden = true; $("locked").hidden = false; $("timeout").hidden = false;
     lastTimeoutKey = "";
@@ -1433,7 +1518,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // open at tip-off, positioned and ready
   seek(0.1);
   updateTalk();
-  addHuman({ t: 0, speaker: "note", text: "Players talk here as the game plays. Talk to yours with the rows below; they answer.", kind: "note" });
-  window.courtside = { lines: () => S.chatter.length, seek, rows };   // for checking the page from the console
+  addHuman({ t: 0, speaker: "note", text: LIVE ? "Live game. Press Play. Talk to your players with the rows above: your words go to the language model and change the game from the next possession." : "Players talk here as the game plays. Talk to yours with the rows above; they answer.", kind: "note" });
+  window.courtside = {   // for checking the page from the console
+    lines: () => S.chatter.length, seek, rows, fetchNext,
+    state: () => ({ events: G.events.length, done: G.done === true, periods: G.periods, T, bufferEnd: bufferEnd(), plans: plans.length }),
+  };
 })();
 </script>

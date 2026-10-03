@@ -199,6 +199,25 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - `uv run hoopformer coach "Push the pace and run their shooters off the line" [--to "Shai Gilgeous-Alexander"] [--use rules|qwen]` prints the levers and the reply.
   - `uv run hoopformer play --home OKC --away BOS --say "Q2 6:00 Pack the paint" --say "Q4 3:00 Shai Gilgeous-Alexander: take over" --replay page.html` coaches a simulated game; the replay shows each instruction and the reply in the chatter.
 
+**Day 4 result (the live app; done):**
+- **Play:** `uv run hoopformer serve`, then open http://127.0.0.1:8000/ in Chrome or Safari. Options: `--home OKC --away BOS`, `--port`, `--use qwen|openai|rules`. "New game" on the page starts another (`/?home=..&away=..&seed=..`).
+- **How it works** (`game/server.py`, standard library only, reachable from this Mac only):
+  - The server holds the engine. The page asks for the next possession (`GET /api/next`) only when it has shown the last one, so the game is never more than one possession ahead of what you see. Whatever you say applies from the next possession.
+  - Your words go to the server (`POST /api/say`), which calls the translator; **the API key never reaches the browser.** The page shows your line at once, then the player's reply and the levers it set ("→ Shai Gilgeous-Alexander aggression +0.8, shot_preference rim +0.8 · qwen3.8-max"). The game keeps playing during the model's ~3 seconds.
+  - **Timeout** (`POST /api/timeout`) is an engine timeout (it rests your players and counts against your 7). **The tactics panel** (`POST /api/tactics`) needs no language model: each choice is already a lever, and a new plan replaces the old one.
+
+    | Panel choice | Levers |
+    |---|---|
+    | Pick-and-roll / pick-and-pop / post-up | attack_rim +0.4 / three_point_rate +0.3 / attack_rim +0.5, pace -0.3 |
+    | Five-out / push / slow down | three_point_rate +0.6 / pace +0.6 / pace -0.6 |
+    | Drop / blitz / 2-3 zone / press / box-and-one | protect_paint +0.4 / pressure +0.5 / protect_paint +0.7 / pressure +0.8 / protect_paint +0.5 |
+    | Run it through X / double-team X / foul late | focus X / double_team X / late_foul |
+    | Motion offense, switch everything | no lever yet: logged as unmapped |
+
+  - **Voice:** hold 🎙, speak, release: the browser's own speech recognition fills the row and sends it, then it's the same as typing. Chrome sends the audio to Google's speech service; Safari uses Apple's. The browser asks for the microphone once.
+- **Measured:** a whole game streams in about 200 possession requests in 1.2 seconds on this Mac, so the engine never makes the page wait. Tests run a real server on a free port (`tests/test_server.py`).
+- **Not yet:** two human coaches; an AI coach that talks; voice tested by marinelj (the browser pane Claude uses can't grant a microphone).
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

@@ -70,6 +70,16 @@ def main(argv: list[str] | None = None) -> int:
     play.add_argument("--use", choices=("auto", "qwen", "openai", "rules"), default="auto",
                       help="translator for --say (auto: the first LLM with a key set, else rules)")
 
+    live = commands.add_parser("serve", help="coach a live game in your browser (this computer only)")
+    live.add_argument("--home", default="OKC", help="your team")
+    live.add_argument("--away", default="BOS", help="the AI coach's team")
+    live.add_argument("--season", default="2025-26", help="the season whose player rates the game uses")
+    live.add_argument("--rosters", default="2026-27", help="play with this season's cached rosters if all 30 are fetched")
+    live.add_argument("--port", type=int, default=8000)
+    live.add_argument("--use", choices=("auto", "qwen", "openai", "rules"), default="auto",
+                      help="translator for your words (auto: the first LLM with a key set, else rules)")
+    live.add_argument("--data-dir", type=Path, default=Path("data"))
+
     talk = commands.add_parser("coach", help="translate a coach's words into levers (Qwen or OpenAI, or keyword rules without a key)")
     talk.add_argument("words", nargs="?", help='e.g. "Push the pace and run their shooters off the line"')
     talk.add_argument("--to", help='the player you\'re talking to, e.g. "Shai Gilgeous-Alexander" (default: the whole team)')
@@ -184,6 +194,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nFinal{overtime}: {result.away.tricode} {result.away.points} @ {result.home.tricode} {result.home.points} (seed {args.seed})")
     if args.command == "coach":
         exit_code = coach_command(args)
+    if args.command == "serve":
+        exit_code = serve_command(args)
     if args.command == "baselines":
         import pandas as pd
 
@@ -278,4 +290,46 @@ def coach_command(args) -> int:
     instruction = translate(args.words, game, game.home, addressed, use=args.use,
                             unmapped_log=args.data_dir / "derived" / "unmapped.jsonl")
     print(json.dumps(asdict(instruction), indent=1, ensure_ascii=False, default=str))
+    return 0
+
+
+def serve_command(args) -> int:
+    """`hoopformer serve`: the live Courtside page on http://127.0.0.1:<port>/."""
+    import os
+
+    from hoopformer.game.levers import lever_limits
+    from hoopformer.game.model import ActionModel
+    from hoopformer.game.rosters import season_rosters, with_rosters
+    from hoopformer.game.server import Courtside, serve
+    from hoopformer.game.translator import PROVIDERS, load_env
+
+    load_env()
+    path = model_path(args.data_dir, args.season)
+    if not path.exists():
+        print(f"no action model at {path}: run `uv run hoopformer actions --season {args.season}` first")
+        return 1
+    model = ActionModel.load(path)
+    rosters = season_rosters(args.data_dir, args.rosters) if args.rosters else {}
+    if len(rosters) == 30:
+        model = with_rosters(model, rosters, args.rosters)
+    elif args.rosters:
+        print(f"{args.rosters} rosters not cached, using {args.season}'s (fetch them with `uv run hoopformer fetch --rosters --season {args.rosters}`)")
+    courtside = Courtside(model, lever_limits(args.data_dir, args.season), args.home, args.away, use=args.use,
+                          unmapped_log=args.data_dir / "derived" / "unmapped.jsonl")
+    if args.home.upper() not in courtside.by_code or args.away.upper() not in courtside.by_code:
+        print(f"unknown team; choose from {' '.join(sorted(courtside.by_code))}")
+        return 1
+    if args.use == "auto":
+        provider = next((name for name, config in PROVIDERS.items() if os.environ.get(config["key"])), "rules (no API key set)")
+    else:
+        provider = args.use
+    server = serve(courtside, args.port)
+    print(f"Courtside live: http://127.0.0.1:{args.port}/   {args.away.upper()} at {args.home.upper()}, your words go to {provider}")
+    print("Open it in Chrome or Safari. Ctrl+C stops the server.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
     return 0

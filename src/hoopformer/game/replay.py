@@ -10,7 +10,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from hoopformer.game.engine import GameResult, Side
+from hoopformer.game.engine import Event, GameResult, Side
 from hoopformer.game.model import ActionModel
 from hoopformer.lineups import period_length, period_start
 
@@ -44,15 +44,18 @@ def team_data(side: Side, coach: str) -> dict:
             "coach": coach, "players": players}
 
 
+def event_row(event: Event) -> dict:
+    """One event as plain data, with its time in game seconds."""
+    row = asdict(event)
+    row["t"] = round(game_seconds(event.period, event.clock), 1)
+    row["home_lineup"] = list(event.home_lineup)
+    row["away_lineup"] = list(event.away_lineup)
+    return row
+
+
 def replay_data(result: GameResult, model: ActionModel, home_coach: str = "You", away_coach: str = "AI coach") -> dict:
     """Everything a replay page needs: teams, rosters, colours, and every event with its time and lineups."""
-    events = []
-    for event in result.events:
-        row = asdict(event)
-        row["t"] = round(game_seconds(event.period, event.clock), 1)
-        row["home_lineup"] = list(event.home_lineup)
-        row["away_lineup"] = list(event.away_lineup)
-        events.append(row)
+    events = [event_row(event) for event in result.events]
     return {
         "season": model.season if "rates" in model.season else f"{model.season} player rates",
         "seed": result.seed,
