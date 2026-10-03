@@ -118,7 +118,8 @@ class Event:
     away_score: int
     kind: str = ""          # period_start, period_end, chance, shot, block, rebound, turnover, foul, free_throws, sub, timeout
     actor: int | None = None  # who did it (shooter, rebounder, fouler, player coming in...)
-    other: int | None = None  # the second player involved (passer, thief, blocked shooter, fouled player, player going out)
+    other: int | None = None  # the second player involved (passer, thief, blocked shooter, fouled player, player going out,
+                              # on a chance: the player the defense is doubling)
     zone: str | None = None   # shot zone; "offensive"/"defensive" for rebounds; foul type; "first"/"second" chance; timeout reason
     value: int = 0            # points on a shot; free throws made
     attempts: int = 0         # free throws attempted
@@ -549,7 +550,8 @@ class Game:
             if seconds >= self.clock:
                 self._run_clock(self.clock)
                 return False
-            self._log(off, "", "chance", zone="first" if first else "second")
+            doubled = dfn.double_team if dfn.double_team in off.lineup else None  # shown on the court as two defenders
+            self._log(off, "", "chance", other=doubled, zone="first" if first else "second")
             self._run_clock(seconds)
             if first:
                 off.possessions += 1

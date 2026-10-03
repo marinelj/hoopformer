@@ -214,7 +214,8 @@ Decision: real players, for a private prototype. The risk to remember: analysing
     | Run it through X / double-team X / foul late | focus X / double_team X / late_foul |
     | Motion offense, switch everything | no lever yet: logged as unmapped |
 
-  - **Voice:** hold 🎙, speak, release: the browser's own speech recognition fills the row and sends it, then it's the same as typing. Chrome sends the audio to Google's speech service; Safari uses Apple's. The browser asks for the microphone once.
+  - **Voice:** hold 🎙, speak, release: the browser's own speech recognition fills the row as you speak and sends it on release, then it's the same as typing. Pick English or 中文 next to "Hold 🎙 to speak" (Qwen understands both). Chrome sends the audio to Google's speech service; Safari uses Apple's (Siri must be on). The browser asks for the microphone once; a press made while that prompt is open is finished when you answer it. Every failure (nothing heard, released too soon, microphone blocked, no connection to the speech service) shows up as a 🎙 note in the chatter.
+  - **Double teams on the court:** each possession records the player the defense is doubling (`Event.other` on the chance), and the defender whose man stands nearest leaves to help, so two figures stand on the doubled player, whose tag shows ×2.
 - **Measured:** a whole game streams in about 200 possession requests in 1.2 seconds on this Mac, so the engine never makes the page wait. Tests run a real server on a free port (`tests/test_server.py`).
 - **Not yet:** two human coaches; an AI coach that talks; voice tested by marinelj (the browser pane Claude uses can't grant a microphone).
 

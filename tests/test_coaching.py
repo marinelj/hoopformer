@@ -138,6 +138,18 @@ def test_double_team_takes_the_ball_out_of_a_stars_hands(fitted, limits):
     assert shots["doubled"] < shots["free"] * 0.85
 
 
+def test_possessions_say_who_is_doubled_so_the_court_can_show_it(fitted, limits):
+    model, _ = fitted
+    game = Game(model, BOS, OKC, seed=3, limits=limits)
+    game.instruct(game.home, validate({"double_team": SGA}, "double SGA", set(game.home.athletes), set(game.away.athletes), None, "test"))
+    result = game.play()
+    okc_chances = [e for e in result.events if e.kind == "chance" and e.team == "OKC"]
+    doubled = [e for e in okc_chances if e.other == SGA]
+    print(len(doubled), "of", len(okc_chances), "OKC chances show SGA doubled")
+    assert doubled and all(SGA in e.away_lineup for e in doubled), "marked only while SGA is on the floor"
+    assert all(e.other is None for e in result.events if e.kind == "chance" and e.team == "BOS")
+
+
 def test_rest_keeps_a_player_on_the_bench_until_it_lapses(fitted, limits):
     model, _ = fitted
     game = Game(model, OKC, BOS, seed=4, limits=limits)

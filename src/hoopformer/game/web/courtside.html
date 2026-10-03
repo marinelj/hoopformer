@@ -124,6 +124,8 @@ tbody tr.on td:first-child { color: var(--led); }
 .talk-row.team .nm { color: var(--led); }
 .talk-input { min-width: 0; height: 34px; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 9px; font: inherit; font-size: 13px; }
 .talk-input.suggested { color: #aab2bf; font-style: italic; }
+.talk-input.sent { color: var(--led); }
+.voice-lang { font-size: 12px; padding: 2px 4px; }
 .talk-input.fresh { animation: fresh 1.4s ease; }
 @keyframes fresh { from { border-color: var(--led); } to { border-color: var(--line); } }
 .talk-row button { height: 34px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 0; display: grid; place-items: center; font-size: 14px; }
@@ -141,6 +143,8 @@ tbody tr.on td:first-child { color: var(--led); }
 
 .figure { transition: opacity 0.35s ease; pointer-events: auto; cursor: pointer; }
 .figure.holder .tag { background: var(--led); color: #111; }
+.figure.doubled .tag { box-shadow: 0 0 0 2px var(--shot); }
+.figure.doubled .tag::after { content: " ×2"; color: var(--shot); font-weight: 700; }
 .figure:hover .tag { outline: 1px solid var(--led); }
 .ball { transition: none; }
 .timeouts { display: flex; gap: 3px; margin-top: 3px; }
@@ -272,7 +276,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
     <aside class="side">
       <div class="panel talk-panel">
-        <div class="talk-head"><h2>Talk to your players</h2><span class="note">Suggestions follow the game · hold 🎙 to speak</span></div>
+        <div class="talk-head"><h2>Talk to your players</h2><span class="note">Hold 🎙 to speak in <select id="voice-lang" class="voice-lang" aria-label="Voice language"><option value="en-US">English</option><option value="zh-CN">中文</option></select></span></div>
         <div class="talk" id="talk"></div>
         <div class="note" id="chat-note"></div>
       </div>
@@ -538,7 +542,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         ball.push({ hold: holder, from: tb, to: t1 });
       }
 
-      const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul };
+      // a double team: the defender whose man stands nearest the doubled player leaves him to help
+      const doubled = off.includes(ev.other) ? ev.other : null;
+      const near = (id) => Math.hypot(homeSpot[id].x - homeSpot[doubled].x, homeSpot[id].y - homeSpot[doubled].y);
+      const helper = doubled ? off.map((id, i) => [id, i]).filter(([id]) => id !== doubled).sort((a, b) => near(a[0]) - near(b[0]))[0][1] : -1;
+      const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul, doubled, helper };
       plans.push(plan);
 
       // where everyone ends up, and who starts the next possession with the ball
@@ -556,6 +564,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     return plans;
   }
   function defenderAt(plan, i, t) {
+    if (i === plan.helper) {   // the second defender on a doubled player, on the other shoulder
+      const o = track(plan.keys[plan.doubled], t - 0.3), b = plan.basket;
+      return clampCourt({ x: o.x + (b.x - o.x) * 0.22, y: o.y + (b.y - o.y) * 0.22 - 1.6 });
+    }
     const mark = plan.off[i];
     if (!mark || !plan.keys[mark]) return plan.basket;
     const o = track(plan.keys[mark], t - 0.45);
@@ -1018,6 +1030,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const el = figureFor(id);
       place(el, p);
       el.classList.toggle("holder", ball.holder === id);
+      el.classList.toggle("doubled", !!plan && plan.doubled === id && !S.dead);
     }
     place($("ball"), { x: ball.x, y: ball.y });
 
@@ -1339,7 +1352,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const text = row.input.value.trim();
     if (!text || !row.id) return;
     sendCoachLine(text, rowTarget(row));
-    row.input.value = ""; row.dirty = false; row.input.classList.add("suggested"); row.nextAt = Date.now() + 1800;
+    row.dirty = false; row.input.classList.add("sent"); row.nextAt = Date.now() + 1800;
+    setTimeout(() => { if (!row.dirty && !row.recording) { row.input.value = ""; row.input.classList.remove("sent"); row.input.classList.add("suggested"); } }, 1500);
   }
   function suggest(row) {
     const options = row.i === 5 ? teamSuggestions() : suggestionsFor(row.id);
@@ -1387,45 +1401,79 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // Hold to talk: press and hold records, release fills the row and sends it. Speech recognition is the
   // browser's own; pages that can't use the microphone (like this hosted replay) say so instead.
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let voiceNoted = false;
-  function voiceNote() {
-    if (voiceNoted) return;
-    voiceNoted = true;
-    addHuman({ t: T, speaker: "note", text: "This page can't use the microphone, so hold-to-talk is off here. It works in the local app (day 4). Type for now.", kind: "note" });
+  const VOICE_PROBLEMS = {
+    "no-speech": "Didn't hear anything. Hold the button down the whole time you speak.",
+    "audio-capture": "No microphone found. Check that one is connected and chosen in your Mac's sound settings.",
+    "not-allowed": "The browser blocked the microphone. Click the icon left of the address, allow the microphone, then try again.",
+    "service-not-allowed": "The browser's speech service is turned off. In Safari, Siri must be on; in Chrome, try again online.",
+    "network": "The browser couldn't reach its speech service (Chrome sends the audio to Google). Check the connection.",
+    "language-not-supported": "This browser can't recognize the chosen language. Pick another one under the talk rows.",
+    "short": "Released too soon. Hold the button, speak, then let go.",
+  };
+  let lastVoiceNote = { text: "", at: 0 };
+  function voiceNote(problem) {
+    const text = !LIVE && !Recognition ? "This page can't use the microphone. Run the live app (hoopformer serve) to talk." :
+      !Recognition ? "This browser has no speech recognition. Use Chrome or Safari, or type." : (VOICE_PROBLEMS[problem] || `Voice failed (${problem}).`);
+    if (text === lastVoiceNote.text && Date.now() - lastVoiceNote.at < 8000) return;
+    lastVoiceNote = { text, at: Date.now() };
+    addHuman({ t: T, speaker: "note", text: `🎙 ${text}`, kind: "note" });
   }
+  let voiceLang = "en-US";
+  try { voiceLang = localStorage.getItem("courtside-voice-lang") || "en-US"; } catch { /* storage blocked: English */ }
+  // Hold to talk. Press: listen; the words appear in the row as they're recognized. Release: send what was heard.
+  // A press that comes before the browser's microphone prompt is answered just waits for it; every way it can fail
+  // says so in the chatter.
   function wireMic(row) {
-    let rec = null, heard = "", released = false;
+    let rec = null, heard = "", released = false, started = false, pressedAt = 0;
+    const finish = () => {
+      rec = null; row.recording = false; row.mic.classList.remove("rec"); row.input.placeholder = "";
+      if (heard && released) sendFrom(row);
+      else if (heard) { row.dirty = true; row.input.classList.remove("suggested"); }   // keep it for the send button
+      else { row.dirty = false; row.nextAt = 0; }
+    };
     const start = (ev) => {
       ev.preventDefault();
       Sound.unlock();
-      if (rec || !row.id) return;
+      if (!row.id) return;
+      if (rec) { const old = rec; rec = null; try { old.abort(); } catch { /* already over */ } }   // a stuck earlier press
       if (!Recognition) { voiceNote(); return; }
-      heard = ""; released = false;
-      try { rec = new Recognition(); } catch { voiceNote(); return; }
-      rec.lang = "en-US"; rec.interimResults = true; rec.continuous = true;
-      rec.onresult = (e) => {
+      heard = ""; released = false; started = false; pressedAt = Date.now();
+      let r;
+      try { r = new Recognition(); } catch { voiceNote("service-not-allowed"); return; }
+      rec = r;   // every handler below checks it still belongs to this press
+      r.lang = voiceLang; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+      r.onstart = () => { if (rec !== r) return; started = true; if (released) r.stop(); };
+      r.onresult = (e) => {
+        if (rec !== r) return;
         heard = Array.from(e.results, (x) => x[0].transcript).join(" ").replace(/\s+/g, " ").trim();
-        row.input.value = heard; row.input.classList.remove("suggested"); row.dirty = heard !== "";
+        row.input.value = heard; row.input.classList.remove("suggested", "sent"); row.dirty = heard !== "";
       };
-      rec.onerror = (e) => { if (["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error)) voiceNote(); };
-      rec.onend = () => {
-        rec = null; row.recording = false; row.mic.classList.remove("rec"); row.input.placeholder = "";
-        if (heard && released) sendFrom(row);
-        else if (!heard) { row.dirty = false; row.nextAt = 0; }
-      };
+      r.onerror = (e) => { if (rec === r && e.error !== "aborted") voiceNote(e.error); };
+      r.onend = () => { if (rec === r) finish(); };
       row.recording = true; row.mic.classList.add("rec");
-      row.input.value = ""; row.input.placeholder = "Listening…";
-      try { rec.start(); } catch { rec = null; row.recording = false; row.mic.classList.remove("rec"); voiceNote(); return; }
-      if (ev.pointerId != null && row.mic.setPointerCapture) row.mic.setPointerCapture(ev.pointerId);
+      row.input.value = ""; row.input.placeholder = "Listening… let go to send";
+      try { rec.start(); } catch (err) { finish(); voiceNote(String(err && err.name || "failed")); return; }
+      if (ev.pointerId != null && row.mic.setPointerCapture) { try { row.mic.setPointerCapture(ev.pointerId); } catch { /* no capture */ } }
     };
-    const stop = () => { released = true; if (rec) rec.stop(); };
+    const stop = () => {
+      if (!rec || released) return;
+      released = true;
+      if (!started && Date.now() - pressedAt < 400) voiceNote("short");
+      if (started) rec.stop();   // not started yet (the microphone prompt): onstart stops it
+    };
     row.mic.addEventListener("pointerdown", start);
     row.mic.addEventListener("pointerup", stop);
     row.mic.addEventListener("pointercancel", stop);
+    row.mic.addEventListener("lostpointercapture", stop);
     row.mic.addEventListener("contextmenu", (ev) => ev.preventDefault());
     row.mic.addEventListener("keydown", (ev) => { if ((ev.key === " " || ev.key === "Enter") && !ev.repeat) start(ev); });
     row.mic.addEventListener("keyup", (ev) => { if (ev.key === " " || ev.key === "Enter") stop(); });
   }
+  $("voice-lang").value = voiceLang;
+  $("voice-lang").addEventListener("change", (ev) => {
+    voiceLang = ev.target.value;
+    try { localStorage.setItem("courtside-voice-lang", voiceLang); } catch { /* not saved */ }
+  });
 
   // ---------- timeouts and tactics ----------
   const OFFENSE = [
