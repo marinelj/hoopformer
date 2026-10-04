@@ -34,6 +34,11 @@ from hoopformer.game.replay import event_row, replay_data, replay_html
 from hoopformer.game.translator import RULE_REPLIES, translate
 
 CALL_REPLIES = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
+PLAYER_REPLIES = {  # one defender's calls, (+, -)
+    "pressure": ("I'll pick him up full court.", "Giving him a little space."),
+    "protect_paint": ("Nothing easy at the rim.", "Staying home on my shooter."),
+    "box_out": ("Boxing out, every time.", "I'll leak out for the break."),
+}
 BACKING_OFF = {  # the same levers called the other way
     "pace": "Slowing it down.", "three_point_rate": "Fewer threes, got it.", "attack_rim": "Staying out of the crowd.",
     "ball_security": "Taking more chances.", "crash_glass": "Getting back on D.", "pressure": "Sitting back, no gambling.",
@@ -94,10 +99,16 @@ class LiveGame:
                       *((k, raw[k]) for k in ("focus", "double_team", "late_foul", "timeout", "team_confidence") if raw.get(k))]
             first, value = named[0] if named else (None, None)
             value = value["value"] if isinstance(value, dict) else value
-            reply = (BACKING_OFF.get(first) if isinstance(value, (int, float)) and value < 0 else None) or CALL_REPLIES.get(first, "Got it, coach.")
+            negative = isinstance(value, (int, float)) and value < 0
+            reply = ((PLAYER_REPLIES[first][negative] if addressed is not None and first in PLAYER_REPLIES else None)
+                     or (BACKING_OFF.get(first) if negative else None) or CALL_REPLIES.get(first, "Got it, coach."))
             replier = addressed if addressed in side.lineup else (side.lineup[0] if side.lineup else None)
             instruction = validate({**raw, "reply": reply, "replier": replier}, words, set(side.athletes), set(game.away.athletes), addressed, "call")
-            before = {(d.lever, d.player): d.value for d in side.directives}
+            def tiring():  # how fast the players this call covers tire, on average (1 = normal)
+                who = [addressed] if addressed in side.lineup else side.lineup
+                return sum(game.effort(side, p) for p in who) / max(1, len(who))
+
+            before, tired_before = {(d.lever, d.player): d.value for d in side.directives}, tiring()
             events = game.nudge(side, instruction) if not game.done else []
             after = {(d.lever, d.player): d.value for d in side.directives}
             moved = {(k, None) for k in instruction.team} | {(k, pid) for pid, values in instruction.players.items() for k in values}
@@ -109,6 +120,8 @@ class LiveGame:
                 now = after.get((lever, pid))
                 faded.append(f"{who}{lever} {levers.signed(now['value'] if isinstance(now, dict) else now)}" if now is not None else f"{who}{lever} forgotten")
             described = instruction.describe(names) + (f" (fading: {', '.join(faded)})" if faded else "")
+            if abs(tiring() - tired_before) > 0.005:  # the call's price in legs
+                described += f" · energy use x{tired_before:.2f} → x{tiring():.2f}"
             return {**self.status(events), "levers": described, "reply": instruction.reply,
                     "replier": instruction.replier, "unmapped": instruction.unmapped}
 

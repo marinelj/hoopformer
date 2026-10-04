@@ -12,9 +12,13 @@ further.
 Each lever:
 - team offense: pace, three_point_rate, attack_rim, ball_security, crash_glass
 - team defense: pressure, protect_paint, foul_caution, plus double_team (an opponent) and late_foul
-- one player: aggression, shot_preference (rim, mid or three), foul_caution, rest
+- one player: aggression, shot_preference (rim, mid or three), foul_caution, rest, and on defense
+  pressure, protect_paint and box_out (a player's defensive call counts for a fifth of the team's)
 - the whole roster: focus (run the offense through one player)
-- morale: confidence (memory only: it changes how players talk, not how they play)
+- morale: confidence (praise; makes, misses, turnovers, steals and blocks move it too)
+
+Every call has a price. Most cost energy (EFFORT): tired players go to the bench sooner, so the stars
+play less. Confidence makes a player shoot more but a little worse, as real players do (hot_hand).
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from hoopformer.fetch import BOX_SCORE, SCHEDULE, final_regular_season_game_ids,
 TEAM_LEVERS = ("pace", "three_point_rate", "attack_rim", "ball_security", "crash_glass", "pressure", "protect_paint", "foul_caution")
 OFFENSE_LEVERS = ("pace", "three_point_rate", "attack_rim", "ball_security", "crash_glass")
 DEFENSE_LEVERS = ("pressure", "protect_paint", "foul_caution")
-PLAYER_LEVERS = ("aggression", "shot_preference", "foul_caution")
+PLAYER_LEVERS = ("aggression", "shot_preference", "foul_caution", "pressure", "protect_paint", "box_out")
 ZONES = ("rim", "mid", "three")
 MIN_GAME_MINUTES = 20  # a player's game counts for the swing limits only with this many minutes
 MIN_GAMES = 30
@@ -45,6 +49,36 @@ LEAK_OUT = 0.04         # crashing the glass at +1: after a defensive rebound th
 PRESSURE_BEATEN = 0.03  # pressing at +1: the other team makes 3% more at the rim when it breaks the pressure,
 PRESSURE_FOULS = 0.5    # and the defense fouls as if at half its foul_caution limit
 SAFE_PLAY = 0.3         # protecting the ball at +1 attacks the rim less, as if attack_rim were -0.3
+# Energy: what each call costs in legs. A lever at +1 (first number) or -1 (second) changes how fast the
+# players it covers tire on the floor: 0.4 means 40% faster, -0.1 means 10% slower. Assumed: no public data
+# measures effort. Real shooting doesn't drop late in a stint (engine.py), so the price is paid in minutes:
+# tired players go to the bench sooner.
+EFFORT = {
+    "pace": (0.2, -0.1),           # running costs legs, walking it up saves them
+    "pressure": (0.4, -0.1),       # a full-court press is the most tiring call there is
+    "crash_glass": (0.15, 0.05),   # five to the glass, or sprinting back
+    "attack_rim": (0.1, 0.0),      # driving into bodies
+    "protect_paint": (-0.1, 0.1),  # a zone saves legs; chasing shooters off the line costs them
+    "foul_caution": (-0.05, 0.1),  # hands back is easy, physical defense is not
+    "aggression": (0.2, -0.05),    # carrying the offense
+    "box_out": (0.1, 0.1),         # fighting for the rebound, or leaking out for the break
+}
+DOUBLE_TEAM_EFFORT = 0.1  # rotating behind a double team
+ONE_OF_FIVE = 0.2      # a player's defensive call counts for a fifth of the team's: five players told = one team call
+PLAYER_STEALS = 0.5    # assumed: a player told to pressure his man gets up to 50% more of the team's steals
+PLAYER_BLOCKS = 0.5    # and one told to protect the rim, up to 50% more of its blocks
+
+# Confidence, from 0 to 1 (0.5 is normal), measured with actions.hot_hand on 2025-26: after making his last
+# two shots a player takes 6.0% more of his team's shots and makes 1.2% fewer of them than usual (harder
+# shots); after missing two, 5.4% fewer shots and 0.7% more makes. Confidence remembers his last few shots,
+# the latest most: each shot keeps half of his lead over 0.5 and adds or takes 0.1, so two makes give 0.65
+# and two misses 0.35.
+CONFIDENCE_KEEP = 0.5
+CONFIDENCE_SHOT = 0.1
+CONFIDENCE_USAGE = 0.4     # his share of chances x (1 + 0.4 x (confidence - 0.5)): 0.65 -> x1.06, 0.35 -> x0.94
+CONFIDENCE_QUALITY = 0.08  # his makes x (1 - 0.08 x (confidence - 0.5)): 0.65 -> x0.988, 0.35 -> x1.012
+CONFIDENCE_PLAY = 0.05     # assumed: a turnover costs this much, a steal or a block earns it
+
 # Calls from the page's list are nudges, not switches:
 STEP = 0.35  # each call moves its lever this far: the same call three times reaches the limit, the opposite call takes one back
 FADE = 0.7   # and the other calls of the same kind keep 70% of their strength: players hold on to the latest message best
@@ -60,7 +94,7 @@ def kind(lever: str, player: int | None) -> tuple | None:
     or one player's offense or defense. None for calls that don't fade (focus, double team, rest)."""
     if lever in OFFENSE_LEVERS or lever in ("aggression", "shot_preference"):
         return (player, "offense")
-    if lever in DEFENSE_LEVERS:
+    if lever in DEFENSE_LEVERS or lever == "box_out":
         return (player, "defense")
     return None
 
@@ -244,7 +278,7 @@ def validate(raw: dict, words: str, own: set[int], opponents: set[int], addresse
                     levers[lever] = {"zone": zone, "value": v}
                 else:
                     unmapped.append(f"shot_preference: {value!r}")
-            elif lever in ("aggression", "foul_caution"):
+            elif lever in PLAYER_LEVERS:
                 v = number(value, lever)
                 if v:
                     levers[lever] = v

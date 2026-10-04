@@ -54,7 +54,8 @@ Reply with one JSON object and nothing else, with these keys (leave out what the
   pressure (+ pressure the ball, trap, press), protect_paint (+ pack the paint / zone, - run shooters off the line),
   foul_caution (+ stop fouling, - get physical)
 "players": list of objects for the coach's own players: {{"person_id": id, "aggression": -1..1, "shot_preference": {{"zone": "rim"|"mid"|"three", "value": -1..1}},
-  "foul_caution": -1..1, "rest_minutes": minutes on the bench (0 = until the coach says otherwise), "confidence": -1..1 (praise +, criticism -)}}
+  "foul_caution": -1..1, "pressure": -1..1, "protect_paint": -1..1, "box_out": -1..1,
+  "rest_minutes": minutes on the bench (0 = until the coach says otherwise), "confidence": -1..1 (praise +, criticism -)}}
 "focus": person_id of one own player to run the offense through
 "double_team": person_id of one opponent to double-team
 "late_foul": true to foul on purpose when trailing late
@@ -75,7 +76,10 @@ fouls, rest, morale. Use team levers only for the whole team ("everybody", "we",
 aggression: + look for your shot, attack, take over; - stop forcing, pass more, swing it, find the open man.
 shot_preference zones: rim = drives, layups, dunks, downhill, the paint; mid = pull-ups, elbows, floaters, 15 feet;
 three = the arc, corners, from deep, spot-ups.
-There is no lever for ball movement, boxing out, switching or matchups: put those phrases in "unmapped".
+One player on defense: pressure (+ pick up your man, deny him, jump the passing lanes; - play off him),
+protect_paint (+ protect the rim, help inside; - stay home on your shooter), box_out (+ box out, finish with the rebound;
+- leak out for the break), foul_caution (+ stay out of foul trouble; - be physical).
+There is no lever for ball movement, switching or matchups, nor for the whole team boxing out: put those phrases in "unmapped".
 Typical strengths: a plain request 0.5, an emphatic one ("every time", "all game", "!!") 0.8-1.
 Team levers: {", ".join(TEAM_LEVERS)}. Player levers: {", ".join(PLAYER_LEVERS)}, rest_minutes, confidence."""
 

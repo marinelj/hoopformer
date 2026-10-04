@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 
 from hoopformer.fetch import BOX_SCORE, PLAY_BY_PLAY, SCHEDULE, raw_path
-from hoopformer.game.actions import EVENTS, ZONES, count_game, is_personal_foul, shot_zone
+from hoopformer.game.actions import EVENTS, ZONES, count_game, hot_hand, is_personal_foul, shot_zone
+from hoopformer.game import levers
 from hoopformer.game import coach
 from hoopformer.game.engine import Game, default_roster, minute_shares
 from hoopformer.game.model import ActionModel, shrink
@@ -355,3 +356,23 @@ def test_next_seasons_rosters_keep_last_seasons_rates(fitted):
     assert {p.team_id for p in season.players.values()} == set(rosters)
     result = Game(season, OKC, HOU, seed=3).play()
     assert result.home.points > 70 and result.away.points > 70
+
+
+def test_the_hot_hand_in_real_games_and_the_engines_confidence_match(fitted):
+    """After two makes real players shoot more often but no better; the engine's confidence copies that."""
+    measured = hot_hand(DATA, "2025-26")
+    print(measured)
+    usage, makes = measured["usage"], measured["makes"]
+    assert usage["hot"] > 1.03 and usage["cold"] < 0.97 and abs(usage["mixed"] - 1) < 0.02, "streaks change who shoots"
+    assert all(abs(m - 1) < 0.03 for m in makes.values()) and makes["hot"] < makes["cold"], "but not how well: hot shots are harder"
+    model, _ = fitted
+    athlete = Game(model, 1610612760, 1610612738, seed=1).home.athletes[1628983]
+    for state, shots in (("hot", [True, True]), ("cold", [False, False])):
+        athlete.confidence = 0.5
+        for made in shots:
+            athlete.shot_taken(made)
+        quality = 1 - levers.CONFIDENCE_QUALITY * (athlete.confidence - 0.5)
+        print(f"engine after two {'makes' if state == 'hot' else 'misses'}: confidence {athlete.confidence:.2f}, "
+              f"usage x{athlete.usage:.3f} (real {usage[state]:.3f}), makes x{quality:.3f} (real {makes[state]:.3f})")
+        assert abs(athlete.usage - usage[state]) < 0.015 and abs(quality - makes[state]) < 0.01
+

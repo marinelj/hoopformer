@@ -271,3 +271,65 @@ def season_counts(data_dir: Path, season: str, log=print) -> tuple[pd.DataFrame,
               "games": games, "home_wins": home_wins, "home_margin": home_margin, "possessions": possessions, "team_totals": dict(team_totals),
               "home_away": {key: dict(values) for key, values in home_away.items()}}
     return player_frame, team_frame, extras
+
+
+def hot_hand(data_dir: Path, season: str) -> dict:
+    """Do players shoot more, and better, after making their last two shots?
+
+    For every field goal attempt, each player of the shooting team on the floor is in a state from his
+    own last two shots of the game: "hot" (both made), "cold" (both missed), "mixed", or "none" (fewer
+    than two). Usage: how often he took the team's shot in that state, against his usual share while on
+    the floor. Makes: his makes in that state, against his own make rate by zone. 1.0 means no change.
+    """
+    schedule = json.loads(raw_path(data_dir, SCHEDULE, season).read_text(encoding="utf-8"))
+    on = defaultdict(counts_template)      # player -> state -> team shots while he was on the floor
+    took = defaultdict(counts_template)    # player -> state -> his shots
+    tried = defaultdict(counts_template)   # player -> (state, zone) -> his shots
+    made = defaultdict(counts_template)    # player -> (state, zone) -> his makes
+    games = 0
+    for game_id in final_regular_season_game_ids(schedule):
+        pbp_path, box_path = raw_path(data_dir, PLAY_BY_PLAY, game_id), raw_path(data_dir, BOX_SCORE, game_id)
+        if not (pbp_path.exists() and box_path.exists()):
+            continue
+        pbp = json.loads(pbp_path.read_text(encoding="utf-8"))
+        box = json.loads(box_path.read_text(encoding="utf-8"))["boxScoreTraditional"]
+        try:
+            stints = reconstruct_game(pbp, box)
+        except LineupError:
+            continue
+        actions = pbp["game"]["actions"]
+        stint_at = stint_at_actions(actions, stints)
+        history = defaultdict(list)  # player -> made (True) or missed, for each of his shots so far this game
+        for index, action in enumerate(actions):
+            if action["actionType"] not in ("Made Shot", "Missed Shot") or action["isFieldGoal"] != 1 or not action["personId"]:
+                continue
+            shooter, hit = action["personId"], action["actionType"] == "Made Shot"
+            stint = stints[stint_at[index]]
+            for player in (stint.home if action["teamId"] == box["homeTeamId"] else stint.away):
+                last_two = history[player][-2:]
+                state = "none" if len(last_two) < 2 else "hot" if all(last_two) else "cold" if not any(last_two) else "mixed"
+                on[player][state] += 1
+                if player == shooter:
+                    took[player][state] += 1
+                    tried[player][(state, shot_zone(action))] += 1
+                    made[player][(state, shot_zone(action))] += hit
+            history[shooter].append(hit)
+        games += 1
+    result = {"games": games, "usage": {}, "makes": {}}
+    for state in ("hot", "mixed", "cold", "none"):
+        his = usual = 0.0
+        for player, shots in took.items():
+            if sum(shots.values()) >= 100:  # regulars only: a usual share needs enough shots
+                his += shots[state]
+                usual += on[player][state] * sum(shots.values()) / sum(on[player].values())
+        result["usage"][state] = his / usual
+    for state in ("hot", "mixed", "cold"):
+        hits = expected = 0.0
+        for player in tried:
+            for zone in ZONES:
+                zone_tries = sum(v for (s, z), v in tried[player].items() if z == zone)
+                if zone_tries >= 50:
+                    hits += made[player][(state, zone)]
+                    expected += tried[player][(state, zone)] * sum(v for (s, z), v in made[player].items() if z == zone) / zone_tries
+        result["makes"][state] = hits / expected
+    return result

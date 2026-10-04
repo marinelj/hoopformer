@@ -65,22 +65,36 @@ class Athlete:
     seconds: float = 0.0
     stats: Counter = field(default_factory=Counter)
     energy: float = 1.0
-    confidence: float = 0.5  # memory only: moves with the coach's words, changes how the athlete talks
+    confidence: float = 0.5  # 0 to 1: moves with his shots, turnovers, steals, blocks and the coach's praise
 
     @property
     def fouled_out(self) -> bool:
         return self.stats["PF"] >= FOUL_OUT
 
-    def run(self, seconds: float, on_floor: bool) -> None:
-        """Time passes: on the floor it tires the player and counts as minutes, on the bench it rests them."""
+    def run(self, seconds: float, on_floor: bool, effort: float = 1.0) -> None:
+        """Time passes: on the floor it tires the player (faster under tiring calls) and counts as minutes,
+        on the bench it rests them."""
         if on_floor:
             self.seconds += seconds
-            self.energy = max(0.0, self.energy - seconds * (1 - TIRED) / stint_seconds(self.profile.minutes_per_game))
+            self.energy = max(0.0, self.energy - effort * seconds * (1 - TIRED) / stint_seconds(self.profile.minutes_per_game))
         else:
             self.rest(seconds)
 
     def rest(self, seconds: float) -> None:
         self.energy = min(1.0, self.energy + seconds * (1 - TIRED) / REST_SECONDS)
+
+    def feel(self, change: float) -> None:
+        self.confidence = min(1.0, max(0.0, self.confidence + change))
+
+    def shot_taken(self, made: bool) -> None:
+        """Confidence remembers his last few shots, the latest most (levers.CONFIDENCE_*, measured)."""
+        lead = (self.confidence - 0.5) * levers.CONFIDENCE_KEEP
+        self.confidence = min(1.0, max(0.0, 0.5 + lead + (levers.CONFIDENCE_SHOT if made else -levers.CONFIDENCE_SHOT)))
+
+    @property
+    def usage(self) -> float:
+        """Confident players take more of the shots (measured: x1.06 after two makes, x0.94 after two misses)."""
+        return 1.0 + levers.CONFIDENCE_USAGE * (self.confidence - 0.5)
 
 
 @dataclass
@@ -314,6 +328,18 @@ class Game:
             coach.rotate(self, side, stopped=True)
         return self.events[start:]
 
+    def effort(self, side: Side, pid: int) -> float:
+        """How fast a player tires on the floor under his coach's calls: 1 is normal, 1.4 is 40% faster."""
+        def cost(lever, value):
+            plus, minus = levers.EFFORT.get(lever, (0.0, 0.0))
+            return value * plus if value > 0 else -value * minus
+
+        mine = {k: v for k, v in side.player_tactics.get(pid, {}).items() if not isinstance(v, dict)}
+        if side.focus is not None:  # running the offense through one player is his aggression
+            mine["aggression"] = mine.get("aggression", 0.0) + (levers.FOCUS if pid == side.focus else levers.FOCUS_OTHERS)
+        total = sum(cost(k, v) for k, v in side.tactics.items()) + sum(cost(k, v) for k, v in mine.items())
+        return max(0.5, 1.0 + total + (levers.DOUBLE_TEAM_EFFORT if side.double_team is not None else 0.0))
+
     def nudge(self, side: Side, instruction: Instruction) -> list[Event]:
         """A call from the page's list: each lever it names moves one STEP from where it stands, so the same call
         again pushes further and the opposite call pulls back. The side's other calls of the same kind fade."""
@@ -385,6 +411,16 @@ class Game:
                 "directives": [d for d in side.directives if d.player in (None, pid)],
                 "recent": [e.text for e in mine[-recent:]]}
 
+    def _defense(self, dfn: Side, lever: str) -> float:
+        """A defensive lever's value: the team's call plus a fifth of each call to a player on the floor."""
+        players = sum(dfn.player_tactics.get(p, {}).get(lever, 0.0) for p in dfn.lineup) if dfn.player_tactics else 0.0
+        return levers.clamp(dfn.tactics.get(lever, 0.0) + levers.ONE_OF_FIVE * players)
+
+    def _defense_lever(self, dfn: Side, lever: str, invert: bool = False) -> float:
+        """The multiplier for a defensive lever (1 when nobody was told anything)."""
+        value = self._defense(dfn, lever)
+        return levers.multiplier(-value if invert else value, self.limits[lever]) if value else 1.0
+
     def _lever(self, side: Side, lever: str, invert: bool = False) -> float:
         """A team lever's multiplier for this side (1 when the coach hasn't touched it)."""
         value = side.tactics.get(lever, 0.0)
@@ -397,8 +433,8 @@ class Game:
         league = self.league
         silent = self.silent_foul_rate
         if dfn.directives:
-            pressing = levers.PRESSURE_FOULS * max(0.0, dfn.tactics.get("pressure", 0.0))
-            silent *= self._lever(dfn, "foul_caution", invert=True) * levers.multiplier(pressing, self.limits["foul_caution"])
+            pressing = levers.PRESSURE_FOULS * max(0.0, self._defense(dfn, "pressure"))
+            silent *= self._defense_lever(dfn, "foul_caution", invert=True) * levers.multiplier(pressing, self.limits["foul_caution"])
         if self.rng.random() < silent:
             fouler = self._fouler(dfn)
             dfn.athletes[fouler].stats["PF"] += 1
@@ -426,15 +462,15 @@ class Game:
         free_throw_factor = dfn.defense.free_throw_factor * (league.home_free_throw_factor if off.is_home else league.away_free_throw_factor)
         coached = use_levers and bool(off.directives or dfn.directives)
         if coached:  # the coaches' levers: shot mix, getting to the line, ball security, pressure, the defense's shape
-            paint = self._lever(dfn, "protect_paint")  # packing the paint concedes threes
+            paint = self._defense_lever(dfn, "protect_paint")  # packing the paint concedes threes
             team_zones = {"rim": self._lever(off, "attack_rim") / paint, "mid": 1.0, "three": self._lever(off, "three_point_rate") * paint}
             safe = levers.multiplier(-levers.SAFE_PLAY * off.tactics.get("ball_security", 0.0), self.limits["attack_rim"])
             team_zones["rim"] *= safe
-            free_throw_factor *= self._lever(off, "attack_rim") * safe * self._lever(dfn, "foul_caution", invert=True)
-            turnover_factor *= self._lever(off, "ball_security", invert=True) * self._lever(dfn, "pressure")
+            free_throw_factor *= self._lever(off, "attack_rim") * safe * self._defense_lever(dfn, "foul_caution", invert=True)
+            turnover_factor *= self._lever(off, "ball_security", invert=True) * self._defense_lever(dfn, "pressure")
         choices, weights = [], []
         for pid in off.lineup:
-            profile = off.athletes[pid].profile
+            profile, usage = off.athletes[pid].profile, off.athletes[pid].usage
             if coached:
                 event_weights = self._player_weights(off, dfn, pid, team_zones, turnover_factor, free_throw_factor)
             for event in EVENTS:
@@ -447,7 +483,7 @@ class Game:
                     elif event == "free_throws":
                         weight *= free_throw_factor
                 choices.append((pid, event))
-                weights.append(weight)
+                weights.append(weight * usage)
         choices.append((None, "turnover"))
         weights.append(league.team_turnover_rate * turnover_factor)
         return choices, weights
@@ -499,7 +535,8 @@ class Game:
         defense, their_before, their_after = rows(other, side)
         players = [{"name": side.athletes[pid].profile.name, "id": pid,
                     "before": sum(p for q, _, p in before if q == pid), "after": sum(p for q, _, p in after if q == pid),
-                    "energy": side.athletes[pid].energy, "confidence": side.athletes[pid].confidence}
+                    "energy": side.athletes[pid].energy, "confidence": side.athletes[pid].confidence,
+                    "effort": self.effort(side, pid)}
                    for pid in side.lineup]
         if side.double_team in other.lineup:
             doubled = side.double_team
@@ -554,15 +591,18 @@ class Game:
         if dfn.directives:
             if zone == "three" and dfn.double_team in off.lineup and dfn.double_team != pid:
                 chance *= levers.DOUBLE_TEAM_OPEN_THREES
-            if zone == "rim":
-                chance *= 1 + levers.CAUTION_CONTEST * max(0.0, dfn.tactics.get("foul_caution", 0.0))
-                chance *= 1 + levers.PRESSURE_BEATEN * max(0.0, dfn.tactics.get("pressure", 0.0))
+            if zone == "rim":  # hands back concedes easier finishes, physical defense contests them
+                chance *= 1 + levers.CAUTION_CONTEST * self._defense(dfn, "foul_caution")
+                chance *= 1 + levers.PRESSURE_BEATEN * max(0.0, self._defense(dfn, "pressure"))
+        chance *= 1 - levers.CONFIDENCE_QUALITY * (shooter.confidence - 0.5)  # confident players take harder shots
         chance = min(0.98, max(0.02, chance))
         shooter.stats["FGA"] += 1
         if zone == "three":
             shooter.stats["3PA"] += 1
         label = {"rim": "at the rim", "mid": "midrange", "three": "3PT"}[zone]
-        if self.rng.random() < chance:
+        made = self.rng.random() < chance
+        shooter.shot_taken(made)
+        if made:
             points = POINTS[zone]
             shooter.stats["FGM"] += 1
             shooter.stats["3PM"] += zone == "three"
@@ -583,10 +623,11 @@ class Game:
                 return self._free_throws(off, dfn, pid, 1)
             return False
         self._log(off, f"{shooter.profile.name} misses {label}", "shot", pid, None, zone, 0)
-        block_chance = sum(dfn.athletes[p].profile.block for p in dfn.lineup)
-        if self.rng.random() < block_chance:
-            blocker = self._pick(dfn, dfn.lineup, lambda p: p.block)
+        blocks = [dfn.athletes[p].profile.block * self._told(dfn, p, "protect_paint", levers.PLAYER_BLOCKS) for p in dfn.lineup]
+        if self.rng.random() < sum(blocks):
+            blocker = self.rng.choices(dfn.lineup, blocks)[0]
             dfn.athletes[blocker].stats["BLK"] += 1
+            dfn.athletes[blocker].feel(levers.CONFIDENCE_PLAY)
             self._log(dfn, f"blocked by {self._name(dfn, blocker)}", "block", blocker, pid)
         return self._rebound(off, dfn)
 
@@ -608,17 +649,22 @@ class Game:
 
     def _rebound(self, off: Side, dfn: Side) -> bool:
         offense_weight = sum(off.athletes[p].profile.oreb for p in off.lineup) * (self._lever(off, "crash_glass") if off.directives else 1.0)
-        defense_weight = sum(dfn.athletes[p].profile.dreb for p in dfn.lineup)
+        boxing = {p: self._box_out(dfn, p) for p in dfn.lineup}
+        defense_weight = sum(dfn.athletes[p].profile.dreb * boxing[p] for p in dfn.lineup)
         offense_keeps = self.rng.random() < offense_weight / (offense_weight + defense_weight)
-        if not offense_keeps and off.tactics.get("crash_glass", 0.0) > 0:  # everyone crashed: the other team leaks out
-            self.leak_out = (dfn, 1 + levers.LEAK_OUT * off.tactics["crash_glass"])
+        if not offense_keeps:
+            breaking = 1 + levers.LEAK_OUT * max(0.0, off.tactics.get("crash_glass", 0.0))  # everyone crashed: the other team runs
+            leakers = [-dfn.player_tactics[p]["box_out"] for p in dfn.lineup if dfn.player_tactics.get(p, {}).get("box_out", 0.0) < 0]
+            breaking *= 1 + levers.LEAK_OUT * max(leakers, default=0.0)  # one of ours left early for the break
+            if breaking > 1:
+                self.leak_out = (dfn, breaking)
         side = off if offense_keeps else dfn
         kind = "offensive" if offense_keeps else "defensive"
         if self.rng.random() < self.league.team_rebound_share:
             self._log(side, f"{side.tricode} team rebound", "rebound", None, zone=kind)
         else:
-            weight = (lambda p: p.oreb) if offense_keeps else (lambda p: p.dreb)
-            player = self._pick(side, side.lineup, weight)
+            weights = [side.athletes[p].profile.oreb if offense_keeps else side.athletes[p].profile.dreb * boxing[p] for p in side.lineup]
+            player = self.rng.choices(side.lineup, weights)[0]
             side.athletes[player].stats["OREB" if offense_keeps else "DREB"] += 1
             self._log(side, f"{kind} rebound {self._name(side, player)}", "rebound", player, zone=kind)
         return offense_keeps
@@ -629,13 +675,25 @@ class Game:
             self._log(off, f"{off.tricode} team turnover", "turnover")
             return
         off.athletes[pid].stats["TOV"] += 1
-        steal_chance = sum(dfn.athletes[p].profile.steal for p in dfn.lineup)
-        if self.rng.random() < steal_chance:
-            thief = self._pick(dfn, dfn.lineup, lambda p: p.steal)
+        off.athletes[pid].feel(-levers.CONFIDENCE_PLAY)
+        steals = [dfn.athletes[p].profile.steal * self._told(dfn, p, "pressure", levers.PLAYER_STEALS) for p in dfn.lineup]
+        if self.rng.random() < sum(steals):
+            thief = self.rng.choices(dfn.lineup, steals)[0]
             dfn.athletes[thief].stats["STL"] += 1
+            dfn.athletes[thief].feel(levers.CONFIDENCE_PLAY)
             self._log(off, f"{self._name(off, pid)} turnover, stolen by {self._name(dfn, thief)}", "turnover", pid, thief)
         else:
             self._log(off, f"{self._name(off, pid)} turnover", "turnover", pid)
+
+    @staticmethod
+    def _told(dfn: Side, pid: int, lever: str, reach: float) -> float:
+        """A defender's share of steals or blocks under his own call: up to 1 + reach at +1, 1 - reach at -1."""
+        return 1.0 + reach * dfn.player_tactics.get(pid, {}).get(lever, 0.0) if dfn.player_tactics else 1.0
+
+    def _box_out(self, dfn: Side, pid: int) -> float:
+        """A defender's rebounding weight under his call: boxing out gains as much as a crashing team, leaking out loses it."""
+        value = dfn.player_tactics.get(pid, {}).get("box_out", 0.0) if dfn.player_tactics else 0.0
+        return levers.multiplier(value, self.limits["crash_glass"]) if value else 1.0
 
     # --- the game loop -----------------------------------------------------------------------------
 
@@ -645,7 +703,7 @@ class Game:
         for side in (self.home, self.away):
             on_floor = set(side.lineup)
             for pid, athlete in side.athletes.items():
-                athlete.run(seconds, pid in on_floor)
+                athlete.run(seconds, pid in on_floor, self.effort(side, pid) if side.directives and pid in on_floor else 1.0)
 
     def _possession(self, off: Side, dfn: Side) -> bool:
         """Play one possession. Returns False if the period clock ran out first."""

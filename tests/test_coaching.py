@@ -128,12 +128,12 @@ def test_double_team_takes_the_ball_out_of_a_stars_hands(fitted, limits):
     shots = {}
     for label, raw in (("free", None), ("doubled", {"double_team": SGA})):
         total = 0
-        for seed in range(150):
+        for seed in range(300):  # 150 games left the ratio within noise of the bar
             game = Game(model, BOS, OKC, seed=seed, limits=limits)  # Boston coaches, doubling SGA
             if raw:
                 game.instruct(game.home, validate(raw, "double SGA", set(game.home.athletes), set(game.away.athletes), None, "test"))
             total += game.play().away.athletes[SGA].stats["FGA"]
-        shots[label] = total / 150
+        shots[label] = total / 300
     print(shots)
     assert shots["doubled"] < shots["free"] * 0.85
 
@@ -362,3 +362,69 @@ def test_calls_from_the_list_are_nudges_that_stack_and_fade(fitted, limits):
     after = call({"players": [{"person_id": SGA, "shot_preference": {"zone": "three", "value": 1}}]})
     print("SGA, rim then three:", after[("shot_preference", SGA)])
     assert after[("shot_preference", SGA)] == {"zone": "three", "value": 0.35}, "a new zone replaces the old one"
+
+
+def test_every_call_has_an_energy_price_paid_in_minutes(fitted, limits):
+    model, _ = fitted
+    game = Game(model, OKC, BOS, seed=4, limits=limits)
+    instruct(game, {"team": {"pressure": 1, "pace": 1}})
+    print("press and run:", {game.home.athletes[p].profile.name: round(game.effort(game.home, p), 2) for p in game.home.lineup})
+    assert all(abs(game.effort(game.home, p) - 1.6) < 1e-9 for p in game.home.lineup), "40% for the press, 20% for the pace"
+    instruct(game, {"team": {"pressure": -1, "pace": -1}})
+    assert all(abs(game.effort(game.home, p) - 0.8) < 1e-9 for p in game.home.lineup), "sitting back and walking it up save legs"
+    minutes = {}
+    for label, raw in (("normal", None), ("press all game", {"team": {"pressure": 1}})):
+        total = 0.0
+        for seed in range(200):
+            g = Game(model, OKC, BOS, seed=seed, limits=limits)
+            if raw:
+                instruct(g, raw)
+            total += g.play().home.athletes[SGA].seconds / 60
+        minutes[label] = total / 200
+    print("SGA minutes:", {k: round(v, 1) for k, v in minutes.items()})
+    assert minutes["press all game"] < minutes["normal"] - 0.5, "tired players go to the bench sooner"
+
+
+def test_a_players_defensive_call_is_a_fifth_of_the_teams(fitted, limits):
+    model, _ = fitted
+    team = Game(model, BOS, OKC, seed=5, limits=limits)  # Boston defends against OKC's possession below
+    instruct(team, {"team": {"pressure": 1}})
+    one = Game(model, BOS, OKC, seed=5, limits=limits)
+    defender = one.home.lineup[0]
+    instruct(one, {"players": [{"person_id": defender, "pressure": 1}]})
+    base = Game(model, BOS, OKC, seed=5, limits=limits)
+
+    def turnovers(game):
+        choices, weights = game.chance_weights(game.away, game.home)
+        return sum(w for (p, e), w in zip(choices, weights) if e == "turnover") / sum(weights)
+
+    shares = {"nobody told": turnovers(base), "one player": turnovers(one), "the team": turnovers(team)}
+    print("their turnover share:", {k: round(v, 4) for k, v in shares.items()})
+    assert shares["nobody told"] < shares["one player"] < shares["the team"]
+    assert abs((shares["one player"] - shares["nobody told"]) / (shares["the team"] - shares["nobody told"]) - 0.2) < 0.05
+    assert abs(one.effort(one.home, defender) - 1.4) < 1e-9 and one.effort(one.home, one.home.lineup[1]) == 1.0, "only he pays"
+    steals = {"base": 0, "told": 0}
+    for label, raw in (("base", None), ("told", {"players": [{"person_id": defender, "pressure": 1}]})):
+        for seed in range(150):
+            g = Game(model, BOS, OKC, seed=seed, limits=limits)
+            if raw:
+                instruct(g, raw)
+            steals[label] += g.play().home.athletes[defender].stats["STL"]
+    print(f"{one.home.athletes[defender].profile.name}'s steals in 150 games:", steals)
+    assert steals["told"] > steals["base"] * 1.2
+
+
+def test_leaking_out_trades_rebounds_for_fast_breaks(fitted, limits):
+    model, _ = fitted
+    game = Game(model, BOS, OKC, seed=6, limits=limits)
+    leaker = game.home.lineup[0]
+    instruct(game, {"players": [{"person_id": leaker, "box_out": -1}]})
+    assert game._box_out(game.home, leaker) < 1.0, "he leaves before the rebound"
+    breaks = []
+    for _ in range(400):
+        game.leak_out = None
+        if not game._rebound(game.away, game.home):  # Boston rebounds OKC's miss
+            breaks.append(game.leak_out)
+    print(len(breaks), "defensive rebounds, each with a break bonus of", breaks[0][1])
+    assert breaks and all(b is not None and b[0] is game.home and b[1] > 1 for b in breaks), "every one starts a break"
+

@@ -244,6 +244,32 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - **The server keeps the page it started with** (`replay.PAGE`, read once). Before, it read the page from disk on every request, so after a `git pull` an old server sent the new page without the routes the page needs ("Couldn't apply that (not found)"). Now page and server always match, and a page that meets an older server says to restart it.
 - **Language model failures say why.** When Qwen can't be reached the page now shows the error's message (for example an SSL handshake failure), the server prints it, and a dropped connection is retried once before falling back to the keyword rules.
 
+**Third follow-up (Oct 4): every call has a price; energy and confidence are shared resources.**
+- **Energy** (`levers.EFFORT`, `Game.effort`): each call changes how fast the players it covers tire on the floor. At +1 / -1:
+
+  | Lever | +1 | -1 |
+  |---|---|---|
+  | pressure | +40% | -10% |
+  | pace | +20% | -10% |
+  | aggression (one player; focus counts as aggression) | +20% | -5% |
+  | crash_glass | +15% | +5% |
+  | attack_rim | +10% | 0 |
+  | box_out (one player) | +10% | +10% (leaking out is running too) |
+  | protect_paint | -10% (a zone saves legs) | +10% |
+  | foul_caution | -5% | +10% |
+  | a double team in force | +10% for the five | |
+
+  These are assumed: no public data measures effort. The price is paid in minutes, not in shooting, because real shooting doesn't drop late in a stint (§9 Day 2): tired players go to the bench sooner. Pressing all game costs Shai Gilgeous-Alexander about 1.5 of his 33 minutes (`test_every_call_has_an_energy_price_paid_in_minutes`). The live page shows each call's price ("energy use x1.00 → x1.14") and each player's rate ("tiring x1.42") in the monitor.
+- **Confidence**, measured (`actions.hot_hand`, all 1,230 games of 2025-26): after making his last two shots a player takes **6.0% more** of his team's shots, and makes **1.2% fewer** of them than his usual rate in that zone (hot players take harder shots, as Bocskocsky, Ezekowitz and Stein found in 2014); after two misses, **5.4% fewer** shots and **0.7% more** makes. The engine copies this in every game, coached or not:
+  - Confidence (0 to 1, 0.5 normal) remembers a player's last few shots, the latest most: each shot keeps half his lead over 0.5 and adds or takes 0.1, so two makes give 0.65 and two misses 0.35.
+  - His share of chances is x(1 + 0.4 × (confidence − 0.5)) and his make rate x(1 − 0.08 × (confidence − 0.5)): x1.06 and x0.988 after two makes, matching the measurement (`test_the_hot_hand_in_real_games_and_the_engines_confidence_match`).
+  - A turnover takes 0.05, a steal or a block gives 0.05 (assumed), and praise gives 0.15 × its strength. So praise has a price too: the player shoots more, slightly worse.
+- **More calls for one player on defense** (8, was 2): pressure your man / play off him, protect the rim / stay home on your shooter, box out / leak out for the break, stay out of foul trouble / be physical.
+  - **A player's defensive call counts for a fifth of the team's** (`levers.ONE_OF_FIVE`): five players told to pressure equal one team press. On top of that, the steals (for pressure) or the blocks (for protect the rim) shift to him, up to 50% more (assumed).
+  - **Box out** raises his defensive-rebounding weight as much as a crashing team raises its offensive one; **leak out** lowers it but starts a fast break (`LEAK_OUT`) after every defensive rebound.
+  - The translator's prompt knows these levers too (Qwen: 50/50, 29/30, 18/20 after the change, against 50/50, 30/30, 19/20 before; the three misses were rest and shot-zone phrases, not the new levers).
+- **"Get physical" now has a benefit:** the rim contest (`CAUTION_CONTEST`) works both ways, so physical defense makes finishes 2% harder while it fouls more.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

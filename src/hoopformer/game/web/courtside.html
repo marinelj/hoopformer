@@ -1276,7 +1276,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const pt = table("who acts", players);
     [...pt.querySelectorAll("tr")].slice(1).forEach((tr, i) => {
       const p = players[i].p, td = mk("td"), bar = mk("span", "bar"), fill = mk("i");
-      fill.style.width = `${Math.round(p.energy * 100)}%`; bar.append(fill); td.append(bar, ` ${p.confidence.toFixed(2)}`);
+      fill.style.width = `${Math.round(p.energy * 100)}%`; bar.append(fill);
+      const use = p.effort && Math.abs(p.effort - 1) > 0.005 ? ` · tiring ×${p.effort.toFixed(2)}` : "";
+      td.append(bar, ` ${p.confidence.toFixed(2)}${use}`);
       tr.append(td);
     });
     pt.querySelector("tr").append(mk("th", "", "energy · conf."));
@@ -1494,6 +1496,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     ["offense", "Get to the rim", { shot_preference: { zone: "rim", value: V } }],
     ["offense", "Hunt your midrange", { shot_preference: { zone: "mid", value: V } }],
     ["offense", "Spot up for threes", { shot_preference: { zone: "three", value: V } }],
+    ["defense", "Pressure your man", { pressure: V }],
+    ["defense", "Play off your man", { pressure: -V }],
+    ["defense", "Protect the rim", { protect_paint: V }],
+    ["defense", "Stay home on your shooter", { protect_paint: -V }],
+    ["defense", "Box out, finish the play", { box_out: V }],
+    ["defense", "Leak out for the break", { box_out: -V }],
     ["defense", "Stay out of foul trouble", { foul_caution: V }],
     ["defense", "Be physical with your man", { foul_caution: -V }],
     ["any", "Take a breather (3 min)", { rest_minutes: 3 }],
@@ -1580,8 +1588,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       if ((b.TOV || 0) >= 3 || (b.PTS || 0) >= 25) out.push("Move the ball, find the open man");
       out.push(p.big >= 0.16 ? "Get to the rim" : p.handler >= 0.22 ? "Be aggressive, look for your shot" : "Spot up for threes");
     } else {
+      const lead = S.home - S.away;
       if ((b.PF || 0) >= 3) out.push("Stay out of foul trouble");
-      out.push((b.PF || 0) >= 2 ? "Stay out of foul trouble" : "Be physical with your man");
+      if (me && me.energy < 0.45) out.push("Play off your man");   // save his legs
+      if (p.big >= 0.16 && S.teamOreb.away >= 6) out.push("Box out, finish the play");
+      if (lead <= -8 && p.handler >= 0.22) out.push("Leak out for the break");
+      if (S.teamThrees.away >= 6 && p.big < 0.16) out.push("Stay home on your shooter");
+      out.push(p.big >= 0.16 ? "Protect the rim" : p.handler >= 0.22 ? "Pressure your man" : (b.PF || 0) >= 2 ? "Stay out of foul trouble" : "Be physical with your man");
     }
     out.push("Great job, keep it up!");
     return out;

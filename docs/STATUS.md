@@ -41,6 +41,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - Day 4 (done): coach a live game in the browser. `uv run hoopformer serve`, then open http://127.0.0.1:8000/. The engine runs on the server one possession ahead of the page; typed or spoken words go to Qwen on the server (the key never reaches the browser); timeouts and the tactics panel change the game too. Details are in GAME_DESIGN.md §9.
 - Day 4 follow-up (Oct 4): instructions now show on the court (zone, press, crash, pace, drives, spacing, with a play-call strip and shouted calls), and the live page has an engine monitor with each directive's effect on the next chance. Details are in GAME_DESIGN.md §9.
 - Second follow-up (Oct 4): the talk rows are lists of calls that switch between offense and defense with the ball; a picked call goes straight to the engine (`POST /api/call`, no language model). Calls are nudges: the same call again pushes further, the opposite call pulls back, and newer calls fade older ones of the same kind. Playback is 1× only. Qwen failures now show their reason. Restart `hoopformer serve` after pulling. Details are in GAME_DESIGN.md §9.
+- Third follow-up (Oct 4): every call has a price. Calls cost energy (tired players sit sooner), confidence follows makes and misses as measured in real 2025-26 games (6% more shots after two makes, slightly harder ones), and one player has 8 defensive calls. Details are in GAME_DESIGN.md §9.
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next
