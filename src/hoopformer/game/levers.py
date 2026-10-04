@@ -79,6 +79,27 @@ CONFIDENCE_USAGE = 0.4     # his share of chances x (1 + 0.4 x (confidence - 0.5
 CONFIDENCE_QUALITY = 0.08  # his makes x (1 - 0.08 x (confidence - 0.5)): 0.65 -> x0.988, 0.35 -> x1.012
 CONFIDENCE_PLAY = 0.05     # assumed: a turnover costs this much, a steal or a block earns it
 
+# Game mode. The measured limits make a faithful simulation, where one call moves a stat by a few percent:
+# true to the NBA, but too small to feel in a game. The live app plays with every coached effect stretched
+# BOOST times further from "no change": the lever limits, the side effects (so each call keeps its price),
+# how much confidence changes who shoots, and (half as much) the energy costs. How well a confident player
+# shoots stays as measured. Simulations, tests and the realism checks use boost 1.
+BOOST = 5.0
+CREDIT_FLOOR = 0.5  # a play a call made likelier is put down to it at least half the time, so the coach sees it pay off
+# Game mode only: tired legs. Real players don't shoot worse late in a normal stint (engine.py), because coaches
+# sub them out first; but boosted calls tire players far faster, so in the game a player below FATIGUE_START
+# energy pays for it: at empty he makes 15% fewer shots and turns it over 40% more (assumed). That is what
+# makes a tiring call a trade-off and not a free win.
+FATIGUE_START = 0.6
+FATIGUE_MAKES = 0.15
+FATIGUE_TURNOVERS = 0.4
+
+
+def boosted(limits: dict, boost: float) -> dict:
+    """Lever limits stretched `boost` times further from 1 (never below 0.2)."""
+    return {lever: [max(0.2, 1 - (1 - low) * boost), 1 + (high - 1) * boost] for lever, (low, high) in limits.items()}
+
+
 # Calls from the page's list are nudges, not switches:
 STEP = 0.35  # each call moves its lever this far: the same call three times reaches the limit, the opposite call takes one back
 FADE = 0.7   # and the other calls of the same kind keep 70% of their strength: players hold on to the latest message best

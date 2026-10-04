@@ -123,7 +123,9 @@ def test_calls_from_the_list_need_no_language_model_and_stack(server):
     threes = post(f"{base}/api/call", {"raw": {"team": {"three_point_rate": 1}}, "words": "Let it fly from three", "to": None})
     print(threes["levers"])
     assert threes["levers"].startswith("three_point_rate +0.35 (fading: pace +0.24)"), "the note says which older call faded"
-    assert team["levers"] == "pace +0.35 · energy use x1.00 → x1.07", "and what the call costs in legs"
+    assert team["levers"] == "pace +0.35 · energy use x1.00 → x1.21", "and what the call costs in legs (boosted in the live game)"
+    print("impact of a press:", post(f"{base}/api/call", {"raw": {"team": {"pressure": 1}}, "words": "Press", "to": None})["impact"])
+    assert courtside.live.game.boost == 5.0 and team["impact"], "the live game is the boosted one, and every call says what it changed"
     shown = {(d["lever"], d["player_id"]) for d in threes["monitor"]["directives"]}
     print("in force:", shown)
     assert shown == {("pace", None), ("shot_preference", SGA), ("three_point_rate", None)}, "the page reads each call's player to show where it stands"

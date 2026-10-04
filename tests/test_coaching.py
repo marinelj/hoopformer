@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from hoopformer.game.engine import Game
-from hoopformer.game.levers import TEAM_LEVERS, lever_limits, measure_limits, multiplier, validate
+from hoopformer.game.levers import BOOST, TEAM_LEVERS, lever_limits, measure_limits, multiplier, validate
 from hoopformer.game.translator import (HOLDOUT2_PHRASES, HOLDOUT_PHRASES, PHRASES, check_phrases, find_players, load_env,
                                          translate)
 
@@ -449,3 +449,54 @@ def test_each_players_card_shows_what_his_calls_change(fitted, limits):
     others = [p for pid, p in cards.items() if pid != SGA]
     assert all(next(r for r in p["defense"] if r["label"] == "of our steals")["after"] < next(r for r in p["defense"] if r["label"] == "of our steals")["before"]
                for p in others), "his teammates' share of the steals drops to match"
+
+
+def test_game_mode_makes_a_call_felt_and_keeps_its_price(fitted, limits):
+    """The live game stretches every coached effect BOOST times: three "crash the glass" calls should be
+    impossible to miss, and the price (fast breaks the other way) grows with them."""
+    model, _ = fitted
+    result = {}
+    for boost in (1.0, BOOST):
+        for calls in (0, 3):
+            oreb = burned = 0
+            for seed in range(150):
+                game = Game(model, OKC, BOS, seed=seed, limits=limits, boost=boost)
+                for _ in range(calls):
+                    game.nudge(game.home, validate({"team": {"crash_glass": 1}}, "crash", set(game.home.athletes), set(game.away.athletes), None, "call"))
+                r = game.play()
+                oreb += sum(a.stats["OREB"] for a in r.home.athletes.values())
+                burned += sum(1 for e in r.events if e.credit and e.credit["call"] == "burned")
+            result[(boost, calls)] = (oreb / 150, burned / 150)
+    print({f"boost {b}, {c} calls": f"OKC OREB {o:.1f}, burned {x:.1f}" for (b, c), (o, x) in result.items()})
+    faithful = result[(1.0, 3)][0] / result[(1.0, 0)][0]
+    game_mode = result[(BOOST, 3)][0] / result[(BOOST, 0)][0]
+    assert faithful < 1.4 < 1.8 < game_mode, "a real team gains a few boards; the game's team gains a lot"
+    assert result[(BOOST, 3)][1] > result[(1.0, 3)][1] > 0 == result[(BOOST, 0)][1], "and gets burned in transition more"
+
+
+def test_plays_are_credited_to_the_calls_that_made_them(fitted, limits):
+    model, _ = fitted
+    quiet = Game(model, OKC, BOS, seed=11, limits=limits, boost=BOOST).play()
+    assert not any(e.credit for e in quiet.events), "no calls, nothing to credit"
+    game = Game(model, OKC, BOS, seed=11, limits=limits, boost=BOOST)
+    for raw in ({"team": {"pressure": 1}}, {"team": {"attack_rim": 1}}, {"players": [{"person_id": SGA, "aggression": 1}]}):
+        game.nudge(game.home, validate(raw, "a call", set(game.home.athletes), set(game.away.athletes), None, "call"))
+    credited = [e for e in game.play().events if e.credit]
+    calls = {}
+    for e in credited:
+        calls[(e.credit["call"], e.credit["good"])] = calls.get((e.credit["call"], e.credit["good"]), 0) + 1
+    print(len(credited), "credited plays:", calls)
+    assert all(e.credit["team"] == "OKC" for e in credited), "only the coached team's calls get credit"
+    assert any(good for _, good in calls) and any(not good for _, good in calls), "calls pay off, and they cost something"
+    steals = [e for e in credited if e.credit["call"] in ("press", "steal")]
+    assert steals and all(e.kind == "turnover" and e.team == "BOS" for e in steals), "the press is credited with BOS turnovers"
+
+
+def test_tired_legs_only_in_game_mode(fitted, limits):
+    model, _ = fitted
+    for boost, expected in ((1.0, 0.0), (BOOST, 0.5)):
+        game = Game(model, OKC, BOS, seed=1, limits=limits, boost=boost)
+        athlete = game.home.athletes[SGA]
+        athlete.energy = 0.3
+        print(f"boost {boost}: energy 0.3 -> tired {game.tired(athlete):.2f}")
+        assert abs(game.tired(athlete) - expected) < 1e-9, "real stints show no fatigue in shooting; the game does"

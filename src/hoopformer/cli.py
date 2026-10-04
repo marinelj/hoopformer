@@ -76,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument("--season", default="2025-26", help="the season whose player rates the game uses")
     live.add_argument("--rosters", default="2026-27", help="play with this season's cached rosters if all 30 are fetched")
     live.add_argument("--port", type=int, default=8000)
+    live.add_argument("--boost", type=float, default=None,
+                      help="how much stronger calls are than in real basketball (default: the game's levers.BOOST; 1 = faithful)")
     live.add_argument("--use", choices=("auto", "qwen", "openai", "rules"), default="auto",
                       help="translator for your words (auto: the first LLM with a key set, else rules)")
     live.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -297,7 +299,7 @@ def serve_command(args) -> int:
     """`hoopformer serve`: the live Courtside page on http://127.0.0.1:<port>/."""
     import os
 
-    from hoopformer.game.levers import lever_limits
+    from hoopformer.game.levers import BOOST, lever_limits
     from hoopformer.game.model import ActionModel
     from hoopformer.game.rosters import season_rosters, with_rosters
     from hoopformer.game.server import Courtside, serve
@@ -315,7 +317,8 @@ def serve_command(args) -> int:
     elif args.rosters:
         print(f"{args.rosters} rosters not cached, using {args.season}'s (fetch them with `uv run hoopformer fetch --rosters --season {args.rosters}`)")
     courtside = Courtside(model, lever_limits(args.data_dir, args.season), args.home, args.away, use=args.use,
-                          unmapped_log=args.data_dir / "derived" / "unmapped.jsonl")
+                          unmapped_log=args.data_dir / "derived" / "unmapped.jsonl",
+                          boost=BOOST if args.boost is None else args.boost)
     if args.home.upper() not in courtside.by_code or args.away.upper() not in courtside.by_code:
         print(f"unknown team; choose from {' '.join(sorted(courtside.by_code))}")
         return 1

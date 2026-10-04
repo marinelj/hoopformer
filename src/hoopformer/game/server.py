@@ -48,13 +48,41 @@ BACKING_OFF = {  # the same levers called the other way
 TACTICS = "Tactics: "  # how the tactics panel's directives are marked, so a new plan replaces the old one
 
 
+def impact(before: dict, after: dict, top: int = 3) -> list[str]:
+    """The biggest changes between two monitors (before and after a call), in words: what the coach just did."""
+    def pct(v):
+        return f"{100 * v:.1f}%"
+
+    rows, tiring = [], []  # (how big, text); (who, before, after)
+    for key, whose in (("offense", "our chances"), ("defense", "their chances")):
+        for b, a in zip(before[key], after[key]):
+            if b.get("unit") != "s":
+                rows.append((abs(a["after"] - b["after"]), f"{whose}: {b['label']} {pct(b['after'])} → {pct(a['after'])}"))
+    for b, a in zip(before["players"], after["players"]):
+        if b["id"] != a["id"]:
+            continue
+        name = b["name"].split()[-1] if not b["name"].endswith(("Jr.", "III", "II")) else b["name"].split()[-2]
+        rows.append((abs(a["after"] - b["after"]), f"{name} takes {pct(b['after'])} → {pct(a['after'])} of our chances"))
+        for rb, ra in zip(b["offense"], a["offense"]):
+            rows.append((abs(ra["after"] - rb["after"]) * 0.5, f"{name}'s chances: {rb['label']} {pct(rb['after'])} → {pct(ra['after'])}"))
+        for rb, ra in zip(b["defense"], a["defense"]):
+            rows.append((abs(ra["after"] - rb["after"]) * 0.5, f"{name}'s share {rb['label']} {pct(rb['after'])} → {pct(ra['after'])}"))
+        if abs(a["effort"] - b["effort"]) > 0.005:
+            tiring.append((name, b["effort"], a["effort"]))
+    if len(tiring) > 1 and len({(round(x, 2), round(y, 2)) for _, x, y in tiring}) == 1:  # a team call: one line for all five
+        tiring = [("the team", tiring[0][1], tiring[0][2])]
+    rows += [(abs(y - x) * 0.05, f"{name} tires ×{x:.2f} → ×{y:.2f}") for name, x, y in tiring]
+    rows = sorted((r for r in rows if r[0] >= 0.004), key=lambda r: -r[0])
+    return [text for _, text in rows[:top]]
+
+
 class LiveGame:
     """One game being coached. Steps and instructions take turns through a lock."""
 
     def __init__(self, model: ActionModel, limits: dict, home: int, away: int, seed: int, use: str = "auto",
-                 unmapped_log: Path | None = None):
+                 unmapped_log: Path | None = None, boost: float = levers.BOOST):
         self.model, self.use, self.unmapped_log = model, use, unmapped_log
-        self.game = Game(model, home, away, seed=seed, limits=limits)
+        self.game = Game(model, home, away, seed=seed, limits=limits, boost=boost)  # game mode: calls are felt
         self.lock = threading.Lock()
         self.game.step()  # the tip-off and first possession, so the page opens with players on the floor
 
@@ -73,6 +101,15 @@ class LiveGame:
                 "final": {"home": game.home.points, "away": game.away.points},
                 "monitor": game.monitor(game.home)}  # what the coach's directives change, for the page's monitor
 
+    def measured(self, apply) -> tuple[list, list[str]]:
+        """Apply an instruction (apply() returns its events) and say what it changed most in the next chance."""
+        game = self.game
+        if game.done:
+            return [], []
+        before = game.monitor(game.home)
+        events = apply()
+        return events, impact(before, game.monitor(game.home))
+
     def next(self) -> dict:
         with self.lock:
             return self.status(self.game.step())
@@ -85,8 +122,8 @@ class LiveGame:
         if "failed:" in instruction.source:
             print(f"language model call failed, used the keyword rules instead: {instruction.source}", flush=True)
         with self.lock:
-            events = game.instruct(game.home, instruction) if not game.done else []
-            return {**self.status(events), "levers": instruction.describe(self.names()), "reply": instruction.reply,
+            events, changes = self.measured(lambda: game.instruct(game.home, instruction))
+            return {**self.status(events), "levers": instruction.describe(self.names()), "reply": instruction.reply, "impact": changes,
                     "replier": instruction.replier, "source": instruction.source, "unmapped": instruction.unmapped}
 
     def call(self, raw: dict, words: str, to: int | None) -> dict:
@@ -109,7 +146,7 @@ class LiveGame:
                 return sum(game.effort(side, p) for p in who) / max(1, len(who))
 
             before, tired_before = {(d.lever, d.player): d.value for d in side.directives}, tiring()
-            events = game.nudge(side, instruction) if not game.done else []
+            events, changes = self.measured(lambda: game.nudge(side, instruction))
             after = {(d.lever, d.player): d.value for d in side.directives}
             moved = {(k, None) for k in instruction.team} | {(k, pid) for pid, values in instruction.players.items() for k in values}
             names, faded = self.names(), []
@@ -122,7 +159,7 @@ class LiveGame:
             described = instruction.describe(names) + (f" (fading: {', '.join(faded)})" if faded else "")
             if abs(tiring() - tired_before) > 0.005:  # the call's price in legs
                 described += f" · energy use x{tired_before:.2f} → x{tiring():.2f}"
-            return {**self.status(events), "levers": described, "reply": instruction.reply,
+            return {**self.status(events), "levers": described, "reply": instruction.reply, "impact": changes,
                     "replier": instruction.replier, "unmapped": instruction.unmapped}
 
     def timeout(self) -> dict:
@@ -138,16 +175,16 @@ class LiveGame:
             side.directives = [d for d in side.directives if not d.words.startswith(TACTICS)]
             game._refresh(side)
             instruction = validate(raw, TACTICS + words, set(side.athletes), set(game.away.athletes), None, "tactics panel")
-            events = game.instruct(side, instruction)
-            return {**self.status(events), "levers": instruction.describe(self.names()), "unmapped": instruction.unmapped}
+            events, changes = self.measured(lambda: game.instruct(side, instruction))
+            return {**self.status(events), "levers": instruction.describe(self.names()), "unmapped": instruction.unmapped, "impact": changes}
 
 
 class Courtside:
     """What the server knows: the model, the lever limits, and the game being played."""
 
     def __init__(self, model: ActionModel, limits: dict, home: str, away: str, use: str = "auto",
-                 unmapped_log: Path | None = None):
-        self.model, self.limits, self.use, self.unmapped_log = model, limits, use, unmapped_log
+                 unmapped_log: Path | None = None, boost: float = levers.BOOST):
+        self.model, self.limits, self.use, self.unmapped_log, self.boost = model, limits, use, unmapped_log, boost
         self.by_code = {team.tricode: team.team_id for team in model.teams.values()}
         self.home, self.away = home, away
         self.live: LiveGame | None = None
@@ -157,7 +194,7 @@ class Courtside:
         if home not in self.by_code or away not in self.by_code or home == away:
             raise ValueError(f"unknown or identical teams {home} and {away}")
         seed = random.randrange(1 << 30) if seed is None else seed
-        self.live = LiveGame(self.model, self.limits, self.by_code[home], self.by_code[away], seed, self.use, self.unmapped_log)
+        self.live = LiveGame(self.model, self.limits, self.by_code[home], self.by_code[away], seed, self.use, self.unmapped_log, self.boost)
         return self.live
 
 

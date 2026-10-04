@@ -280,6 +280,37 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - **The call list is the page's own** instead of the browser's `<select>`, because the browser's drop-down can't change while it's open. Now an open list switches between offense and defense when the ball changes hands (its heading flashes), and the rows check the ball every 0.25 seconds. Arrow keys, Enter and Escape work.
 - **0.5×** next to Play halves the speed, for time to think about the next call. Real time stays the default.
 
+**Fifth follow-up (Oct 4): game mode. Calls you can feel.** marinelj: "this is a game, not a simulation for rigorous analysis. I want my decisions to feel impactful."
+- **The live app plays boosted** (`levers.BOOST` = 5, `Game(boost=...)`, `hoopformer serve --boost 1` for the faithful version). Every coached effect reaches 5 times further from "no change":
+  - the lever limits (`levers.boosted`);
+  - the side effects, so each call keeps its price;
+  - how much confidence changes who shoots (how well a confident player shoots stays as measured);
+  - the energy costs, at half that (x3).
+  - Simulations, tests and the realism checks still use boost 1, measured from real games.
+
+  Over 100–150 games, OKC vs BOS:
+
+  | Calls (each one step) | Faithful (boost 1) | Game (boost 5) |
+  |---|---|---|
+  | crash the glass ×3: OKC offensive rebounds | 9.8 → 12.6 | 10.0 → 21.3 |
+  | press ×3: BOS turnovers | | 13.8 → 22.9 |
+  | SGA aggressive ×3: his shots | | 17.7 → 27.5 |
+  | attack the rim ×3: point margin | | +4.3 → +14.6 |
+  | push the pace ×3: point margin | | +4.3 → +1.5 (the team tires) |
+- **Tired legs (game mode only):** below 60% energy a player makes up to 15% fewer shots and turns it over up to 40% more at empty (`FATIGUE_*`, assumed). Real stints show no such drop because coaches sub players out first, but boosted calls tire players far faster; this is what keeps a tiring call a trade-off and not a free win.
+- **Credit (`Event.credit`):** the engine marks a play it can put down to a call in force, with its own random numbers so crediting never changes the game. Credited:
+  - a call that paid off ("THE PRESS WORKS!", "ATTACK MODE!", "CRASHED THE GLASS!", "THE ZONE HOLDS!", ...), at least half the time such a play happens (`CREDIT_FLOOR` = 0.5) so the coach sees it;
+  - a price paid ("PRESS BROKEN", "BURNED IN TRANSITION", "ZONE BEATEN FROM DEEP", "TIRED LEGS", ...), only as often as the call really caused it.
+
+  One game with three calls had 34 credited plays: 25 paid off, 9 cost something.
+- **On the court:**
+  - Credited plays get a callout naming your call, a glow on the player, a sound and a one-second pause.
+  - A tally under your score ("your calls ✓7 paid off · ✗3 cost you").
+  - Badges under each player for his calls (💥 aggressive, 🚀🎯🏹 shot zone, ⚡ pressure, 🛡️ protect the rim, 📦 box out, 🏃 leak out, ✋/💪 fouls, ⭐ focus, ² ³ for two or three steps) and his state (🔥 hot, 🧊 cold, 💦 tired), for both teams' state.
+  - Players' chatter shows as speech bubbles over their heads.
+  - A call you make: a banner (team) or a pulse and "Coach: ..." bubble (player), then the reply over the replier's head.
+- **Every call says what it changed** (`server.impact`, in the chatter as 📈): the three biggest moves in the next chance's odds, e.g. "Gilgeous-Alexander takes 27.9% → 38.0% of our chances".
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).
