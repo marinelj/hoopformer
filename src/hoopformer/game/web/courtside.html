@@ -22,6 +22,7 @@
   --mono: "Chivo Mono", "SFMono-Regular", Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* panels with their own display must still hide */
 body { background: var(--arena); color: var(--text); font-family: var(--body); font-size: 15px; line-height: 1.45; }
 .wrap { max-width: 1320px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 32px; display: grid; gap: 14px; }
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
@@ -1740,6 +1741,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
   // open at tip-off, positioned and ready
   if (G.monitor) renderMonitor(G.monitor);
+  else if (LIVE) {   // a server started before the monitor existed: say how to get it
+    $("monitor-panel").hidden = false;
+    $("monitor").textContent = "This server was started before the engine monitor existed. Stop it (Ctrl+C) and run uv run hoopformer serve again.";
+  }
   seek(0.1);
   updateTalk();
   addHuman({ t: 0, speaker: "note", text: LIVE ? "Live game. Press Play. Talk to your players with the rows above: your words go to the language model and change the game from the next possession." : "Players talk here as the game plays. Talk to yours with the rows above; they answer.", kind: "note" });
