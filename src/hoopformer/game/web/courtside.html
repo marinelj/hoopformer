@@ -1468,7 +1468,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // have the ball, defensive calls while they do. Holding 🎙 says anything else, through the language model.
   const homeFloor = () => (S.lineups.home.length ? S.lineups.home : G.home.players.slice(0, 5).map((p) => p.id));
   const awayFloor = () => (S.lineups.away.length ? S.lineups.away : G.away.players.slice(0, 5).map((p) => p.id));
-  const V = 0.7;   // how hard a call pushes its lever, on the engine's -1 to 1 scale
+  const V = 1;   // a call gives its lever's direction; the engine moves the lever one step that way (levers.STEP)
+  const STEP = 0.35;   // the same as levers.STEP: three of the same call reach the limit
   const TEAM_CALLS = [   // [when it's offered, what the coach says, the levers]
     ["offense", "Push the pace", { team: { pace: V } }],
     ["offense", "Slow it down, use the clock", { team: { pace: -V } }],
@@ -1512,36 +1513,37 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     return list;
   }
 
-  // What's in force: live, the engine's own list (the monitor); in the replay, the page keeps it.
+  // Where each lever stands now: the engine's own list (the monitor), live only.
   let inForce = G.monitor ? G.monitor.directives : [], lastMonitor = G.monitor || null;
-  function sigOf(raw) {   // the directives a call leaves behind: [lever, player id or null, value]
+  function sigOf(raw) {   // the levers a call moves: [lever, player id or null, value]
     const out = Object.entries(raw.team || {}).map(([k, v]) => [k, null, v]);
-    for (const entry of raw.players || []) for (const [k, v] of Object.entries(entry)) if (k !== "person_id" && k !== "confidence") out.push([k === "rest_minutes" ? "rest" : k, entry.person_id, v]);
+    for (const entry of raw.players || []) for (const [k, v] of Object.entries(entry)) if (k !== "person_id" && k !== "confidence" && k !== "rest_minutes") out.push([k, entry.person_id, v]);
     for (const k of ["focus", "double_team", "late_foul"]) if (raw[k] != null) out.push([k, null, raw[k]]);
     return out;
   }
-  function sameValue(lever, mine, theirs) {
-    if (lever === "focus" || lever === "double_team") return Boolean(playerById[mine]) && playerById[mine].name === theirs;
-    if (lever === "rest") return true;
-    if (mine && typeof mine === "object") return Boolean(theirs) && mine.zone === theirs.zone && Math.sign(mine.value) === Math.sign(theirs.value);
-    if (typeof mine === "number") return typeof theirs === "number" && Math.sign(mine) === Math.sign(theirs);
-    return mine === theirs;
+  // How far the levers stand in this call's direction: 0 (not at all) to 1 (the limit). A call the other way reads 0.
+  function level(call) {
+    const sig = sigOf(call.raw);
+    if (!sig.length) return 0;
+    return Math.min(...sig.map(([k, p, v]) => {
+      const d = inForce.find((x) => x.lever === k && (x.player_id ?? null) === p);
+      if (!d) return 0;
+      if (k === "focus" || k === "double_team") return playerById[v] && playerById[v].name === d.value ? 1 : 0;
+      if (k === "late_foul") return d.value ? 1 : 0;
+      const mine = typeof v === "object" ? v.value : v, theirs = typeof d.value === "object" ? d.value.value : d.value;
+      if (typeof v === "object" && v.zone !== d.value.zone) return 0;
+      return Math.sign(mine) === Math.sign(theirs) ? Math.abs(theirs) : 0;
+    }));
   }
-  const matches = (d, [k, p, v]) => d.lever === k && (d.player_id ?? null) === p && sameValue(k, v, d.value);
-  const isInForce = (call) => { const sig = sigOf(call.raw); return sig.length > 0 && sig.every((s) => inForce.some((d) => matches(d, s))); };
-  const overrides = (call) => sigOf(call.raw).some(([k, p]) => inForce.some((d) => d.lever === k && (d.player_id ?? null) === p));
-  function rememberLocally(raw, words, cancel) {   // replay only: the same bookkeeping the engine does live
-    const same = (d, lever, player) => d.lever === lever && (d.player_id ?? null) === (player ?? null);
-    for (const c of cancel) inForce = inForce.filter((d) => !same(d, c.lever, c.player));
-    for (const [k, p, v] of sigOf(raw)) {
-      inForce = inForce.filter((d) => !same(d, k, p));
-      inForce.push({ lever: k, value: k === "focus" || k === "double_team" ? playerById[v].name : v, player_id: p, player: p ? playerById[p].name : null, words, left: null });
-    }
-  }
-  function describeDirective(d) {
-    const v = d.value;
-    const shown = typeof v === "number" ? `${v > 0 ? "+" : ""}${v}` : v && typeof v === "object" ? `${v.zone} ${v.value > 0 ? "+" : ""}${v.value}` : typeof v === "string" ? last(v) : "";
-    return `${d.lever.replace(/_/g, " ")} ${shown}`.trim();
+  // The opposite call is in force (picking this one would pull it back), or this one is already at the limit.
+  const opposes = (call) => sigOf(call.raw).some(([k, p]) => inForce.some((d) => d.lever === k && (d.player_id ?? null) === p)) && level(call) === 0;
+  const maxed = (call) => level(call) >= 0.99;
+  function dots(call) {   // ●●○: how many steps the lever stands in this call's direction
+    const v = level(call);
+    if (!v) return "";
+    if (sigOf(call.raw).every(([k]) => k === "focus" || k === "double_team" || k === "late_foul")) return " ●";
+    const n = Math.max(1, Math.min(3, Math.round(v / STEP)));
+    return ` ${"●".repeat(n)}${"○".repeat(3 - n)}`;
   }
 
   // What a coach might call right now, most urgent first. Only reads the game so far.
@@ -1602,20 +1604,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     wireMic(row);
   }
   const rowTarget = (row) => (row.i === 5 ? "team" : row.id);
-  function buildOptions(row, phase) {   // the calls for this phase, then the ones in force that can be taken back
-    const calls = callsFor(row, phase);
-    const known = [...callsFor(row, "offense"), ...callsFor(row, "defense")];
-    const mine = inForce.filter((d) => d.lever !== "play" && (row.i === 5 ? d.player_id == null : d.player_id === row.id));
-    const takeBack = mine.map((d) => {
-      const call = known.find((c) => { const s = sigOf(c.raw); return s.length === 1 && matches(d, s[0]); });
-      const label = call ? call.label : describeDirective(d);
-      return { when: "back", label: `Take back: ${label}`, words: `Forget "${label}". Back to normal.`, raw: {}, cancel: [{ lever: d.lever, player: d.player_id ?? null }] };
-    });
+  function buildOptions(row, phase) {   // the calls for this phase and the any-time ones, each with where its lever stands
     const suggested = row.options[row.suggested] ? row.options[row.suggested].label : null;
-    row.options = [...calls, ...takeBack];
+    row.options = callsFor(row, phase);
     const noTimeout = timeoutsLeft("home") <= 0 || inTimeout || (LIVE && G.done);
     const groups = [[phase === "offense" ? `On offense · ${G.home.tricode} ball` : `On defense · ${G.away.tricode} ball`, phase],
-                    ["Any time", "any"], ["In force · take back", "back"]];
+                    ["Any time", "any"]];
     const face = document.createElement("option");   // what the closed list shows; never a call itself
     face.value = ""; face.disabled = true; face.hidden = true;
     row.select.replaceChildren(face);
@@ -1626,15 +1620,14 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         if (c.when !== when) return;
         const o = document.createElement("option");
         o.value = String(n);
-        const on = when !== "back" && isInForce(c);
-        o.dataset.base = `${on ? "✓ " : when === "back" ? "✕ " : ""}${c.label}${on ? " (in force)" : ""}`;
+        o.dataset.base = c.label + dots(c);
         o.textContent = o.dataset.base;
         o.disabled = Boolean(c.raw.timeout) && noTimeout;
         group.appendChild(o);
       });
       if (group.children.length) row.select.appendChild(group);
     }
-    const again = row.options.findIndex((c) => c.label === suggested && c.when !== "back" && !overrides(c));
+    const again = row.options.findIndex((c) => c.label === suggested && !opposes(c) && !maxed(c));
     if (again >= 0) setSuggestion(row, again);
     else { row.pick = 0; row.suggested = -1; suggest(row, phase); }
   }
@@ -1650,9 +1643,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     row.select.classList.toggle("sent", sent); row.select.classList.toggle("suggested", !sent);
     row.select.selectedIndex = 0;
   }
-  function suggest(row, phase) {   // preselect the most urgent call that leaves the calls in force alone
+  function suggest(row, phase) {   // preselect the most urgent call that neither undoes a call in force nor is already at the limit
     const ideas = suggestedCalls(row, phase)
-      .map((label) => row.options.findIndex((c) => c.label === label && !overrides(c) && !(c.raw.timeout && timeoutsLeft("home") <= 0)))
+      .map((label) => row.options.findIndex((c) => c.label === label && !opposes(c) && !maxed(c) && !(c.raw.timeout && timeoutsLeft("home") <= 0)))
       .filter((n, k, all) => n >= 0 && all.indexOf(n) === k);
     if (!ideas.length) { setSuggestion(row, -1); return; }
     let n = ideas[0];
@@ -1662,23 +1655,23 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     row.select.classList.remove("fresh"); void row.select.offsetWidth; row.select.classList.add("fresh");
   }
   function sendPick(row) {
-    const call = row.options[Number(row.select.value)];
+    const call = row.select.value === "" ? null : row.options[Number(row.select.value)];
     if (!call || !row.id) return;
     row.sentAt = Date.now(); row.sentLabel = call.label; row.nextAt = Date.now() + 15000 + Math.random() * 15000;
     showFace(row);
     row.select.blur();
     if (call.raw.timeout) { $("timeout").click(); return; }   // the same timeout as the button: it opens the tactics panel
-    sendCall(call.words || call.label, call.raw, call.cancel || [], rowTarget(row));
+    sendCall(call.label, call.raw, rowTarget(row));
   }
-  // A picked call: live, the server applies its levers as they are (no language model) and the right player answers.
-  async function sendCall(words, raw, cancel, to) {
-    if (!LIVE) { rememberLocally(raw, words, cancel); sendCoachLine(words, to); updateTalk(); return; }
+  // A picked call: live, the server moves each lever one step (no language model) and the right player answers.
+  async function sendCall(words, raw, to) {
+    if (!LIVE) { sendCoachLine(words, to); return; }   // the replay is already played: players answer, nothing changes
     addHuman({ t: T, speaker: "coach", to, text: words, kind: "coach" });
     if (G.done) return;
     try {
-      const data = await api("call", { raw, words, cancel, to: to === "team" ? null : to });
+      const data = await api("call", { raw, words, to: to === "team" ? null : to });
       if (data.reply && data.replier) addHuman({ t: T, speaker: data.replier, text: data.reply, kind: "reply" });
-      addHuman({ t: T, speaker: "note", text: `→ ${cancel.length ? `taken back: ${cancel.map((c) => c.lever.replace(/_/g, " ")).join(", ")}` : data.levers} · from the next possession`, kind: "note" });
+      addHuman({ t: T, speaker: "note", text: `→ ${data.levers} · from the next possession`, kind: "note" });
       ingest(data);
       updateTalk();
     } catch (err) {

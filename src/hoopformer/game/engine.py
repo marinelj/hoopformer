@@ -314,12 +314,48 @@ class Game:
             coach.rotate(self, side, stopped=True)
         return self.events[start:]
 
-    def cancel(self, side: Side, lever: str, player: int | None = None) -> bool:
-        """The coach takes a call back. Returns True if it was in force."""
-        before = len(side.directives)
-        side.directives = [d for d in side.directives if not (d.lever == lever and d.player == player)]
-        self._refresh(side)
-        return len(side.directives) < before
+    def nudge(self, side: Side, instruction: Instruction) -> list[Event]:
+        """A call from the page's list: each lever it names moves one STEP from where it stands, so the same call
+        again pushes further and the opposite call pulls back. The side's other calls of the same kind fade."""
+        def strength(value):
+            return value["value"] if isinstance(value, dict) else value
+
+        def step(old, value):
+            return round(levers.clamp(old + (levers.STEP if strength(value) > 0 else -levers.STEP)), 2)
+
+        def forget(lever, player):
+            side.directives = [d for d in side.directives if not (d.lever == lever and d.player == player)]
+
+        now = {(d.lever, d.player): d.value for d in side.directives}
+        moved = set()
+        for lever, value in list(instruction.team.items()):
+            instruction.team[lever] = step(now.get((lever, None), 0.0), value)
+            moved.add((lever, None))
+        for pid, values in instruction.players.items():
+            for lever, value in list(values.items()):
+                old = now.get((lever, pid), 0.0)
+                if lever == "shot_preference":  # a new zone replaces the old one
+                    old = old["value"] if old and old["zone"] == value["zone"] else 0.0
+                    values[lever] = {"zone": value["zone"], "value": step(old, value)}
+                else:
+                    values[lever] = step(old, value)
+                moved.add((lever, pid))
+        kinds = {levers.kind(lever, player) for lever, player in moved} - {None}
+        for d in side.directives:
+            if (d.lever, d.player) not in moved and levers.kind(d.lever, d.player) in kinds:
+                faded = round(strength(d.value) * levers.FADE, 2)
+                d.value = {**d.value, "value": faded} if isinstance(d.value, dict) else faded
+        side.directives = [d for d in side.directives if levers.kind(d.lever, d.player) is None or abs(strength(d.value)) >= 0.05]
+        for lever, value in list(instruction.team.items()):  # back to where it started: nothing left to remember
+            if value == 0:
+                del instruction.team[lever]
+                forget(lever, None)
+        for pid, values in instruction.players.items():
+            for lever, value in list(values.items()):
+                if strength(value) == 0:
+                    del values[lever]
+                    forget(lever, pid)
+        return self.instruct(side, instruction)
 
     def _refresh(self, side: Side) -> None:
         """Rebuild a team's tactics from the directives still in force."""

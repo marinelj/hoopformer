@@ -45,6 +45,24 @@ LEAK_OUT = 0.04         # crashing the glass at +1: after a defensive rebound th
 PRESSURE_BEATEN = 0.03  # pressing at +1: the other team makes 3% more at the rim when it breaks the pressure,
 PRESSURE_FOULS = 0.5    # and the defense fouls as if at half its foul_caution limit
 SAFE_PLAY = 0.3         # protecting the ball at +1 attacks the rim less, as if attack_rim were -0.3
+# Calls from the page's list are nudges, not switches:
+STEP = 0.35  # each call moves its lever this far: the same call three times reaches the limit, the opposite call takes one back
+FADE = 0.7   # and the other calls of the same kind keep 70% of their strength: players hold on to the latest message best
+
+
+def signed(v: float) -> str:
+    """A lever value for people: +0.35, +0.7, -1."""
+    return f"{v:+.2f}".rstrip("0").rstrip(".")
+
+
+def kind(lever: str, player: int | None) -> tuple | None:
+    """Which calls compete for the players' attention: the team's offense, the team's defense,
+    or one player's offense or defense. None for calls that don't fade (focus, double team, rest)."""
+    if lever in OFFENSE_LEVERS or lever in ("aggression", "shot_preference"):
+        return (player, "offense")
+    if lever in DEFENSE_LEVERS:
+        return (player, "defense")
+    return None
 
 
 def possessions(stats: dict) -> float:
@@ -149,10 +167,10 @@ class Instruction:
         def name(pid: int) -> str:
             return names.get(pid, str(pid))
 
-        parts = [f"{k} {v:+.1f}" for k, v in self.team.items()]
+        parts = [f"{k} {signed(v)}" for k, v in self.team.items()]
         for pid, values in self.players.items():
             for lever, value in values.items():
-                shown = f"{value['zone']} {value['value']:+.1f}" if isinstance(value, dict) else f"{value:+.1f}"
+                shown = f"{value['zone']} {signed(value['value'])}" if isinstance(value, dict) else signed(value)
                 parts.append(f"{name(pid)} {lever} {shown}")
         parts += [f"focus {name(self.focus)}"] if self.focus is not None else []
         parts += [f"double {name(self.double_team)}"] if self.double_team is not None else []

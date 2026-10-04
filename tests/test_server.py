@@ -104,26 +104,30 @@ def test_timeout_and_the_tactics_panel(server):
     assert game.home.timeouts == 6
 
 
-def test_calls_from_the_list_need_no_language_model_and_can_be_taken_back(server):
+def test_calls_from_the_list_need_no_language_model_and_stack(server):
     base, courtside = server
     get(f"{base}/?seed=9")
     for _ in range(6):
         get(f"{base}/api/next")
     game = courtside.live.game
-    team = post(f"{base}/api/call", {"raw": {"team": {"pace": 0.7}}, "words": "Push the pace", "cancel": [], "to": None})
-    player = post(f"{base}/api/call", {"raw": {"players": [{"person_id": SGA, "shot_preference": {"zone": "rim", "value": 0.7}}]},
-                                       "words": "Get to the rim", "cancel": [], "to": SGA})
-    print(team["levers"], "|", team["reply"], "||", player["levers"], "|", player["reply"])
-    assert game.home.tactics == {"pace": 0.7} and team["reply"] and not team["unmapped"]
-    assert game.home.player_tactics[SGA] == {"shot_preference": {"zone": "rim", "value": 0.7}} and player["replier"] == SGA
-    shown = {(d["lever"], d["player_id"]) for d in player["monitor"]["directives"]}
+    team = post(f"{base}/api/call", {"raw": {"team": {"pace": 1}}, "words": "Push the pace", "to": None})
+    again = post(f"{base}/api/call", {"raw": {"team": {"pace": 1}}, "words": "Push the pace", "to": None})
+    print(team["levers"], "|", team["reply"], "||", again["levers"])
+    assert game.home.tactics == {"pace": 0.7} and team["reply"] == "Pushing it, coach." and not team["unmapped"]
+    slower = post(f"{base}/api/call", {"raw": {"team": {"pace": -1}}, "words": "Slow it down", "to": None})
+    print(slower["levers"], "|", slower["reply"])
+    assert game.home.tactics == {"pace": 0.35} and slower["reply"] == "Slowing it down."
+    player = post(f"{base}/api/call", {"raw": {"players": [{"person_id": SGA, "shot_preference": {"zone": "rim", "value": 1}}]},
+                                       "words": "Get to the rim", "to": SGA})
+    assert game.home.player_tactics[SGA] == {"shot_preference": {"zone": "rim", "value": 0.35}} and player["replier"] == SGA
+    threes = post(f"{base}/api/call", {"raw": {"team": {"three_point_rate": 1}}, "words": "Let it fly from three", "to": None})
+    print(threes["levers"])
+    assert threes["levers"] == "three_point_rate +0.35 (fading: pace +0.24)", "the note says which older call faded"
+    shown = {(d["lever"], d["player_id"]) for d in threes["monitor"]["directives"]}
     print("in force:", shown)
-    assert shown == {("pace", None), ("shot_preference", SGA)}, "the page needs each call's player to offer it back"
-    back = post(f"{base}/api/call", {"raw": {}, "words": "Forget it", "cancel": [{"lever": "pace", "player": None}], "to": None})
-    print("after taking pace back:", [(d["lever"], d["player_id"]) for d in back["monitor"]["directives"]], "|", back["reply"])
-    assert game.home.tactics == {} and SGA in game.home.player_tactics and back["reply"] == "Back to normal, coach."
+    assert shown == {("pace", None), ("shot_preference", SGA), ("three_point_rate", None)}, "the page reads each call's player to show where it stands"
     before = game.home.timeouts
-    timeout = post(f"{base}/api/call", {"raw": {"timeout": True}, "words": "Timeout!", "cancel": [], "to": None})
+    timeout = post(f"{base}/api/call", {"raw": {"timeout": True}, "words": "Timeout!", "to": None})
     assert game.home.timeouts == before - 1 and "timeout" in [e["kind"] for e in timeout["events"]]
 
 

@@ -14,7 +14,7 @@ Routes:
 - POST /api/say     {"text", "to"}: translate the words and apply them
 - POST /api/timeout call a timeout for the coach's team
 - POST /api/tactics {"raw", "words"}: apply the tactics panel's plan (no language model needed)
-- POST /api/call    {"raw", "words", "cancel", "to"}: a call picked from a talk row's list, or one taken back
+- POST /api/call    {"raw", "words", "to"}: a call picked from a talk row's list (one step on each lever it names)
 """
 
 from __future__ import annotations
@@ -27,10 +27,18 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from hoopformer.game.engine import Game
+from hoopformer.game import levers
 from hoopformer.game.levers import validate
 from hoopformer.game.model import ActionModel
 from hoopformer.game.replay import event_row, replay_data, replay_html
 from hoopformer.game.translator import RULE_REPLIES, translate
+
+CALL_REPLIES = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
+BACKING_OFF = {  # the same levers called the other way
+    "pace": "Slowing it down.", "three_point_rate": "Fewer threes, got it.", "attack_rim": "Staying out of the crowd.",
+    "ball_security": "Taking more chances.", "crash_glass": "Getting back on D.", "pressure": "Sitting back, no gambling.",
+    "protect_paint": "Running them off the line.", "foul_caution": "Getting physical.", "aggression": "Moving it, finding the open man.",
+}
 
 TACTICS = "Tactics: "  # how the tactics panel's directives are marked, so a new plan replaces the old one
 
@@ -76,21 +84,32 @@ class LiveGame:
             return {**self.status(events), "levers": instruction.describe(self.names()), "reply": instruction.reply,
                     "replier": instruction.replier, "source": instruction.source, "unmapped": instruction.unmapped}
 
-    def call(self, raw: dict, words: str, cancel: list, to: int | None) -> dict:
-        """A call picked from the page's list. It is already levers, so no language model is needed."""
+    def call(self, raw: dict, words: str, to: int | None) -> dict:
+        """A call picked from the page's list. It is already levers, so no language model is needed; each lever's
+        sign says which way it goes, and the engine moves it one step (Game.nudge)."""
         game, side = self.game, self.game.home
         addressed = to if to in side.athletes else None
         with self.lock:
-            for item in cancel:
-                game.cancel(side, str(item.get("lever")), item.get("player"))
-            first = next((key for key in [*(raw.get("team") or {}), *(k for entry in raw.get("players") or [] for k in entry if k != "person_id"),
-                                          *(k for k in ("focus", "double_team", "late_foul", "timeout", "team_confidence") if raw.get(k))]), None)
-            replies = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
-            reply = replies.get(first, "Got it, coach." if not cancel else "Back to normal, coach.")
+            named = [*(raw.get("team") or {}).items(), *((k, v) for entry in raw.get("players") or [] for k, v in entry.items() if k != "person_id"),
+                      *((k, raw[k]) for k in ("focus", "double_team", "late_foul", "timeout", "team_confidence") if raw.get(k))]
+            first, value = named[0] if named else (None, None)
+            value = value["value"] if isinstance(value, dict) else value
+            reply = (BACKING_OFF.get(first) if isinstance(value, (int, float)) and value < 0 else None) or CALL_REPLIES.get(first, "Got it, coach.")
             replier = addressed if addressed in side.lineup else (side.lineup[0] if side.lineup else None)
             instruction = validate({**raw, "reply": reply, "replier": replier}, words, set(side.athletes), set(game.away.athletes), addressed, "call")
-            events = game.instruct(side, instruction) if not game.done else []
-            return {**self.status(events), "levers": instruction.describe(self.names()), "reply": instruction.reply,
+            before = {(d.lever, d.player): d.value for d in side.directives}
+            events = game.nudge(side, instruction) if not game.done else []
+            after = {(d.lever, d.player): d.value for d in side.directives}
+            moved = {(k, None) for k in instruction.team} | {(k, pid) for pid, values in instruction.players.items() for k in values}
+            names, faded = self.names(), []
+            for (lever, pid), value in before.items():  # the older calls this one faded, so the coach sees it
+                if (lever, pid) in moved or levers.kind(lever, pid) is None or after.get((lever, pid)) == value:
+                    continue
+                who = f"{names.get(pid, pid)} " if pid else ""
+                now = after.get((lever, pid))
+                faded.append(f"{who}{lever} {levers.signed(now['value'] if isinstance(now, dict) else now)}" if now is not None else f"{who}{lever} forgotten")
+            described = instruction.describe(names) + (f" (fading: {', '.join(faded)})" if faded else "")
+            return {**self.status(events), "levers": described, "reply": instruction.reply,
                     "replier": instruction.replier, "unmapped": instruction.unmapped}
 
     def timeout(self) -> dict:
@@ -174,7 +193,7 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
             elif url.path == "/api/say":
                 self.answer(lambda: live.say(str(body.get("text", "")).strip()[:500], body.get("to")))
             elif url.path == "/api/call":
-                self.answer(lambda: live.call(body.get("raw") or {}, str(body.get("words", ""))[:200], body.get("cancel") or [], body.get("to")))
+                self.answer(lambda: live.call(body.get("raw") or {}, str(body.get("words", ""))[:200], body.get("to")))
             elif url.path == "/api/timeout":
                 self.answer(live.timeout)
             elif url.path == "/api/tactics":

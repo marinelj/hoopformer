@@ -332,14 +332,33 @@ def test_monitor_shows_the_engine_with_and_without_the_coachs_words(fitted, limi
     assert abs(sum(r["after"] for r in m["offense"][:5]) - 1) < 1e-9, "the five ways a chance ends add up to 1"
 
 
-def test_a_coach_can_take_a_call_back(fitted, limits):
+def test_calls_from_the_list_are_nudges_that_stack_and_fade(fitted, limits):
     model, _ = fitted
     game = Game(model, OKC, BOS, seed=3, limits=limits)
-    raw = {"team": {"pressure": 0.7}, "players": [{"person_id": SGA, "aggression": 0.7}]}
-    game.instruct(game.home, validate(raw, "press, and you shoot", set(game.home.athletes), set(game.away.athletes), None, "test"))
-    print("before:", game.home.tactics, game.home.player_tactics)
-    assert game.cancel(game.home, "pressure") is True
-    assert game.cancel(game.home, "aggression") is False, "a player's call needs the player"
-    print("after:", game.home.tactics, game.home.player_tactics)
-    assert game.home.tactics == {} and game.home.player_tactics == {SGA: {"aggression": 0.7}}
-    assert game.cancel(game.home, "aggression", SGA) is True and game.home.player_tactics == {}
+
+    def call(raw):
+        game.nudge(game.home, validate(raw, "a call", set(game.home.athletes), set(game.away.athletes), None, "call"))
+        return {(d.lever, d.player): d.value for d in game.home.directives}
+
+    steps = [call({"team": {"attack_rim": 1}})[("attack_rim", None)] for _ in range(4)]
+    print("attack the rim, four times:", steps)
+    assert steps == [0.35, 0.7, 1.0, 1.0], "each call is one step, up to the limit"
+    after = call({"team": {"attack_rim": -1}})
+    print("then the opposite call:", after)
+    assert after[("attack_rim", None)] == 0.65
+    after = call({"team": {"three_point_rate": 1}})
+    print("then a different offensive call:", after)
+    assert after[("three_point_rate", None)] == 0.35 and after[("attack_rim", None)] == round(0.65 * 0.7, 2), "the older call fades"
+    after = call({"team": {"pressure": 1}})
+    assert after[("three_point_rate", None)] == 0.35, "a defensive call leaves the offense alone"
+    for _ in range(8):
+        after = call({"team": {"protect_paint": 1}})
+    print("after eight more defensive calls:", after)
+    assert ("pressure", None) not in after, "a call that fades below 0.05 is forgotten"
+    call({"team": {"pace": 1}})
+    after = call({"team": {"pace": -1}})
+    assert ("pace", None) not in after and "pace" not in game.home.tactics, "back to where it started: nothing left"
+    after = call({"players": [{"person_id": SGA, "shot_preference": {"zone": "rim", "value": 1}}]})
+    after = call({"players": [{"person_id": SGA, "shot_preference": {"zone": "three", "value": 1}}]})
+    print("SGA, rim then three:", after[("shot_preference", SGA)])
+    assert after[("shot_preference", SGA)] == {"zone": "three", "value": 0.35}, "a new zone replaces the old one"

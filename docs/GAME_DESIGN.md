@@ -225,16 +225,20 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - **An engine monitor** (live page, `Game.monitor`) shows the next chance's odds at both ends with and without the directives, each player's share of chances with energy and confidence, and every directive with the coach's words and the game time it has left.
 
 **Second follow-up (Oct 4): calls from a list, real time only.**
-- **Each talk row is a list of calls** instead of a text box. The list follows the ball: offensive calls while we have it, defensive calls while they do, plus a few any-time calls, and it changes with the lineup ("Run it through X" for each of ours on the floor, "Double-team X" for each of theirs). A suggested call is preselected every 15-30 seconds, never one that would overwrite a call in force.
-- **A picked call needs no language model.** It is already levers (the same JSON Qwen writes), so the page posts it to `POST /api/call` and the engine applies it from the next possession. Every call pushes its lever by 0.7:
+- **Each talk row is a list of calls** instead of a text box. The list follows the ball: offensive calls while we have it, defensive calls while they do, plus a few any-time calls, and it changes with the lineup ("Run it through X" for each of ours on the floor, "Double-team X" for each of theirs). A suggested call is preselected every 15-30 seconds, never one that would undo a call in force or one already at its limit.
+- **A picked call needs no language model.** It is already levers (the same JSON Qwen writes), so the page posts it to `POST /api/call` and the engine applies it from the next possession. Each call names a direction (+ or −) on these levers:
 
   | Row | On offense | On defense | Any time |
   |---|---|---|---|
-  | All team | pace ±0.7, three_point_rate +0.7, attack_rim +0.7, ball_security +0.7, crash_glass ±0.7, focus X | pressure ±0.7, protect_paint ±0.7, foul_caution ±0.7, double_team X, late_foul | timeout, team confidence +0.5 |
-  | One player | aggression ±0.7, shot_preference rim / mid / three +0.7, focus on him | foul_caution ±0.7 | rest 3 minutes, confidence +0.5 |
+  | All team | pace ±, three_point_rate +, attack_rim +, ball_security +, crash_glass ±, focus X | pressure ±, protect_paint ±, foul_caution ±, double_team X, late_foul | timeout, team confidence +0.5 |
+  | One player | aggression ±, shot_preference rim / mid / three +, focus on him | foul_caution ± | rest 3 minutes, confidence +0.5 |
 
 - **Picking a call sends it**: there is no send button. The closed list shows the suggestion (💡, also marked inside the list) and, for a moment after a pick, "Sent: ...".
-- **Calls in force are marked ✓ and can be taken back** ("✕ Take back: Push the pace" posts `cancel`, and `Game.cancel` removes the directive). Calls made in the tactics panel or by voice show up there too.
+- **Calls are nudges, not switches** (`Game.nudge`), because a real coach repeats himself and changes his mind:
+  - **Each call moves its lever one step** (`STEP` = 0.35) from where it stands. The same call again pushes further (0.35, 0.7, then the limit 1.0); the opposite call ("Slow it down" after "Push the pace") takes a step back, and a lever back at 0 is forgotten. A player's new shot zone replaces his old one.
+  - **A new call fades the others of the same kind** (`FADE` = 0.7): the team's offense, the team's defense, or one player's offense or defense each compete for attention. "Let it fly from three" after two "Attack the rim" calls leaves attack_rim at 0.49 and three_point_rate at 0.35. A call that fades below 0.05 is forgotten (about six newer calls of its kind). To keep a call strong, repeat it.
+  - **Each option shows where its lever stands**: ●○○, ●●○ or ●●● steps in that call's direction (● for focus, double team and foul-late). There is no take-back option: the opposite call or newer calls do that, as on a real bench.
+  - Words said through 🎙 and the tactics panel still set a level directly (the language model reads "a lot more" as a bigger number); only list calls step.
 - **Hold 🎙 still says anything**: the words go to the language model as before. Picking "Timeout!" from the list is the same as the timeout button.
 - **Playback is real time only** (1×): the speed buttons are gone, since a live game can't run ahead of the server anyway and the calls need time to read.
 - **The server keeps the page it started with** (`replay.PAGE`, read once). Before, it read the page from disk on every request, so after a `git pull` an old server sent the new page without the routes the page needs ("Couldn't apply that (not found)"). Now page and server always match, and a page that meets an older server says to restart it.
