@@ -64,18 +64,22 @@ h1 span { color: var(--led); }
 .flash.show { opacity: 1; }
 .note { font-size: 12px; color: var(--muted); }
 
-/* benches */
-.benches { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-@media (max-width: 640px) { .benches { grid-template-columns: 1fr; } }
-.bench { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
-.bench-head { display: flex; align-items: center; gap: 10px; }
-.bench-head svg { width: 34px; height: 40px; flex: none; }
-.bench-head .label { font-family: var(--display); font-weight: 600; font-size: 18px; line-height: 1.1; }
-.bench-head .sub { font-size: 12px; color: var(--muted); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.chip.on { color: var(--text); border-color: var(--team, var(--led)); }
-.chip .pf { color: var(--shot); }
+/* one monitor card per player on the floor (live) */
+.players-panel { display: grid; gap: 8px; padding: 10px 12px 12px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 8px; }
+.pcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; background: #0e1219; display: grid; gap: 6px; align-content: start; font-size: 12px; }
+.pcard .pc-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; }
+.pcard .pc-head .sw { width: 9px; height: 9px; border-radius: 3px; flex: none; align-self: center; }
+.pcard .pc-head b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pcard .pc-head .meta { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 10.5px; white-space: nowrap; }
+.pcard .pc-res { display: grid; gap: 3px; color: var(--muted); }
+.pcard .pc-res .hot { color: var(--shot); }
+.pcard .pc-res .cool { color: #8fc7ff; }
+.pcard .pc-calls { font-family: var(--mono); font-size: 11px; color: var(--led); line-height: 1.5; }
+.pcard .pc-calls.none { color: var(--muted); }
+.monitor.cards table { font-size: 11.5px; }
+.monitor.cards td, .monitor.cards th { padding: 2px 3px; }
+.monitor.cards td:first-child, .monitor.cards th:first-child { white-space: nowrap; }
 
 /* controls */
 .controls { display: grid; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
@@ -122,18 +126,27 @@ tbody tr.on td:first-child { color: var(--led); }
 .talk-row.team .nm { color: var(--led); }
 .pick { display: grid; min-width: 0; }
 .pick > * { grid-area: 1 / 1; }
-.talk-select { min-width: 0; width: 100%; height: 34px; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; font: inherit; font-size: 13px; }
-.talk-select.suggested { color: #aab2bf; font-style: italic; }
-.talk-select.sent { color: var(--led); }
-.talk-select option, .talk-select optgroup { font-style: normal; color: var(--text); background: var(--panel); }
+.talk-row .talk-pick { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; width: 100%; height: 34px; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.talk-pick .face { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.talk-pick .caret { color: var(--muted); font-size: 11px; flex: none; }
+.talk-pick.suggested .face { color: #aab2bf; font-style: italic; }
+.talk-pick.sent .face { color: var(--led); }
+.talk-row .talk-pick[aria-expanded="true"] { border-color: var(--led); }
+.talk-menu { position: fixed; z-index: 50; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55); padding: 4px; overflow-y: auto; font-size: 13px; }
+.talk-menu .grp { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 7px 8px 3px; }
+.talk-menu .grp.switched { color: var(--led); animation: fresh 1.4s ease; }
+.talk-menu .item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+.talk-menu .item.active { background: #1f3b63; }
+.talk-menu .item[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.talk-menu .dots { color: var(--led); font-size: 11px; letter-spacing: 1px; flex: none; }
 .heard { display: none; align-items: center; min-width: 0; height: 34px; padding: 0 9px; border: 1px dashed var(--shot); border-radius: 6px; background: var(--arena); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .talk-row.listening .heard { display: flex; }
-.talk-row.listening .talk-select { visibility: hidden; }
+.talk-row.listening .talk-pick { visibility: hidden; }
 .phase { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--line); }
 .phase.offense { color: var(--led); }
 .phase.defense { color: #8fc7ff; }
 .voice-lang { font-size: 12px; padding: 2px 4px; }
-.talk-select.fresh { animation: fresh 1.4s ease; }
+.talk-pick.fresh { animation: fresh 1.4s ease; }
 @keyframes fresh { from { border-color: var(--led); } to { border-color: var(--line); } }
 .talk-row button { height: 34px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 0; display: grid; place-items: center; font-size: 14px; }
 .talk-row .mic { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -210,7 +223,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 .chatter li.note .said { color: var(--muted); }
 .chatter li.call .said { color: #c3cad6; }
 .chatter .at { color: var(--led); font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .figure, .flash { transition: none; } .talk-select.fresh, .talk-row .mic.rec { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .figure, .flash { transition: none; } .talk-pick.fresh, .talk-menu .grp.switched, .talk-row .mic.rec { animation: none; } }
 </style>
 
 <div class="wrap">
@@ -282,6 +295,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       <div class="controls">
         <div class="controls-row">
           <button class="play" id="play" type="button">▶ Play</button>
+          <button class="sound" id="half-speed" type="button" aria-pressed="false" title="Play at half speed: more time to choose your calls">0.5×</button>
           <button class="sound" id="sound" type="button" aria-pressed="true">🔊 Sound</button>
           <div class="elapsed" id="elapsed"></div>
         </div>
@@ -291,9 +305,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         </div>
       </div>
 
-      <div class="benches">
-        <div class="bench" id="away-bench"></div>
-        <div class="bench" id="home-bench"></div>
+      <div class="panel players-panel" id="players-panel" hidden>
+        <div class="chatter-head"><h2>Your players</h2><span class="note">each one's next chance, without and with your calls</span></div>
+        <div class="cards monitor" id="player-cards"></div>
       </div>
     </div>
 
@@ -1112,7 +1126,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     $("to-left").textContent = `${timeoutsLeft("home")} of ${TIMEOUTS} timeouts left`;
     $("timeout").disabled = timeoutsLeft("home") <= 0;
   }
-  let lastFeedLen = -1, lastBenchT = -99;
+  let lastFeedLen = -1;
   // The calls in force for the possession on the floor, in words.
   const CALL_TEXT = { pace: ["push the pace", "slow it down"], three_point_rate: ["more threes", "fewer threes"], attack_rim: ["attack the rim", "stay outside"],
     ball_security: ["protect the ball", "take chances"], crash_glass: ["crash the glass", "get back"], pressure: ["pressure the ball", "sit back"],
@@ -1180,25 +1194,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       }).join("");
       if (!$("box").hidden) renderBox(t);
     }
-    if (Math.abs(t - lastBenchT) > 5) { lastBenchT = t; renderBenches(t); }
     renderTimeouts();
     renderChatter();
-  }
-  function renderBenches(t) {
-    const mins = minutesUpTo(t);
-    for (const key of ["away", "home"]) {
-      const team = sides[key];
-      const on = new Set(S.lineups[key]);
-      const players = [...team.players].sort((a, b) => b.minutesShare - a.minutesShare);
-      $(`${key}-bench`).innerHTML = `<div class="bench-head">
-          <svg viewBox="0 0 34 40" aria-hidden="true"><circle cx="17" cy="9" r="7" fill="#e8c9a8" stroke="#2b2b2b"/><rect x="7" y="17" width="20" height="20" rx="5" fill="#2b2f3a"/><rect x="20" y="20" width="10" height="13" rx="1.5" fill="#f2efe6" stroke="${team.primary}" stroke-width="1.5"/></svg>
-          <div><div class="label">${team.coach} · ${team.tricode}</div><div class="sub">${team.coach === "You" ? "Human coach" : "Scripted for now; reinforcement learning later"}</div></div>
-        </div>
-        <div class="chips">${players.map((p) => {
-          const b = S.box[p.id] || {};
-          return `<span class="chip ${on.has(p.id) ? "on" : ""}" style="--team:${team.primary === "#1A1A1A" ? "#ffffff" : team.primary}">${last(p.name)} ${Math.floor((mins[p.id] || 0) / 60)}m${b.PF ? ` <span class="pf">${"•".repeat(b.PF)}</span>` : ""}</span>`;
-        }).join("")}</div>`;
-    }
   }
   function renderBox(t) {
     const mins = minutesUpTo(t);
@@ -1229,7 +1226,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
 
   // ---------- playback ----------
-  const speed = 1;   // real time: a quarter takes twelve minutes, as on TV
+  let speed = 1;   // real time (a quarter takes twelve minutes, as on TV), or half of it to think about the next call
+  $("half-speed").addEventListener("click", () => {
+    speed = speed === 1 ? 0.5 : 1;
+    $("half-speed").setAttribute("aria-pressed", String(speed === 0.5));
+    $("half-speed").textContent = speed === 0.5 ? "0.5× on" : "0.5×";
+  });
   let playing = false, T = 0, lastFrame = null, hold = 0, inTimeout = false, dribble = 0, bannerTimer;
   function renderTicks() {
     $("ticks").innerHTML = Array.from({ length: Math.max(4, G.periods) }, (_, i) => i + 1).map((p) => `<span style="left:${(periodStart(p) / totalT) * 100}%">${periodLabel(p).replace(" QTR", "")}</span>`).join("");
@@ -1272,18 +1274,48 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
     box.append(list);
     box.append(mk("h3", "", `${G.home.tricode} has the ball: the chance ends in`), table("outcome", m.offense));
-    const players = m.players.map((p) => ({ label: last(p.name), before: p.before, after: p.after, p }));
-    const pt = table("who acts", players);
-    [...pt.querySelectorAll("tr")].slice(1).forEach((tr, i) => {
-      const p = players[i].p, td = mk("td"), bar = mk("span", "bar"), fill = mk("i");
-      fill.style.width = `${Math.round(p.energy * 100)}%`; bar.append(fill);
-      const use = p.effort && Math.abs(p.effort - 1) > 0.005 ? ` · tiring ×${p.effort.toFixed(2)}` : "";
-      td.append(bar, ` ${p.confidence.toFixed(2)}${use}`);
-      tr.append(td);
-    });
-    pt.querySelector("tr").append(mk("th", "", "energy · conf."));
-    box.append(mk("h3", "", "Your players on the floor"), pt);
     box.append(mk("h3", "", `${G.away.tricode} has the ball: their chance ends in`), table("outcome", m.defense));
+
+    // one card per player on the floor: what your calls do to him, and what he has left
+    $("players-panel").hidden = false;
+    const cards = $("player-cards"), mins = minutesUpTo(T);
+    cards.replaceChildren();
+    const short = ["rim shot", "midrange", "three", "to the line", "turnover"];
+    for (const p of m.players) {
+      const card = mk("div", "pcard"), b = S.box[p.id] || {};
+      const head = mk("div", "pc-head"), sw = mk("span", "sw");
+      sw.style.background = G.home.primary === "#1A1A1A" ? "#ffffff" : G.home.primary;
+      head.append(sw, mk("b", "", last(p.name)), mk("span", "meta", `${b.PTS || 0} pts · ${b.PF || 0} pf · ${Math.floor((mins[p.id] || 0) / 60)} min`));
+      head.title = p.name;
+      const res = mk("div", "pc-res"), energy = mk("div"), bar = mk("span", "bar"), fill = mk("i");
+      fill.style.width = `${Math.round(p.energy * 100)}%`; bar.append(fill);
+      energy.append("energy ", bar, ` ${Math.round(p.energy * 100)}%`);
+      if (Math.abs(p.effort - 1) > 0.005) energy.append(" · ", mk("span", p.effort > 1 ? "hot" : "cool", `tiring ×${p.effort.toFixed(2)}`));
+      const conf = mk("div", "", `confidence ${p.confidence.toFixed(2)} · shoots ×${p.usage.toFixed(2)}`);
+      res.append(energy, conf);
+      const calls = callsOn(p.id);
+      const said = mk("div", "pc-calls" + (calls.length ? "" : " none"), calls.length ? calls.join(" · ") : "No calls to him yet");
+      const off = table("offense", [{ label: "our chances he takes", before: p.before, after: p.after },
+                                    ...p.offense.map((r, i) => ({ ...r, label: `· ${short[i]}` }))]);
+      const def = table("defense: his share", p.defense.map((r, i) => ({ ...r, label: ["steals", "blocks", "def. rebounds", "fouls"][i] })));
+      card.append(head, res, said, off, def);
+      cards.append(card);
+    }
+  }
+  // The calls in force on one player, by the names in his list, with how far each stands (●○○ to ●●●).
+  function callsOn(pid) {
+    const out = [];
+    for (const d of inForce) {
+      if (d.lever === "focus" && d.value === playerById[pid].name) out.push("Offense runs through him ●");
+      if (d.player_id !== pid || d.lever === "play") continue;
+      if (d.lever === "rest") { out.push("Resting"); continue; }
+      const v = typeof d.value === "object" ? d.value.value : d.value;
+      const call = PLAYER_CALLS.find(([, , raw]) => raw[d.lever] !== undefined &&
+        (typeof raw[d.lever] === "object" ? raw[d.lever].zone === d.value.zone : Math.sign(raw[d.lever]) === Math.sign(v)));
+      const n = Math.max(1, Math.min(3, Math.round(Math.abs(v) / STEP)));
+      out.push(`${call ? call[1] : d.lever} ${"●".repeat(n)}${"○".repeat(3 - n)}`);
+    }
+    return out;
   }
   function ingest(data) {
     if (data.monitor) renderMonitor(data.monitor);
@@ -1304,7 +1336,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const ended = () => !LIVE || G.done;
   const bufferEnd = () => (ended() ? totalT : (G.events.length ? G.events.at(-1).t : 0));
   function seek(t) {
-    S = freshState(); lastFeedLen = -1; lastBenchT = -99; lastChatterKey = "";
+    S = freshState(); lastFeedLen = -1; lastChatterKey = "";
     while (S.applied < G.events.length && G.events[S.applied].t <= t) apply(G.events[S.applied]);
     T = t; render(T);
     if (typeof rows !== "undefined") { for (const row of rows) row.nextAt = 0; updateTalk(); }   // a jump in time: fresh suggestions
@@ -1606,55 +1638,36 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const form = document.createElement("div");
     form.className = "talk-row" + (i === 5 ? " team" : "");
     form.innerHTML = `<span class="talk-who"><span class="sw"></span><span class="nm"></span><span class="meta"></span></span>
-      <span class="pick"><select class="talk-select suggested"></select><span class="heard"></span></span>
+      <span class="pick"><button class="talk-pick suggested" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="face"></span><span class="caret">▾</span></button><span class="heard"></span></span>
       <button class="mic" type="button">🎙</button>`;
     talkEl.appendChild(form);
-    const row = { i, form, id: null, select: form.querySelector("select"), heard: form.querySelector(".heard"), mic: form.querySelector(".mic"),
-                  options: [], built: "", suggested: -1, sentAt: 0, sentLabel: "", recording: false, nextAt: 0, pick: 0 };
+    const row = { i, form, id: null, button: form.querySelector(".talk-pick"), face: form.querySelector(".face"), heard: form.querySelector(".heard"),
+                  mic: form.querySelector(".mic"), options: [], phase: "", built: "", suggested: -1, sentAt: 0, sentLabel: "", recording: false, nextAt: 0, pick: 0 };
     rows.push(row);
-    row.select.addEventListener("change", () => sendPick(row));   // picking a call sends it
-    row.select.addEventListener("blur", () => { row.nextAt = Math.max(row.nextAt, Date.now() + 4000); updateTalk(); });
+    row.button.addEventListener("click", () => (menu.row === row ? closeMenu() : openMenu(row)));
+    row.button.addEventListener("keydown", (ev) => menuKey(row, ev));
     wireMic(row);
   }
   const rowTarget = (row) => (row.i === 5 ? "team" : row.id);
-  function buildOptions(row, phase) {   // the calls for this phase and the any-time ones, each with where its lever stands
-    const suggested = row.options[row.suggested] ? row.options[row.suggested].label : null;
+  function buildOptions(row, phase) {   // the calls for this phase and the any-time ones; an open list follows along
+    const label = (n) => (row.options[n] ? row.options[n].label : null);
+    const suggested = label(row.suggested), active = menu.row === row ? label(menu.active) : null;
     row.options = callsFor(row, phase);
-    const noTimeout = timeoutsLeft("home") <= 0 || inTimeout || (LIVE && G.done);
-    const groups = [[phase === "offense" ? `On offense · ${G.home.tricode} ball` : `On defense · ${G.away.tricode} ball`, phase],
-                    ["Any time", "any"]];
-    const face = document.createElement("option");   // what the closed list shows; never a call itself
-    face.value = ""; face.disabled = true; face.hidden = true;
-    row.select.replaceChildren(face);
-    for (const [title, when] of groups) {
-      const group = document.createElement("optgroup");
-      group.label = title;
-      row.options.forEach((c, n) => {
-        if (c.when !== when) return;
-        const o = document.createElement("option");
-        o.value = String(n);
-        o.dataset.base = c.label + dots(c);
-        o.textContent = o.dataset.base;
-        o.disabled = Boolean(c.raw.timeout) && noTimeout;
-        group.appendChild(o);
-      });
-      if (group.children.length) row.select.appendChild(group);
-    }
+    row.phase = phase;
+    if (menu.row === row) menu.active = row.options.findIndex((c) => c.label === active);
     const again = row.options.findIndex((c) => c.label === suggested && !opposes(c) && !maxed(c));
-    if (again >= 0) setSuggestion(row, again);
+    if (again >= 0) setSuggestion(row, again);   // both ways redraw an open list
     else { row.pick = 0; row.suggested = -1; suggest(row, phase); }
   }
   function setSuggestion(row, n) {   // mark one call with 💡 and show it on the closed list
     row.suggested = n;
-    for (const o of row.select.querySelectorAll("option[data-base]")) o.textContent = (Number(o.value) === n ? "💡 " : "") + o.dataset.base;
     showFace(row);
+    if (menu.row === row) renderMenu();
   }
   function showFace(row) {   // the closed list: the suggestion, or for a moment the call just sent
-    const face = row.select.options[0], sent = Date.now() - row.sentAt < 2500;
-    if (!face) return;
-    face.textContent = sent ? `Sent: ${row.sentLabel}` : row.options[row.suggested] ? `💡 ${row.options[row.suggested].label}` : "Pick a call…";
-    row.select.classList.toggle("sent", sent); row.select.classList.toggle("suggested", !sent);
-    row.select.selectedIndex = 0;
+    const sent = Date.now() - row.sentAt < 2500;
+    row.face.textContent = sent ? `Sent: ${row.sentLabel}` : row.options[row.suggested] ? `💡 ${row.options[row.suggested].label}` : "Pick a call…";
+    row.button.classList.toggle("sent", sent); row.button.classList.toggle("suggested", !sent);
   }
   function suggest(row, phase) {   // preselect the most urgent call that neither undoes a call in force nor is already at the limit
     const ideas = suggestedCalls(row, phase)
@@ -1665,14 +1678,102 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (n === row.suggested) { row.pick = (row.pick + 1) % Math.min(ideas.length, 3); n = ideas[row.pick]; }   // nothing new: rotate through the top few
     else row.pick = 0;
     setSuggestion(row, n);
-    row.select.classList.remove("fresh"); void row.select.offsetWidth; row.select.classList.add("fresh");
+    row.button.classList.remove("fresh"); void row.button.offsetWidth; row.button.classList.add("fresh");
   }
-  function sendPick(row) {
-    const call = row.select.value === "" ? null : row.options[Number(row.select.value)];
+
+  // The list of calls: drawn by the page (not the browser's own drop-down), so it can change while it's open.
+  const menu = { el: document.createElement("div"), row: null, active: -1, phase: "" };
+  menu.el.className = "talk-menu"; menu.el.hidden = true; menu.el.setAttribute("role", "listbox");
+  document.body.appendChild(menu.el);
+  const noTimeout = () => timeoutsLeft("home") <= 0 || inTimeout || (LIVE && G.done);
+  const pickable = (row, n) => n >= 0 && n < row.options.length && !(row.options[n].raw.timeout && noTimeout());
+  function openMenu(row) {
+    if (menu.row && menu.row !== row) closeMenu();
+    menu.row = row; menu.phase = row.phase;
+    menu.active = pickable(row, row.suggested) ? row.suggested : row.options.findIndex((c, n) => pickable(row, n));
+    row.button.setAttribute("aria-expanded", "true");
+    menu.el.hidden = false;
+    renderMenu();
+  }
+  function closeMenu() {
+    if (!menu.row) return;
+    menu.row.button.setAttribute("aria-expanded", "false");
+    menu.row = null; menu.el.hidden = true;
+  }
+  function renderMenu() {
+    const row = menu.row;
+    if (!row) return;
+    const switched = row.phase !== menu.phase;   // the ball changed hands while the list was open
+    menu.phase = row.phase;
+    if (switched || !pickable(row, menu.active)) menu.active = pickable(row, row.suggested) ? row.suggested : row.options.findIndex((c, n) => pickable(row, n));
+    const groups = [[row.phase === "offense" ? `On offense · ${G.home.tricode} ball` : `On defense · ${G.away.tricode} ball`, row.phase], ["Any time", "any"]];
+    menu.el.replaceChildren();
+    groups.forEach(([title, when], g) => {
+      const head = document.createElement("div");
+      head.className = "grp" + (switched && g === 0 ? " switched" : "");
+      head.textContent = title;
+      menu.el.appendChild(head);
+      row.options.forEach((c, n) => {
+        if (c.when !== when) return;
+        const item = document.createElement("div");
+        item.className = "item" + (n === menu.active ? " active" : "");
+        item.setAttribute("role", "option");
+        item.setAttribute("aria-selected", String(n === menu.active));
+        if (!pickable(row, n)) item.setAttribute("aria-disabled", "true");
+        const name = document.createElement("span"), level = document.createElement("span");
+        name.textContent = (n === row.suggested ? "💡 " : "") + c.label;
+        level.className = "dots"; level.textContent = dots(c).trim();
+        item.append(name, level);
+        item.addEventListener("pointerdown", (ev) => ev.preventDefault());   // keep the focus on the row's button
+        item.addEventListener("click", () => { if (pickable(row, n)) sendPick(row, n); });
+        item.addEventListener("pointerenter", () => { if (pickable(row, n)) { menu.active = n; markActive(); } });
+        menu.el.appendChild(item);
+      });
+    });
+    placeMenu();
+  }
+  function markActive() {
+    const items = [...menu.el.querySelectorAll(".item")], order = menu.row.options.map((c, n) => n).filter((n) => menu.row.options[n].when === menu.row.phase)
+      .concat(menu.row.options.map((c, n) => n).filter((n) => menu.row.options[n].when === "any"));
+    items.forEach((item, k) => { const on = order[k] === menu.active; item.classList.toggle("active", on); item.setAttribute("aria-selected", String(on)); if (on) item.scrollIntoView({ block: "nearest" }); });
+  }
+  function placeMenu() {   // under the row's button, or above it when there's no room below
+    if (!menu.row) return;
+    const r = menu.row.button.getBoundingClientRect(), gap = 4;
+    menu.el.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 260) - 8))}px`;
+    menu.el.style.width = `${Math.max(r.width, 260)}px`;
+    const below = window.innerHeight - r.bottom - gap - 8, above = r.top - gap - 8;
+    menu.el.style.maxHeight = `${Math.max(160, below >= 260 || below >= above ? below : above)}px`;
+    const height = Math.min(menu.el.scrollHeight, parseFloat(menu.el.style.maxHeight));
+    menu.el.style.top = `${below >= 260 || below >= above ? r.bottom + gap : r.top - gap - height}px`;
+  }
+  function menuKey(row, ev) {
+    if (menu.row !== row) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(ev.key)) { ev.preventDefault(); openMenu(row); }
+      return;
+    }
+    const order = row.options.map((c, n) => n).filter((n) => row.options[n].when === row.phase)
+      .concat(row.options.map((c, n) => n).filter((n) => row.options[n].when === "any")).filter((n) => pickable(row, n));
+    const at = order.indexOf(menu.active);
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      menu.active = order[(at + (ev.key === "ArrowDown" ? 1 : order.length - 1)) % order.length];
+      markActive();
+    } else if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      if (pickable(row, menu.active)) sendPick(row, menu.active);
+    } else if (ev.key === "Escape" || ev.key === "Tab") closeMenu();
+  }
+  document.addEventListener("pointerdown", (ev) => { if (menu.row && !menu.el.contains(ev.target) && !menu.row.button.contains(ev.target)) closeMenu(); });
+  window.addEventListener("resize", placeMenu);
+  window.addEventListener("scroll", placeMenu, true);
+
+  function sendPick(row, n) {
+    const call = row.options[n];
+    closeMenu();
     if (!call || !row.id) return;
     row.sentAt = Date.now(); row.sentLabel = call.label; row.nextAt = Date.now() + 15000 + Math.random() * 15000;
     showFace(row);
-    row.select.blur();
     if (call.raw.timeout) { $("timeout").click(); return; }   // the same timeout as the button: it opens the tactics panel
     sendCall(call.label, call.raw, rowTarget(row));
   }
@@ -1700,25 +1801,25 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const id = row.i === 5 ? "team" : floor[row.i];
       if (id !== row.id) {
         row.id = id; row.nextAt = 0; row.suggested = -1;
+        if (menu.row === row) closeMenu();   // a substitution: this row is someone else now
         const color = G.home.primary === "#1A1A1A" ? "#ffffff" : G.home.primary;
         row.form.querySelector(".sw").style.background = row.i === 5 ? "var(--led)" : color;
         row.form.querySelector(".nm").textContent = row.i === 5 ? "All team" : last(playerById[id].name);
         row.form.querySelector(".nm").title = row.i === 5 ? "Everybody on the floor" : playerById[id].name;
-        row.select.setAttribute("aria-label", row.i === 5 ? "Call for the whole team" : `Call for ${playerById[id].name}`);
+        row.button.setAttribute("aria-label", row.i === 5 ? "Calls for the whole team" : `Calls for ${playerById[id].name}`);
         row.mic.setAttribute("aria-label", row.i === 5 ? "Hold to talk to the whole team" : `Hold to talk to ${playerById[id].name}`);
         row.mic.title = "Hold to say anything, release to send";
       }
       const meta = row.form.querySelector(".meta");
       if (row.i === 5) meta.textContent = `${S.home}–${S.away} · ${timeoutsLeft("home")} TO`;
       else { const b = S.box[id] || {}; meta.textContent = `${b.PTS || 0} pts · ${b.PF || 0} pf`; }
-      const choosing = document.activeElement === row.select;   // never change a list while it's open
       const key = `${id}/${phase}/${floor.join(",")}/${awayFloor().join(",")}/${forceKey}/${timeoutsLeft("home")}/${inTimeout}`;
-      if (key !== row.built && !choosing) { row.built = key; buildOptions(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
-      if (row.select.classList.contains("sent") && now - row.sentAt >= 2500) showFace(row);   // back to the suggestion
-      if (!row.recording && !choosing && now >= row.nextAt) { suggest(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
+      if (key !== row.built) { row.built = key; buildOptions(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
+      if (row.button.classList.contains("sent") && now - row.sentAt >= 2500) showFace(row);   // back to the suggestion
+      if (!row.recording && menu.row !== row && now >= row.nextAt) { suggest(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
     }
   }
-  setInterval(updateTalk, 1000);
+  setInterval(updateTalk, 250);   // the lists follow the ball within a quarter of a second
   function talkTo(id) {   // a figure clicked on the court
     let row = rows.find((x) => x.id === id);
     if (!row) {   // an opponent (suggest doubling him, on defense) or one of our bench: the team row
@@ -1726,8 +1827,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const n = row.options.findIndex((c) => c.raw.double_team === id);
       if (n >= 0) setSuggestion(row, n);
     }
-    row.select.focus();
-    try { row.select.showPicker(); } catch { /* older browsers: focus is enough */ }
+    row.button.focus();
+    openMenu(row);
   }
 
   // Hold to talk: press and hold records, release sends the words to the language model. Speech recognition is the
@@ -1894,13 +1995,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   });
   renderPlan();
 
-  // open at tip-off, positioned and ready
+  // open at tip-off, positioned and ready (the game state first: the monitor's player cards read it)
+  seek(0.1);
   if (G.monitor) renderMonitor(G.monitor);
   else if (LIVE) {   // a server started before the monitor existed: say how to get it
     $("monitor-panel").hidden = false;
     $("monitor").textContent = "This server was started before the engine monitor existed. Stop it (Ctrl+C) and run uv run hoopformer serve again.";
   }
-  seek(0.1);
   updateTalk();
   addHuman({ t: 0, speaker: "note", text: LIVE ? "Live game. Press Play. Pick a call in a row above: it's sent at once and changes the game from the next possession." : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
   window.courtside = {   // for checking the page from the console

@@ -270,6 +270,16 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - The translator's prompt knows these levers too (Qwen: 50/50, 29/30, 18/20 after the change, against 50/50, 30/30, 19/20 before; the three misses were rest and shot-zone phrases, not the new levers).
 - **"Get physical" now has a benefit:** the rim contest (`CAUTION_CONTEST`) works both ways, so physical defense makes finishes 2% harder while it fouls more.
 
+**Fourth follow-up (Oct 4): a monitor for each player, a list that follows the ball while open, and 0.5×.**
+- **The bench panels are gone.** In their place, under the court, a card for each of your five on the floor (`Game.monitor` → `players`), refreshed every possession and after every call:
+  - points, fouls and minutes; energy, how fast he's tiring under your calls, and his confidence with what it does to his shooting;
+  - the calls to him, with how far each stands (●○○ to ●●●);
+  - **offense:** his share of your chances, and how his own chances end (rim, midrange, three, to the line, turnover), without and with your calls;
+  - **defense:** his share of the team's steals, blocks, defensive rebounds and fouls, without and with your calls. A call to one player moves his teammates' shares too ("Pressure your man" raises his steals share and lowers theirs).
+  - The team monitor keeps the team's outcomes and the list of calls in force.
+- **The call list is the page's own** instead of the browser's `<select>`, because the browser's drop-down can't change while it's open. Now an open list switches between offense and defense when the ball changes hands (its heading flashes), and the rows check the ball every 0.25 seconds. Arrow keys, Enter and Escape work.
+- **0.5×** next to Play halves the speed, for time to think about the next call. Real time stays the default.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

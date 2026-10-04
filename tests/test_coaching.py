@@ -428,3 +428,24 @@ def test_leaking_out_trades_rebounds_for_fast_breaks(fitted, limits):
     print(len(breaks), "defensive rebounds, each with a break bonus of", breaks[0][1])
     assert breaks and all(b is not None and b[0] is game.home and b[1] > 1 for b in breaks), "every one starts a break"
 
+
+
+def test_each_players_card_shows_what_his_calls_change(fitted, limits):
+    model, _ = fitted
+    game = Game(model, OKC, BOS, seed=7, limits=limits)
+    for _ in range(5):
+        game.step()
+    raw = {"players": [{"person_id": SGA, "pressure": 1, "shot_preference": {"zone": "rim", "value": 1}}]}
+    game.nudge(game.home, validate(raw, "a call", set(game.home.athletes), set(game.away.athletes), SGA, "call"))
+    cards = {p["id"]: p for p in game.monitor(game.home)["players"]}
+    sga = cards[SGA]
+    for row in sga["offense"] + sga["defense"]:
+        print(f"SGA {row['label']:28s} {row['before']:.3f} -> {row['after']:.3f}")
+    print("tiring x", round(sga["effort"], 2), "| shoots x", round(sga["usage"], 3))
+    rim = next(r for r in sga["offense"] if r["label"] == "a shot at the rim")
+    steals = next(r for r in sga["defense"] if r["label"] == "of our steals")
+    assert rim["after"] > rim["before"] and steals["after"] > steals["before"] and sga["effort"] > 1.0
+    assert abs(sum(r["after"] for r in sga["offense"]) - 1) < 1e-9, "his chances end in one of five ways"
+    others = [p for pid, p in cards.items() if pid != SGA]
+    assert all(next(r for r in p["defense"] if r["label"] == "of our steals")["after"] < next(r for r in p["defense"] if r["label"] == "of our steals")["before"]
+               for p in others), "his teammates' share of the steals drops to match"

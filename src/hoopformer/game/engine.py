@@ -508,8 +508,9 @@ class Game:
         """What the coach's directives change in the engine right now.
 
         The odds of the next chance at each end, with the current lineups, with and without the
-        directives in force; each player's share of chances, energy and confidence; and every directive
-        with the coach's words and how long it has left.
+        directives in force; for each player on the floor, his share of chances and how his chances end,
+        his share of the team's steals, blocks, defensive rebounds and fouls, his energy, how fast he tires,
+        and his confidence; and every directive with the coach's words and how long it has left.
         """
         other = self.other(side)
 
@@ -533,11 +534,37 @@ class Game:
         pace = self._lever(side, "pace") if "pace" in side.tactics else 1.0
         offense.append({"label": "seconds per first chance", "before": self.mean_first_seconds, "after": self.mean_first_seconds / pace, "unit": "s"})
         defense, their_before, their_after = rows(other, side)
-        players = [{"name": side.athletes[pid].profile.name, "id": pid,
-                    "before": sum(p for q, _, p in before if q == pid), "after": sum(p for q, _, p in after if q == pid),
-                    "energy": side.athletes[pid].energy, "confidence": side.athletes[pid].confidence,
-                    "effort": self.effort(side, pid)}
-                   for pid in side.lineup]
+        def mix(outs: list, pid: int) -> dict:  # how his own chances end
+            mine = {e: p for q, e, p in outs if q == pid}
+            total = sum(mine.values()) or 1.0
+            return {e: p / total for e, p in mine.items()}
+
+        def shares(weight) -> dict:  # each defender's share of a team total
+            weights = {p: weight(p) for p in side.lineup}
+            total = sum(weights.values()) or 1.0
+            return {p: w / total for p, w in weights.items()}
+
+        def profile(p):
+            return side.athletes[p].profile
+
+        own_defense = [  # (label, without calls, with calls)
+            ("of our steals", shares(lambda p: profile(p).steal), shares(lambda p: profile(p).steal * self._told(side, p, "pressure", levers.PLAYER_STEALS))),
+            ("of our blocks", shares(lambda p: profile(p).block), shares(lambda p: profile(p).block * self._told(side, p, "protect_paint", levers.PLAYER_BLOCKS))),
+            ("of our defensive rebounds", shares(lambda p: profile(p).dreb), shares(lambda p: profile(p).dreb * self._box_out(side, p))),
+            ("of our fouls", shares(lambda p: profile(p).foul), shares(lambda p: self._foul_weight(side, p))),
+        ]
+        players = []
+        for pid in side.lineup:
+            athlete, mine_before, mine_after = side.athletes[pid], mix(before, pid), mix(after, pid)
+            players.append({
+                "name": athlete.profile.name, "id": pid,
+                "before": sum(p for q, _, p in before if q == pid), "after": sum(p for q, _, p in after if q == pid),
+                "energy": athlete.energy, "confidence": athlete.confidence, "usage": athlete.usage, "effort": self.effort(side, pid),
+                "offense": [{"label": label, "before": mine_before.get(event, 0.0), "after": mine_after.get(event, 0.0)} for event, label in
+                            (("rim", "a shot at the rim"), ("mid", "a midrange shot"), ("three", "a three"),
+                             ("free_throws", "drawing a shooting foul"), ("turnover", "a turnover"))],
+                "defense": [{"label": label, "before": plain[pid], "after": coached[pid]} for label, plain, coached in own_defense],
+            })
         if side.double_team in other.lineup:
             doubled = side.double_team
             defense.append({"label": f"{other.athletes[doubled].profile.name} acting (doubled)",
@@ -579,9 +606,11 @@ class Game:
         """Who commits a foul: by foul rate, less often for a player told to be careful."""
         if not dfn.player_tactics:
             return self._pick(dfn, dfn.lineup, lambda p: p.foul)
-        weights = [dfn.athletes[p].profile.foul * levers.multiplier(-dfn.player_tactics.get(p, {}).get("foul_caution", 0.0),
-                                                                     self.limits["foul_caution"]) for p in dfn.lineup]
-        return self.rng.choices(dfn.lineup, weights)[0]
+        return self.rng.choices(dfn.lineup, [self._foul_weight(dfn, p) for p in dfn.lineup])[0]
+
+    def _foul_weight(self, dfn: Side, pid: int) -> float:
+        caution = dfn.player_tactics.get(pid, {}).get("foul_caution", 0.0)
+        return dfn.athletes[pid].profile.foul * (levers.multiplier(-caution, self.limits["foul_caution"]) if caution else 1.0)
 
     def _shot(self, off: Side, dfn: Side, pid: int, zone: str) -> bool:
         league, shooter = self.league, off.athletes[pid]
