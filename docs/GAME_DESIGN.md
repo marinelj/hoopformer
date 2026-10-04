@@ -233,9 +233,11 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   | All team | pace ±0.7, three_point_rate +0.7, attack_rim +0.7, ball_security +0.7, crash_glass ±0.7, focus X | pressure ±0.7, protect_paint ±0.7, foul_caution ±0.7, double_team X, late_foul | timeout, team confidence +0.5 |
   | One player | aggression ±0.7, shot_preference rim / mid / three +0.7, focus on him | foul_caution ±0.7 | rest 3 minutes, confidence +0.5 |
 
+- **Picking a call sends it**: there is no send button. The closed list shows the suggestion (💡, also marked inside the list) and, for a moment after a pick, "Sent: ...".
 - **Calls in force are marked ✓ and can be taken back** ("✕ Take back: Push the pace" posts `cancel`, and `Game.cancel` removes the directive). Calls made in the tactics panel or by voice show up there too.
 - **Hold 🎙 still says anything**: the words go to the language model as before. Picking "Timeout!" from the list is the same as the timeout button.
 - **Playback is real time only** (1×): the speed buttons are gone, since a live game can't run ahead of the server anyway and the calls need time to read.
+- **The server keeps the page it started with** (`replay.PAGE`, read once). Before, it read the page from disk on every request, so after a `git pull` an old server sent the new page without the routes the page needs ("Couldn't apply that (not found)"). Now page and server always match, and a page that meets an older server says to restart it.
 - **Language model failures say why.** When Qwen can't be reached the page now shows the error's message (for example an SSL handshake failure), the server prints it, and a dropped connection is retried once before falling back to the keyword rules.
 
 ## 10. Open questions for marinelj

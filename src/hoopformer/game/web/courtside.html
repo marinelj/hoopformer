@@ -114,7 +114,7 @@ tbody tr.on td:first-child { color: var(--led); }
 .talk-head h2 { font-family: var(--display); font-weight: 600; font-size: 18px; margin: 0; }
 .talk-panel { display: grid; gap: 8px; padding: 10px 12px 12px; }
 .talk { display: grid; gap: 6px; }
-.talk-row { display: grid; grid-template-columns: minmax(84px, 118px) minmax(0, 1fr) 34px 38px; gap: 6px; align-items: center; margin: 0; }
+.talk-row { display: grid; grid-template-columns: minmax(84px, 118px) minmax(0, 1fr) 38px; gap: 6px; align-items: center; margin: 0; }
 .talk-who { display: grid; grid-template-columns: 9px minmax(0, 1fr); gap: 0 6px; align-items: center; min-width: 0; }
 .talk-who .sw { width: 9px; height: 9px; border-radius: 3px; }
 .talk-who .nm { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -126,9 +126,9 @@ tbody tr.on td:first-child { color: var(--led); }
 .talk-select.suggested { color: #aab2bf; font-style: italic; }
 .talk-select.sent { color: var(--led); }
 .talk-select option, .talk-select optgroup { font-style: normal; color: var(--text); background: var(--panel); }
-.heard { display: none; align-items: center; min-width: 0; height: 34px; padding: 0 9px; border: 1px dashed var(--shot); border-radius: 6px; background: var(--arena); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
-.talk-row.listening .heard, .talk-row.spoken .heard { display: flex; }
-.talk-row.listening .talk-select, .talk-row.spoken .talk-select { visibility: hidden; }
+.heard { display: none; align-items: center; min-width: 0; height: 34px; padding: 0 9px; border: 1px dashed var(--shot); border-radius: 6px; background: var(--arena); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.talk-row.listening .heard { display: flex; }
+.talk-row.listening .talk-select { visibility: hidden; }
 .phase { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--line); }
 .phase.offense { color: var(--led); }
 .phase.defense { color: #8fc7ff; }
@@ -136,12 +136,11 @@ tbody tr.on td:first-child { color: var(--led); }
 .talk-select.fresh { animation: fresh 1.4s ease; }
 @keyframes fresh { from { border-color: var(--led); } to { border-color: var(--line); } }
 .talk-row button { height: 34px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 0; display: grid; place-items: center; font-size: 14px; }
-.talk-row .send { color: var(--led); }
 .talk-row .mic { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .talk-row .mic.rec { background: #3a1513; border-color: var(--shot); animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(255, 90, 71, 0.28); } }
 @media (max-width: 420px) {
-  .talk-row { grid-template-columns: minmax(0, 1fr) 34px 38px; }
+  .talk-row { grid-template-columns: minmax(0, 1fr) 38px; }
   .talk-who { grid-column: 1 / -1; grid-template-columns: 9px auto auto; gap: 6px; }
   .talk-who .meta { grid-column: auto; }
 }
@@ -300,7 +299,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
     <aside class="side">
       <div class="panel talk-panel">
-        <div class="talk-head"><h2>Talk to your players</h2><span class="phase" id="talk-phase"></span><span class="note">Pick a call and press ➤, or hold 🎙 to say anything in <select id="voice-lang" class="voice-lang" aria-label="Voice language"><option value="en-US">English</option><option value="zh-CN">中文</option></select></span></div>
+        <div class="talk-head"><h2>Talk to your players</h2><span class="phase" id="talk-phase"></span><span class="note">Pick a call to send it, or hold 🎙 to say anything in <select id="voice-lang" class="voice-lang" aria-label="Voice language"><option value="en-US">English</option><option value="zh-CN">中文</option></select></span></div>
         <div class="talk" id="talk"></div>
         <div class="note" id="chat-note"></div>
       </div>
@@ -355,6 +354,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   async function api(path, body) {
     const response = await fetch(`/api/${path}`, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    if (response.status === 404) throw new Error("this game server is older than the page: stop hoopformer serve (Ctrl+C) and start it again");
     if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
     return data;
   }
@@ -1588,20 +1588,17 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const talkEl = $("talk");
   const rows = [];
   for (let i = 0; i < 6; i++) {
-    const form = document.createElement("form");
+    const form = document.createElement("div");
     form.className = "talk-row" + (i === 5 ? " team" : "");
     form.innerHTML = `<span class="talk-who"><span class="sw"></span><span class="nm"></span><span class="meta"></span></span>
-      <span class="pick"><select class="talk-select suggested"></select><span class="heard" title="Click to discard"></span></span>
-      <button class="send" type="submit">➤</button>
+      <span class="pick"><select class="talk-select suggested"></select><span class="heard"></span></span>
       <button class="mic" type="button">🎙</button>`;
     talkEl.appendChild(form);
     const row = { i, form, id: null, select: form.querySelector("select"), heard: form.querySelector(".heard"), mic: form.querySelector(".mic"),
-                  options: [], built: "", dirty: false, recording: false, spoken: "", nextAt: 0, pick: 0 };
+                  options: [], built: "", suggested: -1, sentAt: 0, sentLabel: "", recording: false, nextAt: 0, pick: 0 };
     rows.push(row);
-    form.addEventListener("submit", (ev) => { ev.preventDefault(); if (row.spoken) sendSpoken(row); else sendPick(row); });
-    row.select.addEventListener("change", () => { row.dirty = true; row.select.classList.remove("suggested", "sent"); });
+    row.select.addEventListener("change", () => sendPick(row));   // picking a call sends it
     row.select.addEventListener("blur", () => { row.nextAt = Math.max(row.nextAt, Date.now() + 4000); updateTalk(); });
-    row.heard.addEventListener("click", () => { row.spoken = ""; row.form.classList.remove("spoken"); });
     wireMic(row);
   }
   const rowTarget = (row) => (row.i === 5 ? "team" : row.id);
@@ -1614,12 +1611,14 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const label = call ? call.label : describeDirective(d);
       return { when: "back", label: `Take back: ${label}`, words: `Forget "${label}". Back to normal.`, raw: {}, cancel: [{ lever: d.lever, player: d.player_id ?? null }] };
     });
-    const keep = row.dirty && row.options[Number(row.select.value)] ? row.options[Number(row.select.value)].label : null;
+    const suggested = row.options[row.suggested] ? row.options[row.suggested].label : null;
     row.options = [...calls, ...takeBack];
     const noTimeout = timeoutsLeft("home") <= 0 || inTimeout || (LIVE && G.done);
     const groups = [[phase === "offense" ? `On offense · ${G.home.tricode} ball` : `On defense · ${G.away.tricode} ball`, phase],
                     ["Any time", "any"], ["In force · take back", "back"]];
-    row.select.replaceChildren();
+    const face = document.createElement("option");   // what the closed list shows; never a call itself
+    face.value = ""; face.disabled = true; face.hidden = true;
+    row.select.replaceChildren(face);
     for (const [title, when] of groups) {
       const group = document.createElement("optgroup");
       group.label = title;
@@ -1628,39 +1627,48 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         const o = document.createElement("option");
         o.value = String(n);
         const on = when !== "back" && isInForce(c);
-        o.textContent = `${on ? "✓ " : when === "back" ? "✕ " : ""}${c.label}${on ? " (in force)" : ""}`;
+        o.dataset.base = `${on ? "✓ " : when === "back" ? "✕ " : ""}${c.label}${on ? " (in force)" : ""}`;
+        o.textContent = o.dataset.base;
         o.disabled = Boolean(c.raw.timeout) && noTimeout;
         group.appendChild(o);
       });
       if (group.children.length) row.select.appendChild(group);
     }
-    const again = keep ? row.options.findIndex((c) => c.label === keep) : -1;
-    if (again >= 0) row.select.value = String(again);
-    else { row.dirty = false; row.pick = 0; row.select.selectedIndex = -1; suggest(row, phase); }
+    const again = row.options.findIndex((c) => c.label === suggested && c.when !== "back" && !overrides(c));
+    if (again >= 0) setSuggestion(row, again);
+    else { row.pick = 0; row.suggested = -1; suggest(row, phase); }
+  }
+  function setSuggestion(row, n) {   // mark one call with 💡 and show it on the closed list
+    row.suggested = n;
+    for (const o of row.select.querySelectorAll("option[data-base]")) o.textContent = (Number(o.value) === n ? "💡 " : "") + o.dataset.base;
+    showFace(row);
+  }
+  function showFace(row) {   // the closed list: the suggestion, or for a moment the call just sent
+    const face = row.select.options[0], sent = Date.now() - row.sentAt < 2500;
+    if (!face) return;
+    face.textContent = sent ? `Sent: ${row.sentLabel}` : row.options[row.suggested] ? `💡 ${row.options[row.suggested].label}` : "Pick a call…";
+    row.select.classList.toggle("sent", sent); row.select.classList.toggle("suggested", !sent);
+    row.select.selectedIndex = 0;
   }
   function suggest(row, phase) {   // preselect the most urgent call that leaves the calls in force alone
     const ideas = suggestedCalls(row, phase)
       .map((label) => row.options.findIndex((c) => c.label === label && !overrides(c) && !(c.raw.timeout && timeoutsLeft("home") <= 0)))
       .filter((n, k, all) => n >= 0 && all.indexOf(n) === k);
-    if (!ideas.length) return;
+    if (!ideas.length) { setSuggestion(row, -1); return; }
     let n = ideas[0];
-    if (String(n) === row.select.value) { row.pick = (row.pick + 1) % Math.min(ideas.length, 3); n = ideas[row.pick]; }   // nothing new: rotate through the top few
+    if (n === row.suggested) { row.pick = (row.pick + 1) % Math.min(ideas.length, 3); n = ideas[row.pick]; }   // nothing new: rotate through the top few
     else row.pick = 0;
-    row.select.value = String(n);
-    row.select.classList.add("suggested"); row.select.classList.remove("sent");
+    setSuggestion(row, n);
     row.select.classList.remove("fresh"); void row.select.offsetWidth; row.select.classList.add("fresh");
   }
   function sendPick(row) {
     const call = row.options[Number(row.select.value)];
     if (!call || !row.id) return;
-    row.dirty = false; row.select.classList.add("sent"); row.select.classList.remove("suggested"); row.nextAt = Date.now() + 2500;
+    row.sentAt = Date.now(); row.sentLabel = call.label; row.nextAt = Date.now() + 15000 + Math.random() * 15000;
+    showFace(row);
+    row.select.blur();
     if (call.raw.timeout) { $("timeout").click(); return; }   // the same timeout as the button: it opens the tactics panel
     sendCall(call.words || call.label, call.raw, call.cancel || [], rowTarget(row));
-  }
-  function sendSpoken(row) {
-    const text = row.spoken;
-    row.spoken = ""; row.form.classList.remove("spoken");
-    if (text && row.id) sendCoachLine(text, rowTarget(row));
   }
   // A picked call: live, the server applies its levers as they are (no language model) and the right player answers.
   async function sendCall(words, raw, cancel, to) {
@@ -1685,13 +1693,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     for (const row of rows) {
       const id = row.i === 5 ? "team" : floor[row.i];
       if (id !== row.id) {
-        row.id = id; row.nextAt = 0; row.dirty = false;
+        row.id = id; row.nextAt = 0; row.suggested = -1;
         const color = G.home.primary === "#1A1A1A" ? "#ffffff" : G.home.primary;
         row.form.querySelector(".sw").style.background = row.i === 5 ? "var(--led)" : color;
         row.form.querySelector(".nm").textContent = row.i === 5 ? "All team" : last(playerById[id].name);
         row.form.querySelector(".nm").title = row.i === 5 ? "Everybody on the floor" : playerById[id].name;
         row.select.setAttribute("aria-label", row.i === 5 ? "Call for the whole team" : `Call for ${playerById[id].name}`);
-        row.form.querySelector(".send").setAttribute("aria-label", row.i === 5 ? "Send to the whole team" : `Send to ${playerById[id].name}`);
         row.mic.setAttribute("aria-label", row.i === 5 ? "Hold to talk to the whole team" : `Hold to talk to ${playerById[id].name}`);
         row.mic.title = "Hold to say anything, release to send";
       }
@@ -1701,17 +1708,17 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const choosing = document.activeElement === row.select;   // never change a list while it's open
       const key = `${id}/${phase}/${floor.join(",")}/${awayFloor().join(",")}/${forceKey}/${timeoutsLeft("home")}/${inTimeout}`;
       if (key !== row.built && !choosing) { row.built = key; buildOptions(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
-      const busy = row.dirty || row.recording || row.spoken || choosing;
-      if (!busy && now >= row.nextAt) { suggest(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
+      if (row.select.classList.contains("sent") && now - row.sentAt >= 2500) showFace(row);   // back to the suggestion
+      if (!row.recording && !choosing && now >= row.nextAt) { suggest(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
     }
   }
   setInterval(updateTalk, 1000);
   function talkTo(id) {   // a figure clicked on the court
     let row = rows.find((x) => x.id === id);
-    if (!row) {   // an opponent (offer to double him on defense) or one of our bench: the team row
+    if (!row) {   // an opponent (suggest doubling him, on defense) or one of our bench: the team row
       row = rows[5];
       const n = row.options.findIndex((c) => c.raw.double_team === id);
-      if (n >= 0) { row.select.value = String(n); row.dirty = true; row.select.classList.remove("suggested", "sent"); }
+      if (n >= 0) setSuggestion(row, n);
     }
     row.select.focus();
     try { row.select.showPicker(); } catch { /* older browsers: focus is enough */ }
@@ -1746,10 +1753,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     let rec = null, heard = "", released = false, started = false, pressedAt = 0;
     const finish = () => {
       rec = null; row.recording = false; row.mic.classList.remove("rec"); row.form.classList.remove("listening");
-      if (!heard) return;
-      row.spoken = heard; row.heard.textContent = heard;
-      if (released) sendSpoken(row);
-      else row.form.classList.add("spoken");   // the browser stopped listening first: keep it for the send button
+      if (heard) sendCoachLine(heard, rowTarget(row));
     };
     const start = (ev) => {
       ev.preventDefault();
@@ -1771,7 +1775,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       r.onerror = (e) => { if (rec === r && e.error !== "aborted") voiceNote(e.error); };
       r.onend = () => { if (rec === r) finish(); };
       row.recording = true; row.mic.classList.add("rec");
-      row.spoken = ""; row.form.classList.remove("spoken"); row.form.classList.add("listening");
+      row.form.classList.add("listening");
       row.heard.textContent = "Listening… let go to send";
       try { rec.start(); } catch (err) { finish(); voiceNote(String(err && err.name || "failed")); return; }
       if (ev.pointerId != null && row.mic.setPointerCapture) { try { row.mic.setPointerCapture(ev.pointerId); } catch { /* no capture */ } }
@@ -1892,7 +1896,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   seek(0.1);
   updateTalk();
-  addHuman({ t: 0, speaker: "note", text: LIVE ? "Live game. Press Play. Pick a call in a row above and press ➤: it changes the game from the next possession." : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
+  addHuman({ t: 0, speaker: "note", text: LIVE ? "Live game. Press Play. Pick a call in a row above: it's sent at once and changes the game from the next possession." : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
   window.courtside = {   // for checking the page from the console
     lines: () => S.chatter.length, seek, rows, fetchNext,
     state: () => ({ events: G.events.length, done: G.done === true, periods: G.periods, T, bufferEnd: bufferEnd(), plans: plans.length }),

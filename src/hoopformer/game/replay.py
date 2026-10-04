@@ -68,9 +68,10 @@ def replay_data(result: GameResult, model: ActionModel, home_coach: str = "You",
 
 
 TEMPLATE = Path(__file__).parent / "web" / "courtside.html"
+PAGE = TEMPLATE.read_text(encoding="utf-8")  # read once: a running server keeps the page that matches its own code
 
 
 def replay_html(data: dict) -> str:
     """The Courtside page with one game's data embedded, ready to open in a browser."""
     payload = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
-    return TEMPLATE.read_text(encoding="utf-8").replace("__GAME_DATA__", payload)
+    return PAGE.replace("__GAME_DATA__", payload)
