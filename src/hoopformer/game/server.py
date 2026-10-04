@@ -14,6 +14,7 @@ Routes:
 - POST /api/say     {"text", "to"}: translate the words and apply them
 - POST /api/timeout call a timeout for the coach's team
 - POST /api/tactics {"raw", "words"}: apply the tactics panel's plan (no language model needed)
+- POST /api/call    {"raw", "words", "cancel", "to"}: a call picked from a talk row's list, or one taken back
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from hoopformer.game.engine import Game
 from hoopformer.game.levers import validate
 from hoopformer.game.model import ActionModel
 from hoopformer.game.replay import event_row, replay_data, replay_html
-from hoopformer.game.translator import translate
+from hoopformer.game.translator import RULE_REPLIES, translate
 
 TACTICS = "Tactics: "  # how the tactics panel's directives are marked, so a new plan replaces the old one
 
@@ -68,10 +69,29 @@ class LiveGame:
         addressed = to if to in game.home.athletes else None
         # Outside the lock: the language model takes a few seconds and the game keeps playing meanwhile.
         instruction = translate(text, game, game.home, addressed, use=self.use, unmapped_log=self.unmapped_log)
+        if "failed:" in instruction.source:
+            print(f"language model call failed, used the keyword rules instead: {instruction.source}", flush=True)
         with self.lock:
             events = game.instruct(game.home, instruction) if not game.done else []
             return {**self.status(events), "levers": instruction.describe(self.names()), "reply": instruction.reply,
                     "replier": instruction.replier, "source": instruction.source, "unmapped": instruction.unmapped}
+
+    def call(self, raw: dict, words: str, cancel: list, to: int | None) -> dict:
+        """A call picked from the page's list. It is already levers, so no language model is needed."""
+        game, side = self.game, self.game.home
+        addressed = to if to in side.athletes else None
+        with self.lock:
+            for item in cancel:
+                game.cancel(side, str(item.get("lever")), item.get("player"))
+            first = next((key for key in [*(raw.get("team") or {}), *(k for entry in raw.get("players") or [] for k in entry if k != "person_id"),
+                                          *(k for k in ("focus", "double_team", "late_foul", "timeout", "team_confidence") if raw.get(k))]), None)
+            replies = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
+            reply = replies.get(first, "Got it, coach." if not cancel else "Back to normal, coach.")
+            replier = addressed if addressed in side.lineup else (side.lineup[0] if side.lineup else None)
+            instruction = validate({**raw, "reply": reply, "replier": replier}, words, set(side.athletes), set(game.away.athletes), addressed, "call")
+            events = game.instruct(side, instruction) if not game.done else []
+            return {**self.status(events), "levers": instruction.describe(self.names()), "reply": instruction.reply,
+                    "replier": instruction.replier, "unmapped": instruction.unmapped}
 
     def timeout(self) -> dict:
         with self.lock:
@@ -153,6 +173,8 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
                 self.reply(409, json.dumps({"error": "no game: open the page first"}))
             elif url.path == "/api/say":
                 self.answer(lambda: live.say(str(body.get("text", "")).strip()[:500], body.get("to")))
+            elif url.path == "/api/call":
+                self.answer(lambda: live.call(body.get("raw") or {}, str(body.get("words", ""))[:200], body.get("cancel") or [], body.get("to")))
             elif url.path == "/api/timeout":
                 self.answer(live.timeout)
             elif url.path == "/api/tactics":

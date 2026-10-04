@@ -82,9 +82,6 @@ h1 span { color: var(--led); }
 .controls-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 button { font: inherit; color: inherit; cursor: pointer; }
 .play { background: var(--led); color: #15120c; border: 0; border-radius: 6px; padding: 7px 16px; font-weight: 600; min-width: 92px; }
-.speeds { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.speeds button { background: transparent; border: 0; padding: 6px 10px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
-.speeds button[aria-pressed="true"] { background: var(--panel-2); color: var(--led); }
 .elapsed { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
 .timeline { display: grid; gap: 2px; }
 input[type="range"] { width: 100%; accent-color: var(--led); }
@@ -123,11 +120,20 @@ tbody tr.on td:first-child { color: var(--led); }
 .talk-who .nm { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .talk-who .meta { grid-column: 2; font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .talk-row.team .nm { color: var(--led); }
-.talk-input { min-width: 0; height: 34px; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 9px; font: inherit; font-size: 13px; }
-.talk-input.suggested { color: #aab2bf; font-style: italic; }
-.talk-input.sent { color: var(--led); }
+.pick { display: grid; min-width: 0; }
+.pick > * { grid-area: 1 / 1; }
+.talk-select { min-width: 0; width: 100%; height: 34px; background: var(--arena); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; font: inherit; font-size: 13px; }
+.talk-select.suggested { color: #aab2bf; font-style: italic; }
+.talk-select.sent { color: var(--led); }
+.talk-select option, .talk-select optgroup { font-style: normal; color: var(--text); background: var(--panel); }
+.heard { display: none; align-items: center; min-width: 0; height: 34px; padding: 0 9px; border: 1px dashed var(--shot); border-radius: 6px; background: var(--arena); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.talk-row.listening .heard, .talk-row.spoken .heard { display: flex; }
+.talk-row.listening .talk-select, .talk-row.spoken .talk-select { visibility: hidden; }
+.phase { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--line); }
+.phase.offense { color: var(--led); }
+.phase.defense { color: #8fc7ff; }
 .voice-lang { font-size: 12px; padding: 2px 4px; }
-.talk-input.fresh { animation: fresh 1.4s ease; }
+.talk-select.fresh { animation: fresh 1.4s ease; }
 @keyframes fresh { from { border-color: var(--led); } to { border-color: var(--line); } }
 .talk-row button { height: 34px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 0; display: grid; place-items: center; font-size: 14px; }
 .talk-row .send { color: var(--led); }
@@ -205,7 +211,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 .chatter li.note .said { color: var(--muted); }
 .chatter li.call .said { color: #c3cad6; }
 .chatter .at { color: var(--led); font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .figure, .flash { transition: none; } .talk-input.fresh, .talk-row .mic.rec { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .figure, .flash { transition: none; } .talk-select.fresh, .talk-row .mic.rec { animation: none; } }
 </style>
 
 <div class="wrap">
@@ -277,7 +283,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       <div class="controls">
         <div class="controls-row">
           <button class="play" id="play" type="button">▶ Play</button>
-          <div class="speeds" role="group" aria-label="Playback speed" id="speeds"></div>
           <button class="sound" id="sound" type="button" aria-pressed="true">🔊 Sound</button>
           <div class="elapsed" id="elapsed"></div>
         </div>
@@ -295,7 +300,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
     <aside class="side">
       <div class="panel talk-panel">
-        <div class="talk-head"><h2>Talk to your players</h2><span class="note">Hold 🎙 to speak in <select id="voice-lang" class="voice-lang" aria-label="Voice language"><option value="en-US">English</option><option value="zh-CN">中文</option></select></span></div>
+        <div class="talk-head"><h2>Talk to your players</h2><span class="phase" id="talk-phase"></span><span class="note">Pick a call and press ➤, or hold 🎙 to say anything in <select id="voice-lang" class="voice-lang" aria-label="Voice language"><option value="en-US">English</option><option value="zh-CN">中文</option></select></span></div>
         <div class="talk" id="talk"></div>
         <div class="note" id="chat-note"></div>
       </div>
@@ -376,8 +381,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   $("paint").innerHTML = `<rect x="2" y="170" width="190" height="160" fill="${G.away.primary}" opacity="0.55"/>
     <rect x="748" y="170" width="190" height="160" fill="${G.home.primary}" opacity="0.55"/>`;
   $("chat-note").textContent = LIVE
-    ? `You coach ${G.home.name}: one row per player on the floor, the last to everybody. Hold 🎙 to speak (the browser asks for the microphone once). Each message is one call to the language model, a few seconds.`
-    : `You coach ${G.home.name}: one row per player on the floor, the last to everybody. Click a player on the court to talk to them. In this replay your words don't change the game; in the live game (hoopformer serve) they do.`;
+    ? `You coach ${G.home.name}: one row per player on the floor, the last to everybody. The lists follow the ball: offensive calls while you have it, defensive calls while they do. A picked call goes straight to the engine; words you speak (🎙) go to the language model first, a few seconds.`
+    : `You coach ${G.home.name}: one row per player on the floor, the last to everybody. The lists follow the ball: offensive calls while you have it, defensive calls while they do. In this replay your calls don't change the game; in the live game (hoopformer serve) they do.`;
 
   // cartoon figures (generic: team colours, initials, no faces of real players)
   const court = $("court");
@@ -1224,14 +1229,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
 
   // ---------- playback ----------
-  const SPEEDS = [1, 4, 16, 64, 240];
-  let speed = LIVE ? 4 : 16, playing = false, T = 0, lastFrame = null, hold = 0, inTimeout = false, dribble = 0, bannerTimer;
-  $("speeds").innerHTML = SPEEDS.map((s) => `<button type="button" data-s="${s}" aria-pressed="${s === speed}">${s}×</button>`).join("");
-  $("speeds").addEventListener("click", (ev) => {
-    const b = ev.target.closest("button"); if (!b) return;
-    speed = Number(b.dataset.s);
-    for (const x of $("speeds").children) x.setAttribute("aria-pressed", String(x === b));
-  });
+  const speed = 1;   // real time: a quarter takes twelve minutes, as on TV
+  let playing = false, T = 0, lastFrame = null, hold = 0, inTimeout = false, dribble = 0, bannerTimer;
   function renderTicks() {
     $("ticks").innerHTML = Array.from({ length: Math.max(4, G.periods) }, (_, i) => i + 1).map((p) => `<span style="left:${(periodStart(p) / totalT) * 100}%">${periodLabel(p).replace(" QTR", "")}</span>`).join("");
     $("scrub").max = String(totalT);
@@ -1243,6 +1242,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // The engine monitor (live): the next chance's odds without and with the coach's words, from the server.
   function renderMonitor(m) {
     if (!m) return;
+    inForce = m.directives; lastMonitor = m;   // the talk rows mark these and offer to take them back
     $("monitor-panel").hidden = false;
     const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
     const pct = (v) => `${(v * 100).toFixed(1)}%`;
@@ -1324,15 +1324,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (next && next.t <= target) {
       T = next.t; apply(next); flash(next); Sound.event(next, speed);
       // dead-ball moments (fouls, free throws, rebounds after the buzzer) get a short real-time pause
-      hold = next.kind === "chance" || speed >= 240 ? 0 : Math.max(0.12, 0.45 - speed * 0.004);
+      hold = next.kind === "chance" ? 0 : 0.45;
       if (next.kind === "timeout" && !(LIVE && next.zone === "coach")) {   // the engine's coach called it: show it and pause briefly
         hold = 1.4;
         $("banner").textContent = `TIMEOUT · ${next.team}`; $("banner").hidden = false;
         clearTimeout(bannerTimer); bannerTimer = setTimeout(() => { if (!inTimeout) $("banner").hidden = true; }, 1600);
       }
     } else T = target;
-    // a dribble now and then while the ball is live, at the slow speeds only
-    if (speed <= 4 && !S.dead && S.offense && T < totalT) { dribble -= dt; if (dribble <= 0) { Sound.bounce(); dribble = speed === 1 ? 0.55 : 0.42; } }
+    // a dribble now and then while the ball is live
+    if (!S.dead && S.offense && T < totalT) { dribble -= dt; if (dribble <= 0) { Sound.bounce(); dribble = 0.55; } }
     render(T);
     if (LIVE && !G.done && S.applied >= G.events.length) fetchNext();   // shown everything we have: the next possession
     if (ended() && T >= totalT && S.applied >= G.events.length) { setPlaying(false); return; }
@@ -1462,46 +1462,126 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
   }
 
-  // ---------- talk rows: five players on the floor and the whole team, each with a suggestion ----------
+  // ---------- talk rows: a list of calls for each player on the floor, and one for the whole team ----------
+  // Every call is already levers (the same JSON the language model writes), so a picked call needs no
+  // translation: live, it goes straight to the engine. The list follows the court: offensive calls while we
+  // have the ball, defensive calls while they do. Holding 🎙 says anything else, through the language model.
   const homeFloor = () => (S.lineups.home.length ? S.lineups.home : G.home.players.slice(0, 5).map((p) => p.id));
-  // What a coach might say right now, most urgent first. Only reads the game so far.
-  function suggestionsFor(id) {
-    const b = S.box[id] || {}, out = [];
-    const period = periodOf(Math.min(T, totalT - 0.01)), left = periodStart(period) + (period <= 4 ? PERIOD : OT) - T;
-    const lead = S.home - S.away, late = period >= 4 && left < 180 && Math.abs(lead) <= 8;
-    const shots = S.shots[id] || [];
-    const plan = planAt(T);
-    let matchup = null;
-    if (plan) { const i = plan.def.indexOf(id) >= 0 ? plan.def.indexOf(id) : plan.off.indexOf(id); if (i >= 0) matchup = plan.def.includes(id) ? plan.off[i] : plan.def[i]; }
-    if (b.PF >= 5) out.push("One more and you're out. Play smart, no reaching.");
-    else if (b.PF >= 4 || (b.PF >= 3 && period <= 2)) out.push(`Careful with the fouls, you've got ${b.PF}. Move your feet.`);
-    if (late) out.push(lead >= 0 ? "Get a stop. Contest without fouling." : "We need a bucket. Be aggressive, attack the rim.");
-    if (shots.length >= 3 && shots.slice(-3).every(Boolean)) out.push("You're hot. Keep hunting your shot.");
-    if (shots.length >= 4 && !shots.slice(-4).some(Boolean)) out.push("Shot's not falling. Attack the rim, get to the line.");
-    if ((b.TOV || 0) >= 3) out.push("Value the ball. Strong with it, no lazy passes.");
-    if (matchup) { const m = S.box[matchup] || {}; if ((m.PTS || 0) >= 14 && playerTeam[matchup] === "away") out.push(`${last(playerById[matchup].name)} has ${m.PTS}. Make every shot tough.`); }
-    if ((b.PTS || 0) >= 20) out.push("They're keying on you. Draw two and find the open man.");
-    const p = playerById[id];
-    if (p.big >= 0.16 && S.teamOreb.away >= 6) out.push(`Box out. They have ${S.teamOreb.away} offensive boards.`);
-    if (p.handler >= 0.22) out.push("Push the pace off the rebound. Get us into our sets.");
-    if (p.big >= 0.16) out.push("Protect the rim and finish the play with the rebound.");
-    out.push("Good work. Talk on defense.", "Keep running hard. Stay ready.", "Make the extra pass. Trust your teammates.");
+  const awayFloor = () => (S.lineups.away.length ? S.lineups.away : G.away.players.slice(0, 5).map((p) => p.id));
+  const V = 0.7;   // how hard a call pushes its lever, on the engine's -1 to 1 scale
+  const TEAM_CALLS = [   // [when it's offered, what the coach says, the levers]
+    ["offense", "Push the pace", { team: { pace: V } }],
+    ["offense", "Slow it down, use the clock", { team: { pace: -V } }],
+    ["offense", "Let it fly from three", { team: { three_point_rate: V } }],
+    ["offense", "Attack the rim", { team: { attack_rim: V } }],
+    ["offense", "Take care of the ball", { team: { ball_security: V } }],
+    ["offense", "Crash the offensive glass", { team: { crash_glass: V } }],
+    ["offense", "Get back after every shot", { team: { crash_glass: -V } }],
+    ["defense", "Pressure the ball full court", { team: { pressure: V } }],
+    ["defense", "Sit back, no gambling", { team: { pressure: -V } }],
+    ["defense", "Pack the paint (2-3 zone)", { team: { protect_paint: V } }],
+    ["defense", "Run them off the three-point line", { team: { protect_paint: -V } }],
+    ["defense", "No fouls, hands back", { team: { foul_caution: V } }],
+    ["defense", "Get physical", { team: { foul_caution: -V } }],
+    ["defense", "Foul when we're down late", { late_foul: true }],
+    ["any", "Timeout!", { timeout: true }],
+    ["any", "Great job, everybody!", { team_confidence: 0.5 }],
+  ];
+  const PLAYER_CALLS = [   // the same for one player; the row adds who
+    ["offense", "Be aggressive, look for your shot", { aggression: V }],
+    ["offense", "Move the ball, find the open man", { aggression: -V }],
+    ["offense", "Get to the rim", { shot_preference: { zone: "rim", value: V } }],
+    ["offense", "Hunt your midrange", { shot_preference: { zone: "mid", value: V } }],
+    ["offense", "Spot up for threes", { shot_preference: { zone: "three", value: V } }],
+    ["defense", "Stay out of foul trouble", { foul_caution: V }],
+    ["defense", "Be physical with your man", { foul_caution: -V }],
+    ["any", "Take a breather (3 min)", { rest_minutes: 3 }],
+    ["any", "Great job, keep it up!", { confidence: 0.5 }],
+  ];
+  const phaseNow = () => (S.offense === "away" ? "defense" : "offense");
+  function callsFor(row, phase) {
+    const list = [], add = (when, label, raw) => { if (when === phase || when === "any") list.push({ when, label, raw }); };
+    if (row.i === 5) {
+      for (const [when, label, raw] of TEAM_CALLS) add(when, label, raw);
+      for (const id of homeFloor()) add("offense", `Run it through ${last(playerById[id].name)}`, { focus: id });
+      for (const id of awayFloor()) add("defense", `Double-team ${last(playerById[id].name)}`, { double_team: id });
+    } else {
+      for (const [when, label, raw] of PLAYER_CALLS) add(when, label, { players: [{ person_id: row.id, ...raw }] });
+      add("offense", "We're running it through you", { focus: row.id });
+    }
+    return list;
+  }
+
+  // What's in force: live, the engine's own list (the monitor); in the replay, the page keeps it.
+  let inForce = G.monitor ? G.monitor.directives : [], lastMonitor = G.monitor || null;
+  function sigOf(raw) {   // the directives a call leaves behind: [lever, player id or null, value]
+    const out = Object.entries(raw.team || {}).map(([k, v]) => [k, null, v]);
+    for (const entry of raw.players || []) for (const [k, v] of Object.entries(entry)) if (k !== "person_id" && k !== "confidence") out.push([k === "rest_minutes" ? "rest" : k, entry.person_id, v]);
+    for (const k of ["focus", "double_team", "late_foul"]) if (raw[k] != null) out.push([k, null, raw[k]]);
     return out;
   }
-  function teamSuggestions() {
-    const out = [];
+  function sameValue(lever, mine, theirs) {
+    if (lever === "focus" || lever === "double_team") return Boolean(playerById[mine]) && playerById[mine].name === theirs;
+    if (lever === "rest") return true;
+    if (mine && typeof mine === "object") return Boolean(theirs) && mine.zone === theirs.zone && Math.sign(mine.value) === Math.sign(theirs.value);
+    if (typeof mine === "number") return typeof theirs === "number" && Math.sign(mine) === Math.sign(theirs);
+    return mine === theirs;
+  }
+  const matches = (d, [k, p, v]) => d.lever === k && (d.player_id ?? null) === p && sameValue(k, v, d.value);
+  const isInForce = (call) => { const sig = sigOf(call.raw); return sig.length > 0 && sig.every((s) => inForce.some((d) => matches(d, s))); };
+  const overrides = (call) => sigOf(call.raw).some(([k, p]) => inForce.some((d) => d.lever === k && (d.player_id ?? null) === p));
+  function rememberLocally(raw, words, cancel) {   // replay only: the same bookkeeping the engine does live
+    const same = (d, lever, player) => d.lever === lever && (d.player_id ?? null) === (player ?? null);
+    for (const c of cancel) inForce = inForce.filter((d) => !same(d, c.lever, c.player));
+    for (const [k, p, v] of sigOf(raw)) {
+      inForce = inForce.filter((d) => !same(d, k, p));
+      inForce.push({ lever: k, value: k === "focus" || k === "double_team" ? playerById[v].name : v, player_id: p, player: p ? playerById[p].name : null, words, left: null });
+    }
+  }
+  function describeDirective(d) {
+    const v = d.value;
+    const shown = typeof v === "number" ? `${v > 0 ? "+" : ""}${v}` : v && typeof v === "object" ? `${v.zone} ${v.value > 0 ? "+" : ""}${v.value}` : typeof v === "string" ? last(v) : "";
+    return `${d.lever.replace(/_/g, " ")} ${shown}`.trim();
+  }
+
+  // What a coach might call right now, most urgent first. Only reads the game so far.
+  function suggestedCalls(row, phase) {
     const period = periodOf(Math.min(T, totalT - 0.01)), left = periodStart(period) + (period <= 4 ? PERIOD : OT) - T;
-    const lead = S.home - S.away;
-    if (T < 60) out.push("Set the tone. Defense first, run hard.");
-    if (period >= 4 && left < 180 && Math.abs(lead) <= 8) out.push("Every possession matters. Box out, no fouls.");
-    if (S.run.team === "away" && S.run.points >= 8) out.push(`Settle down. Good shots only, get back on defense. They're on a ${S.run.points}-0 run.`);
-    if (S.run.team === "home" && S.run.points >= 8) out.push("Keep it going. Same energy, don't relax.");
-    if (lead <= -10) out.push("Chip away. One stop at a time, no hero shots.");
-    if (lead >= 15) out.push("Don't let up. Keep moving the ball.");
-    const top = G.away.players.map((p) => p.id).sort((a, b) => ((S.box[b] || {}).PTS || 0) - ((S.box[a] || {}).PTS || 0))[0];
-    if (top && ((S.box[top] || {}).PTS || 0) >= 20) out.push(`Show help on ${last(playerById[top].name)}. Make someone else beat us.`);
-    if (S.teamThrees.away >= 8) out.push(`They've hit ${S.teamThrees.away} threes. Run them off the line.`);
-    out.push("Move the ball. Talk on defense.", "Run the floor. Rebound together.", "Stay together. Next play.");
+    const lead = S.home - S.away, late = period >= 4 && left < 180, out = [];
+    const pts = (id) => (S.box[id] || {}).PTS || 0;
+    if (row.i === 5) {
+      if (S.run.team === "away" && S.run.points >= 10 && timeoutsLeft("home") > 0) out.push("Timeout!");
+      if (phase === "offense") {
+        if (late && lead > 0) out.push("Slow it down, use the clock");
+        if ((late && lead < 0) || lead <= -12) out.push("Let it fly from three");
+        if (G.home.players.reduce((n, p) => n + ((S.box[p.id] || {}).TOV || 0), 0) >= 10) out.push("Take care of the ball");
+        const hot = [...homeFloor()].sort((a, b) => pts(b) - pts(a))[0];
+        if (hot && pts(hot) >= 15) out.push(`Run it through ${last(playerById[hot].name)}`);
+        out.push("Attack the rim", "Push the pace", "Crash the offensive glass");
+      } else {
+        if (late && left < 60 && lead < 0 && lead >= -8) out.push("Foul when we're down late");
+        const top = [...awayFloor()].sort((a, b) => pts(b) - pts(a))[0];
+        if (top && pts(top) >= 18) out.push(`Double-team ${last(playerById[top].name)}`);
+        if (S.teamThrees.away >= 8) out.push("Run them off the three-point line");
+        if (S.teamOreb.away >= 8) out.push("Pack the paint (2-3 zone)");
+        out.push("Pressure the ball full court", "Pack the paint (2-3 zone)");
+      }
+      out.push("Great job, everybody!");
+      return out;
+    }
+    const b = S.box[row.id] || {}, shots = S.shots[row.id] || [], p = playerById[row.id];
+    const me = lastMonitor && lastMonitor.players.find((x) => x.id === row.id);
+    if (me && me.energy < 0.3) out.push("Take a breather (3 min)");
+    if (phase === "offense") {
+      if (shots.length >= 4 && !shots.slice(-4).some(Boolean)) out.push("Get to the rim");
+      if (shots.length >= 3 && shots.slice(-3).every(Boolean)) out.push("Be aggressive, look for your shot");
+      if ((b.TOV || 0) >= 3 || (b.PTS || 0) >= 25) out.push("Move the ball, find the open man");
+      out.push(p.big >= 0.16 ? "Get to the rim" : p.handler >= 0.22 ? "Be aggressive, look for your shot" : "Spot up for threes");
+    } else {
+      if ((b.PF || 0) >= 3) out.push("Stay out of foul trouble");
+      out.push((b.PF || 0) >= 2 ? "Stay out of foul trouble" : "Be physical with your man");
+    }
+    out.push("Great job, keep it up!");
     return out;
   }
 
@@ -1511,70 +1591,133 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const form = document.createElement("form");
     form.className = "talk-row" + (i === 5 ? " team" : "");
     form.innerHTML = `<span class="talk-who"><span class="sw"></span><span class="nm"></span><span class="meta"></span></span>
-      <input class="talk-input suggested" type="text" autocomplete="off" enterkeyhint="send">
+      <span class="pick"><select class="talk-select suggested"></select><span class="heard" title="Click to discard"></span></span>
       <button class="send" type="submit">➤</button>
       <button class="mic" type="button">🎙</button>`;
     talkEl.appendChild(form);
-    const row = { i, form, id: null, input: form.querySelector("input"), mic: form.querySelector(".mic"), dirty: false, recording: false, nextAt: 0, pick: 0 };
+    const row = { i, form, id: null, select: form.querySelector("select"), heard: form.querySelector(".heard"), mic: form.querySelector(".mic"),
+                  options: [], built: "", dirty: false, recording: false, spoken: "", nextAt: 0, pick: 0 };
     rows.push(row);
-    form.addEventListener("submit", (ev) => { ev.preventDefault(); sendFrom(row); });
-    row.input.addEventListener("input", () => { row.dirty = row.input.value.trim() !== ""; row.input.classList.toggle("suggested", !row.dirty); });
-    row.input.addEventListener("focus", () => { if (!row.dirty) row.input.select(); });
-    row.input.addEventListener("blur", () => { if (!row.dirty) row.nextAt = Math.min(row.nextAt, Date.now() + 2000); });
+    form.addEventListener("submit", (ev) => { ev.preventDefault(); if (row.spoken) sendSpoken(row); else sendPick(row); });
+    row.select.addEventListener("change", () => { row.dirty = true; row.select.classList.remove("suggested", "sent"); });
+    row.select.addEventListener("blur", () => { row.nextAt = Math.max(row.nextAt, Date.now() + 4000); updateTalk(); });
+    row.heard.addEventListener("click", () => { row.spoken = ""; row.form.classList.remove("spoken"); });
     wireMic(row);
   }
   const rowTarget = (row) => (row.i === 5 ? "team" : row.id);
-  function sendFrom(row) {
-    const text = row.input.value.trim();
-    if (!text || !row.id) return;
-    sendCoachLine(text, rowTarget(row));
-    row.dirty = false; row.input.classList.add("sent"); row.nextAt = Date.now() + 1800;
-    setTimeout(() => { if (!row.dirty && !row.recording) { row.input.value = ""; row.input.classList.remove("sent"); row.input.classList.add("suggested"); } }, 1500);
+  function buildOptions(row, phase) {   // the calls for this phase, then the ones in force that can be taken back
+    const calls = callsFor(row, phase);
+    const known = [...callsFor(row, "offense"), ...callsFor(row, "defense")];
+    const mine = inForce.filter((d) => d.lever !== "play" && (row.i === 5 ? d.player_id == null : d.player_id === row.id));
+    const takeBack = mine.map((d) => {
+      const call = known.find((c) => { const s = sigOf(c.raw); return s.length === 1 && matches(d, s[0]); });
+      const label = call ? call.label : describeDirective(d);
+      return { when: "back", label: `Take back: ${label}`, words: `Forget "${label}". Back to normal.`, raw: {}, cancel: [{ lever: d.lever, player: d.player_id ?? null }] };
+    });
+    const keep = row.dirty && row.options[Number(row.select.value)] ? row.options[Number(row.select.value)].label : null;
+    row.options = [...calls, ...takeBack];
+    const noTimeout = timeoutsLeft("home") <= 0 || inTimeout || (LIVE && G.done);
+    const groups = [[phase === "offense" ? `On offense · ${G.home.tricode} ball` : `On defense · ${G.away.tricode} ball`, phase],
+                    ["Any time", "any"], ["In force · take back", "back"]];
+    row.select.replaceChildren();
+    for (const [title, when] of groups) {
+      const group = document.createElement("optgroup");
+      group.label = title;
+      row.options.forEach((c, n) => {
+        if (c.when !== when) return;
+        const o = document.createElement("option");
+        o.value = String(n);
+        const on = when !== "back" && isInForce(c);
+        o.textContent = `${on ? "✓ " : when === "back" ? "✕ " : ""}${c.label}${on ? " (in force)" : ""}`;
+        o.disabled = Boolean(c.raw.timeout) && noTimeout;
+        group.appendChild(o);
+      });
+      if (group.children.length) row.select.appendChild(group);
+    }
+    const again = keep ? row.options.findIndex((c) => c.label === keep) : -1;
+    if (again >= 0) row.select.value = String(again);
+    else { row.dirty = false; row.pick = 0; row.select.selectedIndex = -1; suggest(row, phase); }
   }
-  function suggest(row) {
-    const options = row.i === 5 ? teamSuggestions() : suggestionsFor(row.id);
-    let text = options[0];
-    if (text === row.input.value) { row.pick = (row.pick + 1) % Math.min(options.length, 4); text = options[row.pick]; }   // nothing new: rotate through the top few
+  function suggest(row, phase) {   // preselect the most urgent call that leaves the calls in force alone
+    const ideas = suggestedCalls(row, phase)
+      .map((label) => row.options.findIndex((c) => c.label === label && !overrides(c) && !(c.raw.timeout && timeoutsLeft("home") <= 0)))
+      .filter((n, k, all) => n >= 0 && all.indexOf(n) === k);
+    if (!ideas.length) return;
+    let n = ideas[0];
+    if (String(n) === row.select.value) { row.pick = (row.pick + 1) % Math.min(ideas.length, 3); n = ideas[row.pick]; }   // nothing new: rotate through the top few
     else row.pick = 0;
-    row.input.value = text;
-    row.input.classList.add("suggested");
-    row.input.classList.remove("fresh"); void row.input.offsetWidth; row.input.classList.add("fresh");
+    row.select.value = String(n);
+    row.select.classList.add("suggested"); row.select.classList.remove("sent");
+    row.select.classList.remove("fresh"); void row.select.offsetWidth; row.select.classList.add("fresh");
   }
-  function updateTalk() {   // match the rows to the players on the floor; refresh each suggestion every 15 to 30 seconds
-    const floor = homeFloor(), now = Date.now();
+  function sendPick(row) {
+    const call = row.options[Number(row.select.value)];
+    if (!call || !row.id) return;
+    row.dirty = false; row.select.classList.add("sent"); row.select.classList.remove("suggested"); row.nextAt = Date.now() + 2500;
+    if (call.raw.timeout) { $("timeout").click(); return; }   // the same timeout as the button: it opens the tactics panel
+    sendCall(call.words || call.label, call.raw, call.cancel || [], rowTarget(row));
+  }
+  function sendSpoken(row) {
+    const text = row.spoken;
+    row.spoken = ""; row.form.classList.remove("spoken");
+    if (text && row.id) sendCoachLine(text, rowTarget(row));
+  }
+  // A picked call: live, the server applies its levers as they are (no language model) and the right player answers.
+  async function sendCall(words, raw, cancel, to) {
+    if (!LIVE) { rememberLocally(raw, words, cancel); sendCoachLine(words, to); updateTalk(); return; }
+    addHuman({ t: T, speaker: "coach", to, text: words, kind: "coach" });
+    if (G.done) return;
+    try {
+      const data = await api("call", { raw, words, cancel, to: to === "team" ? null : to });
+      if (data.reply && data.replier) addHuman({ t: T, speaker: data.replier, text: data.reply, kind: "reply" });
+      addHuman({ t: T, speaker: "note", text: `→ ${cancel.length ? `taken back: ${cancel.map((c) => c.lever.replace(/_/g, " ")).join(", ")}` : data.levers} · from the next possession`, kind: "note" });
+      ingest(data);
+      updateTalk();
+    } catch (err) {
+      addHuman({ t: T, speaker: "note", text: `Couldn't apply that (${err.message}).`, kind: "note" });
+    }
+  }
+  function updateTalk() {   // match the rows to the players on the floor and the lists to who has the ball
+    const floor = homeFloor(), now = Date.now(), phase = phaseNow();
+    $("talk-phase").textContent = phase === "offense" ? `${G.home.tricode} ball · offensive calls` : `${G.away.tricode} ball · defensive calls`;
+    $("talk-phase").className = `phase ${phase}`;
+    const forceKey = inForce.map((d) => `${d.lever}:${d.player_id}:${JSON.stringify(d.value)}`).join("|");
     for (const row of rows) {
       const id = row.i === 5 ? "team" : floor[row.i];
       if (id !== row.id) {
-        row.id = id; row.nextAt = 0;
+        row.id = id; row.nextAt = 0; row.dirty = false;
         const color = G.home.primary === "#1A1A1A" ? "#ffffff" : G.home.primary;
         row.form.querySelector(".sw").style.background = row.i === 5 ? "var(--led)" : color;
         row.form.querySelector(".nm").textContent = row.i === 5 ? "All team" : last(playerById[id].name);
         row.form.querySelector(".nm").title = row.i === 5 ? "Everybody on the floor" : playerById[id].name;
-        row.input.setAttribute("aria-label", row.i === 5 ? "Message to the whole team" : `Message to ${playerById[id].name}`);
+        row.select.setAttribute("aria-label", row.i === 5 ? "Call for the whole team" : `Call for ${playerById[id].name}`);
         row.form.querySelector(".send").setAttribute("aria-label", row.i === 5 ? "Send to the whole team" : `Send to ${playerById[id].name}`);
         row.mic.setAttribute("aria-label", row.i === 5 ? "Hold to talk to the whole team" : `Hold to talk to ${playerById[id].name}`);
-        row.mic.title = "Hold to talk, release to send";
+        row.mic.title = "Hold to say anything, release to send";
       }
       const meta = row.form.querySelector(".meta");
       if (row.i === 5) meta.textContent = `${S.home}–${S.away} · ${timeoutsLeft("home")} TO`;
       else { const b = S.box[id] || {}; meta.textContent = `${b.PTS || 0} pts · ${b.PF || 0} pf`; }
-      const busy = row.dirty || row.recording || document.activeElement === row.input;
-      if (!busy && now >= row.nextAt) { suggest(row); row.nextAt = now + 15000 + Math.random() * 15000; }
+      const choosing = document.activeElement === row.select;   // never change a list while it's open
+      const key = `${id}/${phase}/${floor.join(",")}/${awayFloor().join(",")}/${forceKey}/${timeoutsLeft("home")}/${inTimeout}`;
+      if (key !== row.built && !choosing) { row.built = key; buildOptions(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
+      const busy = row.dirty || row.recording || row.spoken || choosing;
+      if (!busy && now >= row.nextAt) { suggest(row, phase); row.nextAt = now + 15000 + Math.random() * 15000; }
     }
   }
   setInterval(updateTalk, 1000);
-  function talkTo(id) {
-    const row = rows.find((x) => x.id === id);
-    if (row) { row.input.focus(); row.input.select(); return; }
-    // an opponent or a bench player: mention them to the whole team
-    const team = rows[5];
-    const before = team.dirty ? team.input.value.replace(/\s*$/, " ") : "";
-    team.input.value = `${before}@${playerById[id].name} `;
-    team.dirty = true; team.input.classList.remove("suggested");
-    team.input.focus(); team.input.selectionStart = team.input.selectionEnd = team.input.value.length;
+  function talkTo(id) {   // a figure clicked on the court
+    let row = rows.find((x) => x.id === id);
+    if (!row) {   // an opponent (offer to double him on defense) or one of our bench: the team row
+      row = rows[5];
+      const n = row.options.findIndex((c) => c.raw.double_team === id);
+      if (n >= 0) { row.select.value = String(n); row.dirty = true; row.select.classList.remove("suggested", "sent"); }
+    }
+    row.select.focus();
+    try { row.select.showPicker(); } catch { /* older browsers: focus is enough */ }
   }
 
-  // Hold to talk: press and hold records, release fills the row and sends it. Speech recognition is the
+  // Hold to talk: press and hold records, release sends the words to the language model. Speech recognition is the
   // browser's own; pages that can't use the microphone (like this hosted replay) say so instead.
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const VOICE_PROBLEMS = {
@@ -1602,10 +1745,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   function wireMic(row) {
     let rec = null, heard = "", released = false, started = false, pressedAt = 0;
     const finish = () => {
-      rec = null; row.recording = false; row.mic.classList.remove("rec"); row.input.placeholder = "";
-      if (heard && released) sendFrom(row);
-      else if (heard) { row.dirty = true; row.input.classList.remove("suggested"); }   // keep it for the send button
-      else { row.dirty = false; row.nextAt = 0; }
+      rec = null; row.recording = false; row.mic.classList.remove("rec"); row.form.classList.remove("listening");
+      if (!heard) return;
+      row.spoken = heard; row.heard.textContent = heard;
+      if (released) sendSpoken(row);
+      else row.form.classList.add("spoken");   // the browser stopped listening first: keep it for the send button
     };
     const start = (ev) => {
       ev.preventDefault();
@@ -1622,12 +1766,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       r.onresult = (e) => {
         if (rec !== r) return;
         heard = Array.from(e.results, (x) => x[0].transcript).join(" ").replace(/\s+/g, " ").trim();
-        row.input.value = heard; row.input.classList.remove("suggested", "sent"); row.dirty = heard !== "";
+        row.heard.textContent = heard || "Listening… let go to send";
       };
       r.onerror = (e) => { if (rec === r && e.error !== "aborted") voiceNote(e.error); };
       r.onend = () => { if (rec === r) finish(); };
       row.recording = true; row.mic.classList.add("rec");
-      row.input.value = ""; row.input.placeholder = "Listening… let go to send";
+      row.spoken = ""; row.form.classList.remove("spoken"); row.form.classList.add("listening");
+      row.heard.textContent = "Listening… let go to send";
       try { rec.start(); } catch (err) { finish(); voiceNote(String(err && err.name || "failed")); return; }
       if (ev.pointerId != null && row.mic.setPointerCapture) { try { row.mic.setPointerCapture(ev.pointerId); } catch { /* no capture */ } }
     };
@@ -1747,7 +1892,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   seek(0.1);
   updateTalk();
-  addHuman({ t: 0, speaker: "note", text: LIVE ? "Live game. Press Play. Talk to your players with the rows above: your words go to the language model and change the game from the next possession." : "Players talk here as the game plays. Talk to yours with the rows above; they answer.", kind: "note" });
+  addHuman({ t: 0, speaker: "note", text: LIVE ? "Live game. Press Play. Pick a call in a row above and press ➤: it changes the game from the next possession." : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
   window.courtside = {   // for checking the page from the console
     lines: () => S.chatter.length, seek, rows, fetchNext,
     state: () => ({ events: G.events.length, done: G.done === true, periods: G.periods, T, bufferEnd: bufferEnd(), plans: plans.length }),

@@ -330,3 +330,16 @@ def test_monitor_shows_the_engine_with_and_without_the_coachs_words(fitted, limi
     assert doubled["after"] < doubled["before"]
     assert {d["lever"] for d in m["directives"]} == {"crash_glass", "pace", "aggression", "double_team"}
     assert abs(sum(r["after"] for r in m["offense"][:5]) - 1) < 1e-9, "the five ways a chance ends add up to 1"
+
+
+def test_a_coach_can_take_a_call_back(fitted, limits):
+    model, _ = fitted
+    game = Game(model, OKC, BOS, seed=3, limits=limits)
+    raw = {"team": {"pressure": 0.7}, "players": [{"person_id": SGA, "aggression": 0.7}]}
+    game.instruct(game.home, validate(raw, "press, and you shoot", set(game.home.athletes), set(game.away.athletes), None, "test"))
+    print("before:", game.home.tactics, game.home.player_tactics)
+    assert game.cancel(game.home, "pressure") is True
+    assert game.cancel(game.home, "aggression") is False, "a player's call needs the player"
+    print("after:", game.home.tactics, game.home.player_tactics)
+    assert game.home.tactics == {} and game.home.player_tactics == {SGA: {"aggression": 0.7}}
+    assert game.cancel(game.home, "aggression", SGA) is True and game.home.player_tactics == {}

@@ -132,8 +132,14 @@ def ask_llm(provider: str, words: str, context: dict, timeout: float = 60.0) -> 
         "response_format": {"type": "json_object"},
         **config["settings"],
     }
-    response = requests.post(f"{base_url}/chat/completions", json=body, timeout=timeout,
-                             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    for attempt in (1, 2):  # one retry: a dropped connection or a failed TLS handshake is often momentary
+        try:
+            response = requests.post(f"{base_url}/chat/completions", json=body, timeout=timeout,
+                                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+            break
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == 2:
+                raise
     if response.status_code != 200:
         raise RuntimeError(f"{provider} API {response.status_code}: {response.text[:300]}")
     text = response.json()["choices"][0]["message"]["content"]
@@ -269,7 +275,8 @@ def translate(words: str, game: Game, side: Side, addressed: int | None = None, 
         except (requests.RequestException, RuntimeError, json.JSONDecodeError, KeyError, TypeError) as exc:
             if use != "auto":
                 raise
-            raw, source = ask_rules(words, context), f"rules ({provider} failed: {type(exc).__name__})"
+            reason = " ".join(str(exc).split())[:220]  # the message says why (never contains the key)
+            raw, source = ask_rules(words, context), f"rules ({provider} failed: {type(exc).__name__}: {reason})"
     else:
         raw, source = ask_rules(words, context), "rules"
     own = set(side.athletes)

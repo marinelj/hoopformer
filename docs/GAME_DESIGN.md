@@ -214,7 +214,7 @@ Decision: real players, for a private prototype. The risk to remember: analysing
     | Run it through X / double-team X / foul late | focus X / double_team X / late_foul |
     | Motion offense, switch everything | no lever yet: logged as unmapped |
 
-  - **Voice:** hold 🎙, speak, release: the browser's own speech recognition fills the row as you speak and sends it on release, then it's the same as typing. Pick English or 中文 next to "Hold 🎙 to speak" (Qwen understands both). Chrome sends the audio to Google's speech service; Safari uses Apple's (Siri must be on). The browser asks for the microphone once; a press made while that prompt is open is finished when you answer it. Every failure (nothing heard, released too soon, microphone blocked, no connection to the speech service) shows up as a 🎙 note in the chatter.
+  - **Voice:** hold 🎙, speak, release: the browser's own speech recognition shows the words over the row's list as you speak and sends them to the language model on release. Pick English or 中文 next to "Hold 🎙 to speak" (Qwen understands both). Chrome sends the audio to Google's speech service; Safari uses Apple's (Siri must be on). The browser asks for the microphone once; a press made while that prompt is open is finished when you answer it. Every failure (nothing heard, released too soon, microphone blocked, no connection to the speech service) shows up as a 🎙 note in the chatter.
   - **Double teams on the court:** each possession records the player the defense is doubling (`Event.other` on the chance), and the defender whose man stands nearest leaves to help, so two figures stand on the doubled player, whose tag shows ×2.
 - **Measured:** a whole game streams in about 200 possession requests in 1.2 seconds on this Mac, so the engine never makes the page wait. Tests run a real server on a free port (`tests/test_server.py`).
 - **Not yet:** two human coaches; an AI coach that talks; voice tested by marinelj (the browser pane Claude uses can't grant a microphone).
@@ -223,6 +223,20 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - **Every chance records the calls in force** (`Event.tactics`: the offense's levers, focus and player levers; the defense's levers and double team). Uncoached games carry none and are unchanged.
 - **The figures act the calls out on every possession**, while the outcome stays the engine's: a 2-3 zone around the paint, a full-court pickup with two on the ball, all five crashing the rim on a miss (or getting back), a sprint or a walk-up, the told player driving at the rim and getting more of the passes, wide spacing for "more threes". A play-call strip above the court names the calls, the called player's tag is outlined, and a player shouts a new call once when it takes effect ("Two-three! Zone, zone!").
 - **An engine monitor** (live page, `Game.monitor`) shows the next chance's odds at both ends with and without the directives, each player's share of chances with energy and confidence, and every directive with the coach's words and the game time it has left.
+
+**Second follow-up (Oct 4): calls from a list, real time only.**
+- **Each talk row is a list of calls** instead of a text box. The list follows the ball: offensive calls while we have it, defensive calls while they do, plus a few any-time calls, and it changes with the lineup ("Run it through X" for each of ours on the floor, "Double-team X" for each of theirs). A suggested call is preselected every 15-30 seconds, never one that would overwrite a call in force.
+- **A picked call needs no language model.** It is already levers (the same JSON Qwen writes), so the page posts it to `POST /api/call` and the engine applies it from the next possession. Every call pushes its lever by 0.7:
+
+  | Row | On offense | On defense | Any time |
+  |---|---|---|---|
+  | All team | pace ±0.7, three_point_rate +0.7, attack_rim +0.7, ball_security +0.7, crash_glass ±0.7, focus X | pressure ±0.7, protect_paint ±0.7, foul_caution ±0.7, double_team X, late_foul | timeout, team confidence +0.5 |
+  | One player | aggression ±0.7, shot_preference rim / mid / three +0.7, focus on him | foul_caution ±0.7 | rest 3 minutes, confidence +0.5 |
+
+- **Calls in force are marked ✓ and can be taken back** ("✕ Take back: Push the pace" posts `cancel`, and `Game.cancel` removes the directive). Calls made in the tactics panel or by voice show up there too.
+- **Hold 🎙 still says anything**: the words go to the language model as before. Picking "Timeout!" from the list is the same as the timeout button.
+- **Playback is real time only** (1×): the speed buttons are gone, since a live game can't run ahead of the server anyway and the calls need time to read.
+- **Language model failures say why.** When Qwen can't be reached the page now shows the error's message (for example an SSL handshake failure), the server prints it, and a dropped connection is retried once before falling back to the keyword rules.
 
 ## 10. Open questions for marinelj
 

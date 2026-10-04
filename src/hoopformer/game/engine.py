@@ -314,6 +314,13 @@ class Game:
             coach.rotate(self, side, stopped=True)
         return self.events[start:]
 
+    def cancel(self, side: Side, lever: str, player: int | None = None) -> bool:
+        """The coach takes a call back. Returns True if it was in force."""
+        before = len(side.directives)
+        side.directives = [d for d in side.directives if not (d.lever == lever and d.player == player)]
+        self._refresh(side)
+        return len(side.directives) < before
+
     def _refresh(self, side: Side) -> None:
         """Rebuild a team's tactics from the directives still in force."""
         now = self.game_seconds
@@ -464,7 +471,7 @@ class Game:
                             "before": sum(p for q, _, p in their_before if q == doubled), "after": sum(p for q, _, p in their_after if q == doubled)})
         names = {pid: a.profile.name for team in (side, other) for pid, a in team.athletes.items()}
         directives = [{"lever": d.lever, "value": names.get(d.value, d.value) if d.lever in ("focus", "double_team") else d.value,
-                       "player": names.get(d.player), "words": d.words,
+                       "player": names.get(d.player), "player_id": d.player, "words": d.words,
                        "left": None if d.until is None else max(0.0, d.until - self.game_seconds)} for d in side.directives]
         return {"offense": offense, "defense": defense, "players": players, "directives": directives}
 
