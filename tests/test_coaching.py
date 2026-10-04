@@ -292,3 +292,41 @@ def test_cli_coach_and_play_with_instructions(fitted, tmp_path, capsys):
     assert "coach: 'Crash the offensive glass' -> crash_glass +0.6" in output
     assert "Shai Gilgeous-Alexander aggression +0.6" in output and "Final" in output
     assert '"kind":"coach"' in page.read_text() and (tmp_path / "derived" / "lever_limits_2025-26.json").exists()
+
+
+def test_chances_carry_the_calls_in_force_so_the_court_can_act_them_out(fitted, limits):
+    model, _ = fitted
+    game = Game(model, OKC, BOS, seed=6, limits=limits)
+    raw = {"team": {"crash_glass": 0.8, "protect_paint": 0.7}, "players": [{"person_id": SGA, "aggression": 0.8}], "double_team": TATUM}
+    game.instruct(game.home, validate(raw, "crash, zone, Shai attack, double Tatum", set(game.home.athletes), set(game.away.athletes), SGA, "test"))
+    result = game.play()
+    okc = [e.tactics for e in result.events if e.kind == "chance" and e.team == "OKC"]
+    bos = [e.tactics for e in result.events if e.kind == "chance" and e.team == "BOS"]
+    print("an OKC chance:", okc[0], "| a BOS chance:", bos[0])
+    assert all(t["off"]["crash_glass"] == 0.8 and "protect_paint" not in t["off"] for t in okc)
+    assert all(t["def"]["protect_paint"] == 0.7 and "crash_glass" not in t["def"] for t in bos)
+    assert any(SGA in t["off"].get("players", {}) for t in okc) and any(t["def"].get("double_team") == TATUM for t in bos)
+    assert all(e.tactics is None for e in Game(model, OKC, BOS, seed=6).play().events), "uncoached games carry no calls"
+
+
+def test_monitor_shows_the_engine_with_and_without_the_coachs_words(fitted, limits):
+    model, _ = fitted
+    game = Game(model, OKC, BOS, seed=2, limits=limits)
+    for _ in range(8):
+        game.step()
+    quiet = game.monitor(game.home)
+    assert all(abs(r["after"] - r["before"]) < 1e-12 for r in quiet["offense"] + quiet["defense"] + quiet["players"]) and not quiet["directives"]
+    raw = {"team": {"crash_glass": 1, "pace": 1}, "players": [{"person_id": SGA, "aggression": 1}], "double_team": TATUM}
+    game.instruct(game.home, validate(raw, "everything", set(game.home.athletes), set(game.away.athletes), None, "test"))
+    m = game.monitor(game.home)
+    rows = {r["label"]: r for r in m["offense"] + m["defense"]}
+    for r in m["offense"] + m["defense"]:
+        print(f"{r['label']:38s} {r['before']:.3f} -> {r['after']:.3f}")
+    assert rows["an offensive rebound, after a miss"]["after"] > rows["an offensive rebound, after a miss"]["before"]
+    assert rows["seconds per first chance"]["after"] < rows["seconds per first chance"]["before"]
+    sga = next(p for p in m["players"] if p["id"] == SGA)
+    assert sga["after"] > sga["before"] + 0.03
+    doubled = rows["Jayson Tatum acting (doubled)"]
+    assert doubled["after"] < doubled["before"]
+    assert {d["lever"] for d in m["directives"]} == {"crash_glass", "pace", "aggression", "double_team"}
+    assert abs(sum(r["after"] for r in m["offense"][:5]) - 1) < 1e-9, "the five ways a chance ends add up to 1"

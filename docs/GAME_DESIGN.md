@@ -219,6 +219,11 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - **Measured:** a whole game streams in about 200 possession requests in 1.2 seconds on this Mac, so the engine never makes the page wait. Tests run a real server on a free port (`tests/test_server.py`).
 - **Not yet:** two human coaches; an AI coach that talks; voice tested by marinelj (the browser pane Claude uses can't grant a microphone).
 
+**Day 4 follow-up (Oct 4): instructions you can see.** marinelj found that instructions rarely showed on the court: the engine applied them, but the figures' movement ignored them, and a lever's effect is a probability (SGA +0.8 aggression takes him from about 30% to 35% of chances, which one possession can't show). Three changes:
+- **Every chance records the calls in force** (`Event.tactics`: the offense's levers, focus and player levers; the defense's levers and double team). Uncoached games carry none and are unchanged.
+- **The figures act the calls out on every possession**, while the outcome stays the engine's: a 2-3 zone around the paint, a full-court pickup with two on the ball, all five crashing the rim on a miss (or getting back), a sprint or a walk-up, the told player driving at the rim and getting more of the passes, wide spacing for "more threes". A play-call strip above the court names the calls, the called player's tag is outlined, and a player shouts a new call once when it takes effect ("Two-three! Zone, zone!").
+- **An engine monitor** (live page, `Game.monitor`) shows the next chance's odds at both ends with and without the directives, each player's share of chances with energy and confidence, and every directive with the coach's words and the game time it has left.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

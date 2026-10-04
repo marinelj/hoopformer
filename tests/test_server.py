@@ -78,6 +78,9 @@ def test_words_change_the_game_from_the_next_possession(server):
     print(data["levers"], "|", data["source"], "|", data["reply"])
     assert data["source"] == "rules" and "aggression +0.6" in data["levers"] and data["replier"] == SGA
     assert courtside.live.game.home.player_tactics[SGA] == {"aggression": 0.6}
+    sga_row = next(p for p in data["monitor"]["players"] if p["id"] == SGA)
+    print("monitor, SGA's share of chances:", round(sga_row["before"], 3), "->", round(sga_row["after"], 3))
+    assert sga_row["after"] > sga_row["before"] and data["monitor"]["directives"][0]["words"]
     team = post(f"{base}/api/say", {"text": "Push the pace!", "to": None})
     assert courtside.live.game.home.tactics == {"pace": 0.6} and "pace +0.6" in team["levers"]
 

@@ -50,12 +50,14 @@ class LiveGame:
     def page(self) -> str:
         with self.lock:
             data = replay_data(self.game.result(), self.model)
-        return replay_html({**data, "live": True, "done": self.game.done})
+            monitor = self.game.monitor(self.game.home)
+        return replay_html({**data, "live": True, "done": self.game.done, "monitor": monitor})
 
     def status(self, events: list) -> dict:
         game = self.game
         return {"events": [event_row(e) for e in events], "done": game.done, "periods": game.period,
-                "final": {"home": game.home.points, "away": game.away.points}}
+                "final": {"home": game.home.points, "away": game.away.points},
+                "monitor": game.monitor(game.home)}  # what the coach's directives change, for the page's monitor
 
     def next(self) -> dict:
         with self.lock:

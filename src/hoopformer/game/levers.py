@@ -28,6 +28,8 @@ import numpy as np
 from hoopformer.fetch import BOX_SCORE, SCHEDULE, final_regular_season_game_ids, raw_path
 
 TEAM_LEVERS = ("pace", "three_point_rate", "attack_rim", "ball_security", "crash_glass", "pressure", "protect_paint", "foul_caution")
+OFFENSE_LEVERS = ("pace", "three_point_rate", "attack_rim", "ball_security", "crash_glass")
+DEFENSE_LEVERS = ("pressure", "protect_paint", "foul_caution")
 PLAYER_LEVERS = ("aggression", "shot_preference", "foul_caution")
 ZONES = ("rim", "mid", "three")
 MIN_GAME_MINUTES = 20  # a player's game counts for the swing limits only with this many minutes

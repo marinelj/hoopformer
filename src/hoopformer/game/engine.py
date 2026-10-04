@@ -125,6 +125,7 @@ class Event:
     attempts: int = 0         # free throws attempted
     home_lineup: tuple[int, ...] = ()
     away_lineup: tuple[int, ...] = ()
+    tactics: dict | None = None  # on a chance: the calls both coaches have in force ({"off": ..., "def": ...}), if any
 
 
 @dataclass
@@ -202,6 +203,7 @@ class Game:
         self.timeout_windows: set[tuple[int, int]] = set()  # (period, mark) breaks already taken, see coach.py
         self.leak_out: tuple[Side, float] | None = None  # a fast break earned against a team that crashed the glass
         self.break_bonus = 1.0  # make-rate factor for the chance being played
+        self.mean_first_seconds = sum(model.league.first_chance_seconds) / len(model.league.first_chance_seconds)
         self.tip_winner = self.home if self.rng.random() < 0.5 else self.away
         self.offense = self.tip_winner
         league = self.league
@@ -226,10 +228,10 @@ class Game:
     # --- bookkeeping -------------------------------------------------------------------------------
 
     def _log(self, side: Side, text: str, kind: str = "", actor: int | None = None, other: int | None = None,
-             zone: str | None = None, value: int = 0, attempts: int = 0) -> None:
+             zone: str | None = None, value: int = 0, attempts: int = 0, tactics: dict | None = None) -> None:
         self.events.append(Event(self.period, round(self.clock, 1), side.tricode, text, self.home.points, self.away.points,
                                  kind, actor, other, zone, value, attempts,
-                                 tuple(self.home.lineup), tuple(self.away.lineup)))
+                                 tuple(self.home.lineup), tuple(self.away.lineup), tactics))
 
     def _name(self, side: Side, pid: int) -> str:
         return side.athletes[pid].profile.name
@@ -358,9 +360,28 @@ class Game:
             fouler = self._fouler(dfn)
             dfn.athletes[fouler].stats["PF"] += 1
             self._log(dfn, f"{self._name(dfn, fouler)} personal foul", "foul", fouler, zone="personal")
+        choices, weights = self.chance_weights(off, dfn)
+        pid, event = self.rng.choices(choices, weights)[0]
+        if event in ZONES:
+            return self._shot(off, dfn, pid, event)
+        if event == "turnover":
+            self._turnover(off, dfn, pid)
+            return False
+        shots = 3 if self.rng.random() < league.three_shot_trip_share else 2
+        fouler = self._fouler(dfn)
+        dfn.athletes[fouler].stats["PF"] += 1
+        self._log(dfn, f"{self._name(dfn, fouler)} shooting foul on {self._name(off, pid)}", "foul", fouler, pid, "shooting")
+        return self._free_throws(off, dfn, pid, shots)
+
+    def chance_weights(self, off: Side, dfn: Side, use_levers: bool = True) -> tuple[list, list]:
+        """Every way the next chance can end, (player or None, event), with its weight.
+
+        With use_levers=False the coaches' directives are ignored: the monitor compares the two.
+        """
+        league = self.league
         turnover_factor = dfn.defense.turnover_factor * (league.home_turnover_factor if off.is_home else league.away_turnover_factor)
         free_throw_factor = dfn.defense.free_throw_factor * (league.home_free_throw_factor if off.is_home else league.away_free_throw_factor)
-        coached = bool(off.directives or dfn.directives)
+        coached = use_levers and bool(off.directives or dfn.directives)
         if coached:  # the coaches' levers: shot mix, getting to the line, ball security, pressure, the defense's shape
             paint = self._lever(dfn, "protect_paint")  # packing the paint concedes threes
             team_zones = {"rim": self._lever(off, "attack_rim") / paint, "mid": 1.0, "three": self._lever(off, "three_point_rate") * paint}
@@ -386,17 +407,66 @@ class Game:
                 weights.append(weight)
         choices.append((None, "turnover"))
         weights.append(league.team_turnover_rate * turnover_factor)
-        pid, event = self.rng.choices(choices, weights)[0]
-        if event in ZONES:
-            return self._shot(off, dfn, pid, event)
-        if event == "turnover":
-            self._turnover(off, dfn, pid)
-            return False
-        shots = 3 if self.rng.random() < league.three_shot_trip_share else 2
-        fouler = self._fouler(dfn)
-        dfn.athletes[fouler].stats["PF"] += 1
-        self._log(dfn, f"{self._name(dfn, fouler)} shooting foul on {self._name(off, pid)}", "foul", fouler, pid, "shooting")
-        return self._free_throws(off, dfn, pid, shots)
+        return choices, weights
+
+    def _calls(self, off: Side, dfn: Side) -> dict | None:
+        """What both coaches have in force for this chance, so the page can show it and act it out."""
+        if not (off.directives or dfn.directives):
+            return None
+        calls = {"off": {k: v for k, v in off.tactics.items() if k in levers.OFFENSE_LEVERS},
+                 "def": {k: v for k, v in dfn.tactics.items() if k in levers.DEFENSE_LEVERS}}
+        if off.focus in off.lineup:
+            calls["off"]["focus"] = off.focus
+        players = {pid: {k: v for k, v in values.items() if k in ("aggression", "shot_preference")}
+                   for pid, values in off.player_tactics.items() if pid in off.lineup}
+        if any(players.values()):
+            calls["off"]["players"] = {pid: v for pid, v in players.items() if v}
+        if dfn.double_team in off.lineup:
+            calls["def"]["double_team"] = dfn.double_team
+        return calls if calls["off"] or calls["def"] else None
+
+    def monitor(self, side: Side) -> dict:
+        """What the coach's directives change in the engine right now.
+
+        The odds of the next chance at each end, with the current lineups, with and without the
+        directives in force; each player's share of chances, energy and confidence; and every directive
+        with the coach's words and how long it has left.
+        """
+        other = self.other(side)
+
+        def outcomes(off: Side, dfn: Side, use: bool) -> list[tuple]:
+            choices, weights = self.chance_weights(off, dfn, use_levers=use)
+            total = sum(weights)
+            return [(pid, event, w / total) for (pid, event), w in zip(choices, weights)]
+
+        def rows(off: Side, dfn: Side) -> tuple[list[dict], list, list]:
+            before, after = outcomes(off, dfn, False), outcomes(off, dfn, True)
+            table = [{"label": label, "before": sum(p for _, e, p in before if e == event), "after": sum(p for _, e, p in after if e == event)}
+                     for event, label in (("rim", "a shot at the rim"), ("mid", "a midrange shot"), ("three", "a three"),
+                                          ("free_throws", "drawing a shooting foul"), ("turnover", "a turnover"))]
+            return table, before, after
+
+        offense, before, after = rows(side, other)
+        own = sum(side.athletes[p].profile.oreb for p in side.lineup)
+        theirs = sum(other.athletes[p].profile.dreb for p in other.lineup)
+        crash = self._lever(side, "crash_glass") if side.directives else 1.0
+        offense.append({"label": "an offensive rebound, after a miss", "before": own / (own + theirs), "after": own * crash / (own * crash + theirs)})
+        pace = self._lever(side, "pace") if "pace" in side.tactics else 1.0
+        offense.append({"label": "seconds per first chance", "before": self.mean_first_seconds, "after": self.mean_first_seconds / pace, "unit": "s"})
+        defense, their_before, their_after = rows(other, side)
+        players = [{"name": side.athletes[pid].profile.name, "id": pid,
+                    "before": sum(p for q, _, p in before if q == pid), "after": sum(p for q, _, p in after if q == pid),
+                    "energy": side.athletes[pid].energy, "confidence": side.athletes[pid].confidence}
+                   for pid in side.lineup]
+        if side.double_team in other.lineup:
+            doubled = side.double_team
+            defense.append({"label": f"{other.athletes[doubled].profile.name} acting (doubled)",
+                            "before": sum(p for q, _, p in their_before if q == doubled), "after": sum(p for q, _, p in their_after if q == doubled)})
+        names = {pid: a.profile.name for team in (side, other) for pid, a in team.athletes.items()}
+        directives = [{"lever": d.lever, "value": names.get(d.value, d.value) if d.lever in ("focus", "double_team") else d.value,
+                       "player": names.get(d.player), "words": d.words,
+                       "left": None if d.until is None else max(0.0, d.until - self.game_seconds)} for d in side.directives]
+        return {"offense": offense, "defense": defense, "players": players, "directives": directives}
 
     def _player_weights(self, off: Side, dfn: Side, pid: int, team_zones: dict, turnover_factor: float,
                         free_throw_factor: float) -> dict[str, float]:
@@ -551,7 +621,7 @@ class Game:
                 self._run_clock(self.clock)
                 return False
             doubled = dfn.double_team if dfn.double_team in off.lineup else None  # shown on the court as two defenders
-            self._log(off, "", "chance", other=doubled, zone="first" if first else "second")
+            self._log(off, "", "chance", other=doubled, zone="first" if first else "second", tactics=self._calls(off, dfn))
             self._run_clock(seconds)
             if first:
                 off.possessions += 1
