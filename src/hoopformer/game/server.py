@@ -80,9 +80,10 @@ class LiveGame:
     """One game being coached. Steps and instructions take turns through a lock."""
 
     def __init__(self, model: ActionModel, limits: dict, home: int, away: int, seed: int, use: str = "auto",
-                 unmapped_log: Path | None = None, boost: float = levers.BOOST):
+                 unmapped_log: Path | None = None, boost: float = levers.BOOST, half_life: float | None = levers.CALL_HALF_LIFE):
         self.model, self.use, self.unmapped_log = model, use, unmapped_log
-        self.game = Game(model, home, away, seed=seed, limits=limits, boost=boost)  # game mode: calls are felt
+        # game mode: calls are felt, and wear off unless repeated
+        self.game = Game(model, home, away, seed=seed, limits=limits, boost=boost, half_life=half_life)
         self.lock = threading.Lock()
         self.game.step()  # the tip-off and first possession, so the page opens with players on the floor
 
@@ -183,8 +184,9 @@ class Courtside:
     """What the server knows: the model, the lever limits, and the game being played."""
 
     def __init__(self, model: ActionModel, limits: dict, home: str, away: str, use: str = "auto",
-                 unmapped_log: Path | None = None, boost: float = levers.BOOST):
-        self.model, self.limits, self.use, self.unmapped_log, self.boost = model, limits, use, unmapped_log, boost
+                 unmapped_log: Path | None = None, boost: float = levers.BOOST, half_life: float | None = levers.CALL_HALF_LIFE):
+        self.model, self.limits, self.use, self.unmapped_log = model, limits, use, unmapped_log
+        self.boost, self.half_life = boost, half_life
         self.by_code = {team.tricode: team.team_id for team in model.teams.values()}
         self.home, self.away = home, away
         self.live: LiveGame | None = None
@@ -194,7 +196,8 @@ class Courtside:
         if home not in self.by_code or away not in self.by_code or home == away:
             raise ValueError(f"unknown or identical teams {home} and {away}")
         seed = random.randrange(1 << 30) if seed is None else seed
-        self.live = LiveGame(self.model, self.limits, self.by_code[home], self.by_code[away], seed, self.use, self.unmapped_log, self.boost)
+        self.live = LiveGame(self.model, self.limits, self.by_code[home], self.by_code[away], seed, self.use, self.unmapped_log,
+                             self.boost, self.half_life)
         return self.live
 
 

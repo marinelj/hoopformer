@@ -19,6 +19,7 @@ plays with, never further than real teams and players go.
 
 from __future__ import annotations
 
+import math
 import random
 from collections import Counter
 from dataclasses import dataclass, field
@@ -202,10 +203,11 @@ def default_roster(model: ActionModel, team_id: int, size: int = ROSTER_SIZE) ->
 class Game:
     def __init__(self, model: ActionModel, home_team_id: int, away_team_id: int, seed: int,
                  home_roster: list[int] | None = None, away_roster: list[int] | None = None,
-                 limits: dict[str, list[float]] | None = None, boost: float = 1.0):
+                 limits: dict[str, list[float]] | None = None, boost: float = 1.0, half_life: float | None = None):
         self.model = model
         self.league = model.league
         self.boost = boost  # 1 for a faithful simulation; levers.BOOST in the live game, so calls are felt
+        self.half_life = half_life  # game seconds for a call to lose half its strength (live game); None: calls never fade
         # how far each lever reaches (levers.lever_limits), stretched by the boost; needed only for instructions
         self.limits = levers.boosted(limits, boost) if limits and boost != 1 else limits
         self.credit_rng = random.Random(seed + 7919)  # its own numbers, so crediting plays never changes the game
@@ -380,7 +382,7 @@ class Game:
             if (d.lever, d.player) not in moved and levers.kind(d.lever, d.player) in kinds:
                 faded = round(strength(d.value) * levers.FADE, 2)
                 d.value = {**d.value, "value": faded} if isinstance(d.value, dict) else faded
-        side.directives = [d for d in side.directives if levers.kind(d.lever, d.player) is None or abs(strength(d.value)) >= 0.05]
+        side.directives = [d for d in side.directives if levers.kind(d.lever, d.player) is None or abs(strength(d.value)) >= levers.FORGOTTEN]
         for lever, value in list(instruction.team.items()):  # back to where it started: nothing left to remember
             if value == 0:
                 del instruction.team[lever]
@@ -582,9 +584,20 @@ class Game:
             defense.append({"label": f"{other.athletes[doubled].profile.name} acting (doubled)",
                             "before": sum(p for q, _, p in their_before if q == doubled), "after": sum(p for q, _, p in their_after if q == doubled)})
         names = {pid: a.profile.name for team in (side, other) for pid, a in team.athletes.items()}
-        directives = [{"lever": d.lever, "value": names.get(d.value, d.value) if d.lever in ("focus", "double_team") else d.value,
-                       "player": names.get(d.player), "player_id": d.player, "words": d.words,
-                       "left": None if d.until is None else max(0.0, d.until - self.game_seconds)} for d in side.directives]
+        def shown(d):  # names for players, two decimals for strengths
+            if d.lever in ("focus", "double_team"):
+                return names.get(d.value, d.value)
+            if isinstance(d.value, dict):
+                return {**d.value, "value": round(d.value["value"], 2)}
+            return round(d.value, 2) if isinstance(d.value, float) else d.value
+
+        def fades_in(d):  # game seconds until a fading call is forgotten
+            strength = abs(d.value["value"] if isinstance(d.value, dict) else d.value) if levers.kind(d.lever, d.player) else 0
+            return self.half_life * math.log2(strength / levers.FORGOTTEN) if self.half_life and strength > levers.FORGOTTEN else None
+
+        directives = [{"lever": d.lever, "value": shown(d), "player": names.get(d.player), "player_id": d.player, "words": d.words,
+                       "left": None if d.until is None else max(0.0, d.until - self.game_seconds), "fades_in": fades_in(d)}
+                      for d in side.directives]
         opponents = [{"id": pid, "energy": other.athletes[pid].energy, "confidence": other.athletes[pid].confidence} for pid in other.lineup]
         return {"offense": offense, "defense": defense, "players": players, "opponents": opponents, "directives": directives}
 
@@ -843,10 +856,26 @@ class Game:
     def _run_clock(self, seconds: float) -> None:
         self.clock -= seconds
         self.game_seconds += seconds
+        if self.half_life:
+            self._fade(seconds)
         for side in (self.home, self.away):
             on_floor = set(side.lineup)
             for pid, athlete in side.athletes.items():
                 athlete.run(seconds, pid in on_floor, self.effort(side, pid) if side.directives and pid in on_floor else 1.0)
+
+    def _fade(self, seconds: float) -> None:
+        """Calls wear off as game time passes: each keeps 0.5 ** (seconds / half_life) of its strength, and one
+        weaker than levers.FORGOTTEN is dropped. Focus, double teams, fouling late and rest don't fade."""
+        keep = 0.5 ** (seconds / self.half_life)
+        for side in (self.home, self.away):
+            fading = [d for d in side.directives if levers.kind(d.lever, d.player) is not None]
+            if not fading:
+                continue
+            for d in fading:
+                d.value = {**d.value, "value": d.value["value"] * keep} if isinstance(d.value, dict) else d.value * keep
+            side.directives = [d for d in side.directives if levers.kind(d.lever, d.player) is None
+                               or abs(d.value["value"] if isinstance(d.value, dict) else d.value) >= levers.FORGOTTEN]
+            self._refresh(side)
 
     def _possession(self, off: Side, dfn: Side) -> bool:
         """Play one possession. Returns False if the period clock ran out first."""

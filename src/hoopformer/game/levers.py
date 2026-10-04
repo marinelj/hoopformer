@@ -102,6 +102,11 @@ def boosted(limits: dict, boost: float) -> dict:
 
 # Calls from the page's list are nudges, not switches:
 STEP = 0.35  # each call moves its lever this far: the same call three times reaches the limit, the opposite call takes one back
+FORGOTTEN = 0.05  # a call weaker than this is dropped
+# Calls wear off (game mode): every call loses half its strength each CALL_HALF_LIFE seconds of game time, so a call
+# at the limit (●●●) is down to ●●○ after about 1.5 minutes, ●○○ after 4.5 and forgotten after 13, unless the coach
+# repeats it. `hoopformer serve --half-life` changes it; simulations and tests keep calls at full strength.
+CALL_HALF_LIFE = 180.0
 FADE = 0.7   # and the other calls of the same kind keep 70% of their strength: players hold on to the latest message best
 
 

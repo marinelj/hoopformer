@@ -311,6 +311,13 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - A call you make: a banner (team) or a pulse and "Coach: ..." bubble (player), then the reply over the replier's head.
 - **Every call says what it changed** (`server.impact`, in the chatter as 📈): the three biggest moves in the next chance's odds, e.g. "Gilgeous-Alexander takes 27.9% → 38.0% of our chances".
 
+**Sixth follow-up (Oct 4): calls wear off.**
+- In the live game every call loses half its strength each `levers.CALL_HALF_LIFE` = 180 seconds of game time (`Game(half_life=...)`, `Game._fade`).
+  - A call at the limit (●●●) is at ●◐○ after about 2.5 minutes, ●○○ after 5, and forgotten after 13 (below `FORGOTTEN` = 0.05), unless the coach repeats it.
+  - Its energy cost fades with it. Focus, double teams, fouling late and rest don't fade.
+- The meter shows half steps (◐) so the fade is visible, and the monitor says "fading: forgotten in 9:45 unless you repeat it".
+- `hoopformer serve --half-life 300` makes calls last longer, `--half-life 0` keeps them forever. Simulations and tests keep calls at full strength.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

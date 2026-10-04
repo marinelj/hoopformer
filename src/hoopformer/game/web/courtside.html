@@ -1397,7 +1397,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     for (const d of m.directives) {
       const li = mk("li");
       const v = typeof d.value === "number" ? `${d.value > 0 ? "+" : ""}${d.value}` : typeof d.value === "object" && d.value ? `${d.value.zone} ${d.value.value > 0 ? "+" : ""}${d.value.value}` : String(d.value);
-      li.append(mk("span", "lv", `${d.player ? last(d.player) + " " : ""}${d.lever} ${v}`), ` · "${d.words.replace(/^Tactics: New plan: /, "")}" · ${d.left === null ? "rest of the game" : `${fmt(d.left)} of game time left`}`);
+      const lasts = d.fades_in != null ? `fading: forgotten in ${fmt(d.left === null ? d.fades_in : Math.min(d.fades_in, d.left))} unless you repeat it`
+        : d.left === null ? "rest of the game" : `${fmt(d.left)} of game time left`;
+      li.append(mk("span", "lv", `${d.player ? last(d.player) + " " : ""}${d.lever} ${v}`), ` · "${d.words.replace(/^Tactics: New plan: /, "")}" · ${lasts}`);
       list.append(li);
     }
     box.append(list);
@@ -1440,8 +1442,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const v = typeof d.value === "object" ? d.value.value : d.value;
       const call = PLAYER_CALLS.find(([, , raw]) => raw[d.lever] !== undefined &&
         (typeof raw[d.lever] === "object" ? raw[d.lever].zone === d.value.zone : Math.sign(raw[d.lever]) === Math.sign(v)));
-      const n = Math.max(1, Math.min(3, Math.round(Math.abs(v) / STEP)));
-      out.push(`${call ? call[1] : d.lever} ${"●".repeat(n)}${"○".repeat(3 - n)}`);
+      out.push(`${call ? call[1] : d.lever} ${meter(v)}`);
     }
     return out;
   }
@@ -1717,12 +1718,17 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // The opposite call is in force (picking this one would pull it back), or this one is already at the limit.
   const opposes = (call) => sigOf(call.raw).some(([k, p]) => inForce.some((d) => d.lever === k && (d.player_id ?? null) === p)) && level(call) === 0;
   const maxed = (call) => level(call) >= 0.99;
-  function dots(call) {   // ●●○: how many steps the lever stands in this call's direction
+  // ●●○: how many steps a lever stands at, in half steps (◐) so a fading call drains visibly.
+  function meter(v) {
+    const halves = Math.max(1, Math.min(6, Math.round(Math.abs(v) / (STEP / 2))));
+    const full = Math.floor(halves / 2), half = halves % 2;
+    return "●".repeat(full) + "◐".repeat(half) + "○".repeat(3 - full - half);
+  }
+  function dots(call) {   // where the lever stands in this call's direction
     const v = level(call);
     if (!v) return "";
     if (sigOf(call.raw).every(([k]) => k === "focus" || k === "double_team" || k === "late_foul")) return " ●";
-    const n = Math.max(1, Math.min(3, Math.round(v / STEP)));
-    return ` ${"●".repeat(n)}${"○".repeat(3 - n)}`;
+    return ` ${meter(v)}`;
   }
 
   // What a coach might call right now, most urgent first. Only reads the game so far.

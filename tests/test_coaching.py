@@ -500,3 +500,26 @@ def test_tired_legs_only_in_game_mode(fitted, limits):
         athlete.energy = 0.3
         print(f"boost {boost}: energy 0.3 -> tired {game.tired(athlete):.2f}")
         assert abs(game.tired(athlete) - expected) < 1e-9, "real stints show no fatigue in shooting; the game does"
+
+
+def test_calls_wear_off_unless_repeated(fitted, limits):
+    model, _ = fitted
+    game = Game(model, OKC, BOS, seed=12, limits=limits, boost=BOOST, half_life=180.0)
+    for _ in range(3):
+        game.nudge(game.home, validate({"team": {"pressure": 1}}, "press", set(game.home.athletes), set(game.away.athletes), None, "call"))
+    seen = []
+    while game.game_seconds < 900 and not game.done:
+        game.step()
+        pressure = game.home.tactics.get("pressure", 0.0)
+        if not seen or game.game_seconds - seen[-1][0] >= 90:
+            seen.append((game.game_seconds, round(pressure, 2), game.monitor(game.home)["directives"][0]["fades_in"] if game.home.directives else None))
+    for t, value, left in seen:
+        print(f"{t / 60:5.1f} min: pressure {value:+.2f}" + (f", forgotten in {left / 60:.1f} min" if left else ""))
+    halfway = min(seen, key=lambda r: abs(r[0] - 180))
+    assert abs(halfway[1] - 0.5 * 0.5 ** ((halfway[0] - 180) / 180)) < 0.05, "half as strong after one half-life"
+    assert "pressure" not in game.home.tactics, "and forgotten after about 13 minutes"
+    quiet = Game(model, OKC, BOS, seed=12, limits=limits, boost=BOOST)  # no half-life: simulations keep calls at full strength
+    instruct(quiet, {"team": {"pressure": 1}})
+    for _ in range(40):
+        quiet.step()
+    assert quiet.home.tactics["pressure"] == 1.0
