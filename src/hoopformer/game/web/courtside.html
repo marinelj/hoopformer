@@ -182,7 +182,7 @@ tbody tr.on td:first-child { color: var(--led); }
 }
 
 .figure { transition: opacity 0.35s ease; pointer-events: auto; cursor: pointer; }
-.figure.glide { transition: left 0.5s ease, top 0.5s ease, opacity 0.35s ease; }
+.figure.glide { transition: left 0.9s ease, top 0.9s ease, opacity 0.35s ease; }
 .figure.holder .tag { background: var(--led); color: #111; }
 .figure.doubled .tag { box-shadow: 0 0 0 2px var(--shot); }
 .figure.doubled .tag::after { content: " ×2"; color: var(--shot); font-weight: 700; }
@@ -685,18 +685,27 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     });
     return plans;
   }
+  const PRESS_RELEASE = 1.5;   // game seconds to drop back from the press into the half-court defense
+  function pressAt(plan, i, t) {   // pressure: picked up full court, two on the ball handler
+    const target = i === 1 ? plan.off[0] : plan.off[i];
+    if (!target || !plan.keys[target]) return null;
+    const o = track(plan.keys[target], t - 0.2), b = plan.basket;
+    return clampCourt({ x: o.x + (b.x - o.x) * 0.06, y: o.y + (b.y - o.y) * 0.06 + (i === 1 ? 1.8 : 0) });
+  }
   function defenderAt(plan, i, t) {
     if (i === plan.helper) {   // the second defender on a doubled player, on the other shoulder
       const o = track(plan.keys[plan.doubled], t - 0.3), b = plan.basket;
       return clampCourt({ x: o.x + (b.x - o.x) * 0.22, y: o.y + (b.y - o.y) * 0.22 - 1.6 });
     }
-    if (plan.pressUntil && t < plan.pressUntil) {   // pressure: picked up full court, two on the ball handler
-      const target = i === 1 ? plan.off[0] : plan.off[i];
-      if (target && plan.keys[target]) {
-        const o = track(plan.keys[target], t - 0.2), b = plan.basket;
-        return clampCourt({ x: o.x + (b.x - o.x) * 0.06, y: o.y + (b.y - o.y) * 0.06 + (i === 1 ? 1.8 : 0) });
-      }
+    if (plan.pressUntil && t < plan.pressUntil) { const p = pressAt(plan, i, t); if (p) return p; }
+    const p = settledAt(plan, i, t);
+    if (plan.pressUntil && t < plan.pressUntil + PRESS_RELEASE) {   // the press is over: he runs back to his spot, not a jump
+      const q = pressAt(plan, i, plan.pressUntil);
+      if (q) return lerp(q, p, ease((t - plan.pressUntil) / PRESS_RELEASE));
     }
+    return p;
+  }
+  function settledAt(plan, i, t) {   // the half-court defense: a zone, or man to man
     if (plan.zone) {   // a 2-3 zone: spots around the paint, leaning a little toward the nearest attacker
       const z = [[17, -7], [17, 7], [6, -14], [6, 14], [4, 0]][i] || [8, 0];
       const spot = toCourt(plan.right, z[0], z[1]);
@@ -1361,7 +1370,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const st = statusById[id];
     if (st) {
       if (st.confidence >= 0.62) out += "🔥"; else if (st.confidence <= 0.38) out += "🧊";
-      if (st.energy < 0.45) out += "💦";
+      if (st.tired) out += "💦";   // near where his coach would sub him
     }
     return out;
   }
@@ -1441,6 +1450,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const res = mk("div", "pc-res"), energy = mk("div"), bar = mk("span", "bar"), fill = mk("i");
       fill.style.width = `${Math.round(p.energy * 100)}%`; bar.append(fill);
       energy.append("energy ", bar, ` ${Math.round(p.energy * 100)}%`);
+      energy.title = "In the live game his shots go in at their usual chance times his energy";
       if (Math.abs(p.effort - 1) > 0.005) energy.append(" · ", mk("span", p.effort > 1 ? "hot" : "cool", `tiring ×${p.effort.toFixed(2)}`));
       const conf = mk("div", "", `confidence ${p.confidence.toFixed(2)} · shoots ×${p.usage.toFixed(2)}`);
       res.append(energy, conf);
@@ -1488,7 +1498,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   let instant = false;   // a jump in time (scrubbing): figures go straight to their spots
   function glide(el) {
     el.classList.add("glide");
-    clearTimeout(el._glide); el._glide = setTimeout(() => el.classList.remove("glide"), 650);
+    clearTimeout(el._glide); el._glide = setTimeout(() => el.classList.remove("glide"), 1000);
   }
   function seek(t) {
     S = freshState(); lastFeedLen = -1; lastChatterKey = ""; lastBubbled = -1;
@@ -1782,7 +1792,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
     const b = S.box[row.id] || {}, shots = S.shots[row.id] || [], p = playerById[row.id];
     const me = lastMonitor && lastMonitor.players.find((x) => x.id === row.id);
-    if (me && me.energy < 0.3) out.push("Take a breather (3 min)");
+    if (me && me.tired) out.push("Take a breather (3 min)");
     if (phase === "offense") {
       if (shots.length >= 4 && !shots.slice(-4).some(Boolean)) out.push("Get to the rim");
       if (shots.length >= 3 && shots.slice(-3).every(Boolean)) out.push("Be aggressive, look for your shot");
@@ -1791,7 +1801,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     } else {
       const lead = S.home - S.away;
       if ((b.PF || 0) >= 3) out.push("Stay out of foul trouble");
-      if (me && me.energy < 0.45) out.push("Play off your man");   // save his legs
+      if (me && me.energy < 0.9) out.push("Play off your man");   // save his legs
       if (p.big >= 0.16 && S.teamOreb.away >= 6) out.push("Box out, finish the play");
       if (lead <= -8 && p.handler >= 0.22) out.push("Leak out for the break");
       if (S.teamThrees.away >= 6 && p.big < 0.16) out.push("Stay home on your shooter");

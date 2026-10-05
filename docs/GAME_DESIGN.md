@@ -297,7 +297,10 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   | SGA aggressive ×3: his shots | | 17.7 → 27.5 |
   | attack the rim ×3: point margin | | +4.3 → +14.6 |
   | push the pace ×3: point margin | | +4.3 → +1.5 (the team tires) |
-- **Tired legs (game mode only):** below 60% energy a player makes up to 15% fewer shots and turns it over up to 40% more at empty (`FATIGUE_*`, assumed). Real stints show no such drop because coaches sub players out first, but boosted calls tire players far faster; this is what keeps a tiring call a trade-off and not a free win.
+- **Energy (game mode only), marinelj's rule: a shot goes in at its usual chance times the shooter's energy.**
+  - Energy as shown and used runs from 100% fresh to about 85% at the end of a normal stint (where the coach subs him) and 80% at empty (`levers.LEGS_DROP`, `Game.legs`). It drains about 2% a minute on the floor (faster under tiring calls) and comes back about 4% a minute on the bench.
+  - Real stints show no such drop because coaches sub players out first. In the game, boosted calls tire players far faster, and this is what keeps a tiring call a trade-off and not a free win.
+  - (Replaces the earlier tired-legs penalty, which only started below 60% on the old fatigue clock.)
 - **Credit (`Event.credit`):** the engine marks a play it can put down to a call in force, with its own random numbers so crediting never changes the game. Credited:
   - a call that paid off ("THE PRESS WORKS!", "ATTACK MODE!", "CRASHED THE GLASS!", "THE ZONE HOLDS!", ...), at least half the time such a play happens (`CREDIT_FLOOR` = 0.5) so the coach sees it;
   - a price paid ("PRESS BROKEN", "BURNED IN TRANSITION", "ZONE BEATEN FROM DEEP", "TIRED LEGS", ...), only as often as the call really caused it.
@@ -328,6 +331,8 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - **Spread out:** on a run up the floor the offense fills the lanes (the handler in the middle, wings on both sidelines, trailers between), and defenders move toward their man's side of the floor first.
 - **Playback is 0.5× only**, and sound is always on: the speed and sound buttons are gone.
 - **"Man to man"** (team, defense) ends a double team (`stop: ["double_team"]` in `POST /api/call`); ● shows while nobody is doubled. A double team in force shows 👥 on the doubled player at once, before it reaches the court on their next possession.
+
+**Eighth follow-up (Oct 4): the press no longer teleports.** When a press ended a few seconds into a possession, all five defenders switched from the full-court press to their half-court spots in a single frame (jumps of 6–25 feet). Now they run back over 1.5 seconds (`PRESS_RELEASE`), and anything else that has to move at once (the free-throw line-up) walks over 0.9 seconds. Checked frame by frame with a press, a double team, a zone, crashing and pushing the pace in force: no player moved more than 2 feet in a frame in 99 seconds of game time.
 
 ## 10. Open questions for marinelj
 

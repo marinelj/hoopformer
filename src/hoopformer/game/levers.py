@@ -86,17 +86,16 @@ CONFIDENCE_PLAY = 0.05     # assumed: a turnover costs this much, a steal or a b
 # shoots stays as measured. Simulations, tests and the realism checks use boost 1.
 BOOST = 5.0
 CREDIT_FLOOR = 0.5  # a play a call made likelier is put down to it at least half the time, so the coach sees it pay off
-# Game mode only: tired legs. Real players don't shoot worse late in a normal stint (engine.py), because coaches
-# sub them out first; but boosted calls tire players far faster, so in the game a player below FATIGUE_START
-# energy pays for it: at empty he makes 15% fewer shots and turns it over 40% more (assumed). That is what
-# makes a tiring call a trade-off and not a free win.
+# Game mode only: a shot goes in at its usual chance times the shooter's energy (marinelj's rule). Energy, as
+# the game shows and uses it, runs from 100% (fresh) down to 85% at the point where his coach would normally
+# sub him (the end of a real stint) and 80% if he is never rested: it drains about 2% a minute on the floor
+# (faster under tiring calls) and comes back about 4% a minute on the bench. The coach's rotation runs on the
+# same clock (coach.TIRED). Real shooting doesn't drop late in a stint (engine.py), so simulations leave it out.
+LEGS_DROP = 0.2  # energy shown = 1 - LEGS_DROP x (fatigue: 0 fresh, 1 empty)
 # Game mode only: no first chance shorter than this. Real play-by-play has some (6.6% under 4 seconds), mostly
 # transition plays where players are already running; the court can't show those, and five players covering
 # the floor in two seconds looks like a teleport.
 MIN_FIRST_SECONDS = 4.0
-FATIGUE_START = 0.6
-FATIGUE_MAKES = 0.15
-FATIGUE_TURNOVERS = 0.4
 
 
 def boosted(limits: dict, boost: float) -> dict:

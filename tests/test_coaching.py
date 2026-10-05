@@ -492,14 +492,21 @@ def test_plays_are_credited_to_the_calls_that_made_them(fitted, limits):
     assert steals and all(e.kind == "turnover" and e.team == "BOS" for e in steals), "the press is credited with BOS turnovers"
 
 
-def test_tired_legs_only_in_game_mode(fitted, limits):
+def test_in_game_mode_a_shot_goes_in_at_its_chance_times_his_energy(fitted, limits):
     model, _ = fitted
-    for boost, expected in ((1.0, 0.0), (BOOST, 0.5)):
+    for boost, expected in ((1.0, 1.0), (BOOST, 0.86)):
         game = Game(model, OKC, BOS, seed=1, limits=limits, boost=boost)
         athlete = game.home.athletes[SGA]
-        athlete.energy = 0.3
-        print(f"boost {boost}: energy 0.3 -> tired {game.tired(athlete):.2f}")
-        assert abs(game.tired(athlete) - expected) < 1e-9, "real stints show no fatigue in shooting; the game does"
+        athlete.energy = 0.3   # the fatigue clock, near where the coach subs him
+        print(f"boost {boost}: energy shown and used {game.legs(athlete):.2f}")
+        assert abs(game.legs(athlete) - expected) < 1e-9, "real stints show no fatigue in shooting; the game does"
+    minutes, shown = 0, []
+    game = Game(model, OKC, BOS, seed=2, limits=limits, boost=BOOST)
+    while game.game_seconds < 600:
+        game.step()
+        shown.append(game.monitor(game.home)["players"][0]["energy"])
+    print("energy shown over 10 minutes:", [round(e, 2) for e in shown[::8]])
+    assert 0.8 <= min(shown) and max(shown) <= 1.0, "between 80% and 100%"
 
 
 def test_calls_wear_off_unless_repeated(fitted, limits):

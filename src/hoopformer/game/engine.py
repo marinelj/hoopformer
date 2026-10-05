@@ -485,7 +485,6 @@ class Game:
         choices, weights = [], []
         for pid in off.lineup:
             profile, usage = off.athletes[pid].profile, off.athletes[pid].usage
-            sloppy = 1 + levers.FATIGUE_TURNOVERS * self.tired(off.athletes[pid])  # game mode: tired players lose the ball
             if coached:
                 event_weights = self._player_weights(off, dfn, pid, team_zones, turnover_factor, free_throw_factor)
             for event in EVENTS:
@@ -498,7 +497,7 @@ class Game:
                     elif event == "free_throws":
                         weight *= free_throw_factor
                 choices.append((pid, event))
-                weights.append(weight * usage * (sloppy if event == "turnover" else 1.0))
+                weights.append(weight * usage)
         choices.append((None, "turnover"))
         weights.append(league.team_turnover_rate * turnover_factor)
         return choices, weights
@@ -573,7 +572,8 @@ class Game:
             players.append({
                 "name": athlete.profile.name, "id": pid,
                 "before": sum(p for q, _, p in before if q == pid), "after": sum(p for q, _, p in after if q == pid),
-                "energy": athlete.energy, "confidence": athlete.confidence, "usage": athlete.usage, "effort": self.effort(side, pid),
+                "energy": self.legs(athlete) if self.boost != 1 else athlete.energy, "tired": athlete.energy <= coach.TIRED + 0.1,
+                "confidence": athlete.confidence, "usage": athlete.usage, "effort": self.effort(side, pid),
                 "offense": [{"label": label, "before": mine_before.get(event, 0.0), "after": mine_after.get(event, 0.0)} for event, label in
                             (("rim", "a shot at the rim"), ("mid", "a midrange shot"), ("three", "a three"),
                              ("free_throws", "drawing a shooting foul"), ("turnover", "a turnover"))],
@@ -598,7 +598,8 @@ class Game:
         directives = [{"lever": d.lever, "value": shown(d), "player": names.get(d.player), "player_id": d.player, "words": d.words,
                        "left": None if d.until is None else max(0.0, d.until - self.game_seconds), "fades_in": fades_in(d)}
                       for d in side.directives]
-        opponents = [{"id": pid, "energy": other.athletes[pid].energy, "confidence": other.athletes[pid].confidence} for pid in other.lineup]
+        opponents = [{"id": pid, "energy": self.legs(other.athletes[pid]) if self.boost != 1 else other.athletes[pid].energy,
+                      "tired": other.athletes[pid].energy <= coach.TIRED + 0.1, "confidence": other.athletes[pid].confidence} for pid in other.lineup]
         return {"offense": offense, "defense": defense, "players": players, "opponents": opponents, "directives": directives}
 
     def _player_weights(self, off: Side, dfn: Side, pid: int, team_zones: dict, turnover_factor: float,
@@ -650,8 +651,8 @@ class Game:
                 chance *= 1 + levers.CAUTION_CONTEST * self.boost * self._defense(dfn, "foul_caution")
                 chance *= 1 + levers.PRESSURE_BEATEN * self.boost * max(0.0, self._defense(dfn, "pressure"))
         chance *= 1 - levers.CONFIDENCE_QUALITY * (shooter.confidence - 0.5)  # confident players take harder shots (never boosted)
-        tired = self.tired(shooter)
-        chance *= 1 - levers.FATIGUE_MAKES * tired  # game mode: tired legs
+        legs = self.legs(shooter)
+        chance *= legs  # game mode: a shot goes in at its chance times his energy
         chance = min(0.98, max(0.02, chance))
         shooter.stats["FGA"] += 1
         if zone == "three":
@@ -680,8 +681,8 @@ class Game:
                 self._log(dfn, f"{self._name(dfn, fouler)} fouls: and-one", "foul", fouler, pid, "and-one")
                 return self._free_throws(off, dfn, pid, 1)
             return False
-        legs = off.directives and tired > 0 and self.effort(off, pid) > 1  # his coach's calls wore him out
-        credit = self._credit(off, "tired_legs", False, 1 / (1 - levers.FATIGUE_MAKES * tired)) if legs else None
+        worn = off.directives and legs < 1 and self.effort(off, pid) > 1  # his coach's calls wore him out
+        credit = self._credit(off, "tired_legs", False, 1 / legs) if worn else None
         if credit is None and dfn.directives:  # the defense's shape forced the miss
             paint = self._defense(dfn, "protect_paint")
             if paint > 0 and zone != "rim":
@@ -774,11 +775,10 @@ class Game:
             share = max(levers.CREDIT_FLOOR, share)
         return {"team": side.tricode, "call": call, "good": good} if self.credit_rng.random() < share else None
 
-    def tired(self, athlete: Athlete) -> float:
-        """Game mode only: how much a tired player's play suffers, from 0 (enough energy) to 1 (empty)."""
-        if self.boost == 1 or athlete.energy >= levers.FATIGUE_START:
-            return 0.0
-        return (levers.FATIGUE_START - athlete.energy) / levers.FATIGUE_START
+    def legs(self, athlete: Athlete) -> float:
+        """Game mode: his energy as the game shows it and as it scales his shots, from 1 (fresh) to 1 - LEGS_DROP
+        (empty); a normal stint ends near 0.85. A faithful simulation always plays at 1."""
+        return 1.0 if self.boost == 1 else 1 - levers.LEGS_DROP * (1 - athlete.energy)
 
     def _m(self, lever: str, value: float) -> float:
         return levers.multiplier(value, self.limits[lever]) if value else 1.0
