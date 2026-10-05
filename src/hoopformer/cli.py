@@ -7,7 +7,7 @@ from pathlib import Path
 
 from hoopformer.dataset import build_dataset, cached_seasons
 from hoopformer.evaluate import LockedSplitError, cached_baselines, evaluate, score
-from hoopformer.fetch import fetch_rosters, fetch_season
+from hoopformer.fetch import fetch_careers, fetch_rosters, fetch_season
 from hoopformer.rapm import choose_lambda, ratings, season_rows
 
 
@@ -20,11 +20,12 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
 
     fetch = commands.add_parser("fetch", help="cache raw NBA Stats responses for one or more seasons")
-    fetch.add_argument("--season", required=True, nargs="+", help="e.g. 2025-26 2024-25, fetched in that order")
+    fetch.add_argument("--season", nargs="+", help="e.g. 2025-26 2024-25, fetched in that order")
     fetch.add_argument("--limit", type=int, help="only the first N games (for a quick test)")
     fetch.add_argument("--delay", type=float, default=1.0, help="seconds to wait between requests")
     fetch.add_argument("--refresh-schedule", action="store_true", help="re-download the schedule")
     fetch.add_argument("--rosters", action="store_true", help="fetch the 30 current team rosters instead of games")
+    fetch.add_argument("--legends", action="store_true", help="fetch the career totals of the 1990s and 2000s All-Stars (game/legends.py)")
     fetch.add_argument("--data-dir", type=Path, default=Path("data"))
     fetch.add_argument("--manifest", type=Path, default=Path("manifests/raw.jsonl"))
 
@@ -71,8 +72,8 @@ def main(argv: list[str] | None = None) -> int:
                       help="translator for --say (auto: the first LLM with a key set, else rules)")
 
     live = commands.add_parser("serve", help="coach a live game in your browser (this computer only)")
-    live.add_argument("--home", default="OKC", help="your team")
-    live.add_argument("--away", default="BOS", help="the AI coach's team")
+    live.add_argument("--home", help="your team (default: the 1990s All-Stars, 90S, once fetch --legends has run; else OKC)")
+    live.add_argument("--away", help="the AI coach's team (default: the 2000s All-Stars, 00S; else BOS)")
     live.add_argument("--season", default="2025-26", help="the season whose player rates the game uses")
     live.add_argument("--rosters", default="2026-27", help="play with this season's cached rosters if all 30 are fetched")
     live.add_argument("--port", type=int, default=8000)
@@ -96,7 +97,14 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     exit_code = 0
-    if args.command == "fetch" and args.rosters:
+    if args.command == "fetch" and args.legends:
+        from hoopformer.game.legends import person_ids
+        report = fetch_careers(person_ids(), args.data_dir, args.manifest, delay=args.delay)
+        print(f"legends: {report.fetched} fetched, {report.cached} already cached, {len(report.failed)} failed {' '.join(report.failed)}")
+        exit_code = 1 if report.failed else exit_code
+    elif args.command == "fetch" and not args.season:
+        parser.error("fetch needs --season (or --legends)")
+    elif args.command == "fetch" and args.rosters:
         for season in args.season:
             report = fetch_rosters(season, args.data_dir, args.manifest, delay=args.delay)
             print(f"{season} rosters: {report.fetched} fetched, {len(report.failed)} failed {' '.join(report.failed)}")
@@ -318,6 +326,12 @@ def serve_command(args) -> int:
         model = with_rosters(model, rosters, args.rosters)
     elif args.rosters:
         print(f"{args.rosters} rosters not cached, using {args.season}'s (fetch them with `uv run hoopformer fetch --rosters --season {args.rosters}`)")
+    from hoopformer.game.legends import cached as legends_cached, with_legends
+    classic = legends_cached(args.data_dir)
+    if classic:   # the 1990s and 2000s All-Stars (fetch --legends) play too, and are the default matchup
+        model = with_legends(model, args.data_dir)
+    args.home = args.home or ("90S" if classic else "OKC")
+    args.away = args.away or ("00S" if classic else "BOS")
     courtside = Courtside(model, lever_limits(args.data_dir, args.season), args.home, args.away, use=args.use,
                           unmapped_log=args.data_dir / "derived" / "unmapped.jsonl",
                           boost=BOOST if args.boost is None else args.boost,

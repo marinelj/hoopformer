@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
-from nba_api.stats.endpoints import boxscoretraditionalv3, commonteamroster, playbyplayv3, scheduleleaguev2
+from nba_api.stats.endpoints import boxscoretraditionalv3, commonteamroster, playbyplayv3, playercareerstats, scheduleleaguev2
 from nba_api.stats.library.http import NBAStatsHTTP
 from nba_api.stats.static import teams as static_teams
 
@@ -26,6 +26,7 @@ SCHEDULE = "scheduleleaguev2"
 PLAY_BY_PLAY = "playbyplayv3"
 BOX_SCORE = "boxscoretraditionalv3"
 ROSTER = "commonteamroster"
+CAREER = "playercareerstats"
 
 REGULAR_SEASON_PREFIX = "002"  # game ids: 001 preseason, 002 regular season, 004 playoffs
 FINAL_STATUS = 3  # schedule gameStatus: 1 scheduled, 2 live, 3 final
@@ -207,3 +208,34 @@ def fetch_rosters(
             status = f"FAILED ({exc})"
         log(f"{season} roster {team['abbreviation']} {status}")
     return report
+
+
+def fetch_careers(
+    person_ids: list[int], data_dir: Path, manifest_path: Path, delay: float = 1.0, log: Callable[[str], None] = print,
+    timeout: int = 60, retries: int = 3, backoff: float = 5.0,
+) -> SeasonFetchReport:
+    """Cache players' season-by-season career totals, e.g. raw/playercareerstats/893.json.
+
+    For players from before play-by-play (the classic teams in game/legends.py). A career that is
+    already cached is kept: it no longer changes.
+    """
+    report = SeasonFetchReport("careers")
+    for person_id in person_ids:
+        if raw_path(data_dir, CAREER, str(person_id)).exists():
+            report.cached += 1
+            continue
+        try:
+            text, url = request_with_retries(
+                lambda: playercareerstats.PlayerCareerStats(player_id=person_id, per_mode36="Totals", timeout=timeout),
+                f"{CAREER} {person_id}", retries, backoff,
+            )
+            store_raw(data_dir, manifest_path, CAREER, str(person_id), text, url)
+            report.fetched += 1
+            status = "fetched"
+            time.sleep(delay)
+        except FetchError as exc:
+            report.failed.append(str(person_id))
+            status = f"FAILED ({exc})"
+        log(f"career {person_id} {status}")
+    return report
+

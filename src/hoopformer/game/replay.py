@@ -15,6 +15,7 @@ from hoopformer.game.model import ActionModel
 from hoopformer.lineups import period_length, period_start
 
 TEAM_COLORS = {
+    "90S": ("#CE1141", "#1A1A1A"), "00S": ("#552583", "#FDB927"),   # the classic All-Star teams (game/legends.py)
     "ATL": ("#E03A3E", "#C1D32F"), "BOS": ("#007A33", "#BA9653"), "BKN": ("#1A1A1A", "#FFFFFF"),
     "CHA": ("#1D1160", "#00788C"), "CHI": ("#CE1141", "#1A1A1A"), "CLE": ("#860038", "#FDBB30"),
     "DAL": ("#00538C", "#B8C4CA"), "DEN": ("#0E2240", "#FEC524"), "DET": ("#C8102E", "#1D42BA"),

@@ -462,33 +462,32 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const basketOf = (right) => toCourt(right, 0, 0);
   const SPOTS = [[25, 0], [15, -20], [15, 20], [1.5, -22.5], [4.5, 10]];   // feet from the basket: top, wings, corner, dunker spot
   // The tactics drawn: where each role sets up (also on the court) and how they move (the helper under the talk rows).
-  const LAYOUT = {   // [feet out from the basket, feet across] for each role, then for the others in order; moves: [role, from, to, kind]
-    free: { spots: {}, rest: [[25, 0], [15, -20], [15, 20], [1.5, -22.5], [4.5, 10]] },
-    pnr: { spots: { handler: [25, 0], screener: [21, 3.5] }, rest: [[15, -20], [15, 20], [1.5, 22.5]],
+  // Each tactic's roles and where they stand ([feet out from the basket, feet across]): on the court, and in the helper
+  // under the talk rows, which also draws the moves ([role, from, to, kind]). Man-to-man defenses have no spots:
+  // each defender is on his man (MAN_SPOTS by where his man plays).
+  const LAYOUT = {
+    free: { spots: { point: [25, 0], lwing: [15, -20], rwing: [15, 20], corner: [1.5, -22.5], dunker: [4.5, 10] } },
+    pnr: { spots: { handler: [25, 0], screener: [21, 3.5], lwing: [15, -20], rwing: [15, 20], corner: [1.5, 22.5] }, start: { screener: [4.5, 10] },
            moves: [["screener", [4.5, 10], [21, 3.5], "run"], ["handler", [25, 0], [11, -2], "run"], ["screener", [21, 3.5], [3.5, 1], "roll"]] },
-    pop: { spots: { handler: [25, 0], screener: [21, 3.5] }, rest: [[15, -20], [15, 20], [1.5, -22.5]],
+    pop: { spots: { handler: [25, 0], screener: [21, 3.5], lwing: [15, -20], rwing: [15, 20], corner: [1.5, -22.5] }, start: { screener: [4.5, 10] },
            moves: [["screener", [4.5, 10], [21, 3.5], "run"], ["handler", [25, 0], [11, -2], "run"], ["screener", [21, 3.5], [21, 13], "roll"]] },
-    iso: { spots: { scorer: [15, 17] }, rest: [[25, -6], [15, -20], [1.5, -22.5], [4.5, -10]], moves: [["scorer", [15, 17], [3, 4], "run"]] },
-    post: { spots: { post: [6, 7], entry: [15, 18] }, rest: [[25, -3], [15, -20], [1.5, -22.5]], moves: [["entry", [15, 18], [6, 7], "pass"]] },
-    triangle: { spots: { post: [6, 8], wing: [16, 18], corner: [2, 22], point: [25, -4], weak: [14, -16] }, rest: [], triangle: ["post", "wing", "corner"],
+    iso: { spots: { scorer: [15, 17], top: [25, -6], lwing: [15, -20], corner: [1.5, -22.5], dunker: [4.5, -10] }, moves: [["scorer", [15, 17], [3, 4], "run"]] },
+    post: { spots: { post: [6, 7], entry: [15, 18], top: [25, -3], lwing: [15, -20], corner: [1.5, -22.5] }, moves: [["entry", [15, 18], [6, 7], "pass"]] },
+    triangle: { spots: { post: [6, 8], wing: [16, 18], corner: [2, 22], point: [25, -4], weak: [14, -16] }, triangle: ["post", "wing", "corner"],
                 moves: [["point", [25, -4], [16, 18], "pass"], ["wing", [16, 18], [6, 8], "pass"], ["weak", [14, -16], [3, -2], "roll"]] },
-    five_out: { spots: {}, rest: [[25, 0], [17, -18], [17, 18], [1.5, -22.5], [1.5, 22.5]] },
-    motion: { spots: {}, rest: [[25, 0], [15, -20], [15, 20], [1.5, -22.5], [4.5, 10]], moves: [["@1", [15, -20], [8, -6], "run"], ["@2", [15, 20], [8, 6], "run"]] },
-    man: { spots: {}, rest: [[22, 0], [13, -17], [13, 17], [3, -19], [4, 7]] },
-    switch: { spots: {}, rest: [[22, 0], [13, -17], [13, 17], [3, -19], [4, 7]] },
-    drop: { spots: {}, rest: [[22, 0], [13, -17], [13, 17], [3, -19], [6, 0]] },
-    blitz: { spots: {}, rest: [[23, -2], [23, 3], [13, 15], [3, -19], [5, 0]] },
-    zone23: { spots: {}, rest: [[17, -7], [17, 7], [6, -14], [6, 14], [4, 0]] },
-    press: { spots: {}, rest: [[30, -6], [30, 6], [24, -16], [24, 16], [14, 0]] },
-    box1: { spots: { chaser: [22, 4] }, rest: [[14, -8], [14, 8], [5, -9], [5, 9]], moves: [["chaser", [22, 4], [22, 1], "chase"]] },
+    five_out: { spots: { point: [25, 0], lwing: [17, -18], rwing: [17, 18], lcorner: [1.5, -22.5], rcorner: [1.5, 22.5] } },
+    motion: { spots: { point: [25, 0], lwing: [15, -20], rwing: [15, 20], corner: [1.5, -22.5], dunker: [4.5, 10] },
+              moves: [["lwing", [15, -20], [8, -6], "run"], ["rwing", [15, 20], [8, 6], "run"]] },
+    zone23: { spots: { topl: [17, -7], topr: [17, 7], wingl: [6, -14], wingr: [6, 14], middle: [4, 0] } },
+    box1: { spots: { chaser: [22, 4], boxtl: [14, -8], boxtr: [14, 8], boxll: [5, -9], boxlr: [5, 9] }, moves: [["chaser", [22, 4], [22, 1], "chase"]] },
+    man: {}, switch: {}, drop: {}, blitz: {}, press: {},
   };
-  function playSpots(offT, off, r) {   // where each player sets up for a set play, mirrored at random each possession
-    const lay = LAYOUT[offT.play], rl = offT.roles || {};
-    if (!lay) return {};
+  const MAN_SPOTS = [[22, 0], [13, -17], [13, 17], [3, -19], [4, 7]];   // on the offense's point guard, wings, corner and big
+  function playSpots(offT, off, r) {   // where each player sets up for a set play (his role's spot), mirrored at random each possession
+    const lay = LAYOUT[offT.play || "free"], rl = offT.roles || {};
+    if (!lay || !lay.spots) return {};
     const flip = r() < 0.5 ? 1 : -1, out = {}, mirror = ([dx, dy]) => [dx, dy * flip];
-    const before = { pnr: { screener: [4.5, 10] }, pop: { screener: [4.5, 10] } }[offT.play] || {};   // he comes up to screen later
-    for (const [role, spot] of Object.entries(lay.spots)) if (off.includes(rl[role])) out[rl[role]] = mirror(before[role] || spot);
-    off.filter((id) => !out[id]).forEach((id, k) => { out[id] = mirror((lay.rest.length ? lay.rest : SPOTS)[k] || SPOTS[k] || [20, 0]); });
+    for (const [role, spot] of Object.entries(lay.spots)) if (off.includes(rl[role]) && !out[rl[role]]) out[rl[role]] = mirror((lay.start || {})[role] || spot);
     return out;
   }
   const LANE = [[11, -7], [11, 7], [7, -7], [7, 7], [16, -9], [16, 9], [24, -3], [24, 3]];
@@ -498,7 +497,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const handler = ids.reduce((a, b) => (playerById[b].handler > playerById[a].handler ? b : a));
     const rest = ids.filter((p) => p !== handler);
     const big = rest.reduce((a, b) => (playerById[b].big > playerById[a].big ? b : a));
-    const wings = rest.filter((p) => p !== big);
+    const wings = rest.filter((p) => p !== big).sort((a, b) => playerById[a].big - playerById[b].big);   // smallest first
     return [handler, wings[0], wings[1], wings[2], big];
   }
   // Where a shot comes from, relative to the basket: in its zone, on the side of the floor the shooter is on
@@ -743,11 +742,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const helper = doubled ? off.map((id, i) => [id, i]).filter(([id]) => id !== doubled).sort((a, b) => near(a[0]) - near(b[0]))[0][1] : -1;
       const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul, doubled, helper, tac, driver, pnr,
         zone: (defT.protect_paint || 0) > 0.2 || defT.scheme === "zone23", hug: (defT.protect_paint || 0) < -0.2,
-        box: defT.scheme === "box1", chaser: def.includes(defT.chaser) ? defT.chaser : null,
+        box: defT.scheme === "box1", chaser: def.includes(defT.chaser) ? defT.chaser : null, droles: defT.roles || {},
         star: off.reduce((a, b) => ((playerById[b].usage || 0) > (playerById[a].usage || 0) ? b : a)),   // their main scorer
-        dropper: defT.scheme === "drop" ? def.reduce((a, b) => (playerById[b].big > playerById[a].big ? b : a)) : null,
+        dropper: null,   // drop coverage: whoever guards their biggest (set below, once the plan exists)
         pressUntil: (defT.pressure || 0) > 0.2 ? t0 + Math.max(travel, dur * 0.45) : null };
       plans.push(plan);
+      if (defT.scheme === "drop") {   // the defender on their biggest man stays back near the rim
+        const theirBig = off.reduce((a, b) => (playerById[b].big > playerById[a].big ? b : a));
+        plan.dropper = def.find((d, i) => markOf(plan, i) === theirBig) || null;
+      }
       plan.was = {}; plan.blend = {}; plan.arrive = {}; plan.ballFrom = inbound;
       def.forEach((id, i) => {   // defenders run over from where they were, on their own path, at most VMAX
         const was = where[id] || benchSpot(id), at = defenderAt(plan, i, t0 + Math.min(travel, dur * 0.85));
@@ -776,9 +779,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     });
     return plans;
   }
+  function markOf(plan, i) {   // the man this defender guards: the coach's matchup ("on:<id>"), else the same place in their five
+    const me = plan.def[i];
+    for (const [r, id] of Object.entries(plan.droles || {})) if (id === me && r.startsWith("on:") && plan.off.includes(Number(r.slice(3)))) return Number(r.slice(3));
+    return plan.off[i];
+  }
+  const roleIn = (plan, id) => Object.keys(plan.droles || {}).find((r) => plan.droles[r] === id && !r.startsWith("on:"));
   const PRESS_RELEASE = 1.5;   // game seconds to drop back from the press into the half-court defense
   function pressAt(plan, i, t) {   // pressure: picked up full court, two on the ball handler
-    const target = i === 1 ? plan.off[0] : plan.off[i];
+    const target = i === 1 ? plan.off[0] : markOf(plan, i);
     if (!target || !plan.keys[target]) return null;
     const o = track(plan.keys[target], t - 0.2), b = plan.basket;
     return clampCourt({ x: o.x + (b.x - o.x) * 0.06, y: o.y + (b.y - o.y) * 0.06 + (i === 1 ? 1.8 : 0) });
@@ -802,17 +811,17 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         const o = track(plan.keys[plan.star], t - 0.25), b = plan.basket;
         return clampCourt({ x: o.x + (b.x - o.x) * 0.08, y: o.y + (b.y - o.y) * 0.08 + 0.8 });
       }
-      const k = plan.def.filter((id) => id !== plan.chaser).indexOf(plan.def[i]);
-      const z = [[14, -8], [14, 8], [5, -9], [5, 9]][k] || [8, 0];
+      const k = plan.def.filter((id) => id !== plan.chaser).indexOf(plan.def[i]), mine = LAYOUT.box1.spots[roleIn(plan, plan.def[i])];
+      const z = mine || [[14, -8], [14, 8], [5, -9], [5, 9]][k] || [8, 0];
       return clampCourt(toCourt(plan.right, z[0], z[1]));
     }
     if (plan.zone) {   // a 2-3 zone: spots around the paint, leaning a little toward the nearest attacker
-      const z = [[17, -7], [17, 7], [6, -14], [6, 14], [4, 0]][i] || [8, 0];
+      const z = LAYOUT.zone23.spots[roleIn(plan, plan.def[i])] || [[17, -7], [17, 7], [6, -14], [6, 14], [4, 0]][i] || [8, 0];
       const spot = toCourt(plan.right, z[0], z[1]);
       const man = plan.off[i] && plan.keys[plan.off[i]] ? track(plan.keys[plan.off[i]], t - 0.5) : spot;
       return clampCourt(lerp(spot, man, 0.18));
     }
-    const mark = plan.off[i];
+    const mark = markOf(plan, i);
     if (!mark || !plan.keys[mark]) return plan.basket;
     const o = track(plan.keys[mark], t - 0.45);
     const b = plan.basket, gap = plan.dropper === plan.def[i] ? 0.62 : plan.hug ? 0.12 : 0.3;   // drop coverage: the big sags to the rim
@@ -1773,55 +1782,77 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
   }
 
-  // ---------- tactics: a set play on offense, a scheme on defense, and who plays which role ----------
+  // ---------- tactics: a set play on offense, a scheme on defense, and every player's role in it ----------
   // The All team row's first list is the tactic for the end of the floor the ball is at (it follows the ball, like
-  // the calls); each player's first list is his role in it. Both go to the server as levers (no language model),
-  // with the play, the scheme and the roles, so the court acts them out. The helper under the rows draws the
-  // tactic with your players in their roles. There are no timeouts: the game stops after every possession.
+  // the calls); each player's first list is his role in it, and every player has one: a spot in the play, a zone
+  // spot, or his man in a man-to-man defense. Picking a role swaps it with whoever had it. Both go to the server as
+  // levers (no language model), with the play, the scheme and the roles, so the court acts them out. The helper
+  // under the rows draws the tactic with your five in their roles. There are no timeouts: the game stops after
+  // every possession.
+  const SPACING = [["point", "Point"], ["lwing", "Left wing"], ["rwing", "Right wing"], ["corner", "Corner"], ["dunker", "Dunker spot"]];
   const PLAYS = {
-    free: { name: "Free offense", say: "No set play: the five space the floor and read the defense.", roles: [] },
+    free: { name: "Free offense", say: "No set play: the five space the floor and read the defense.", roles: SPACING, main: [] },
     pnr: { name: "Pick-and-roll", say: "{handler} brings it up; {screener} comes up to screen for him, then rolls to the rim. The other three space the floor.",
-           roles: [["handler", "Ball handler"], ["screener", "Screener"]], team: { attack_rim: 0.4 } },
+           roles: [["handler", "Ball handler"], ["screener", "Screener"], ["lwing", "Left wing"], ["rwing", "Right wing"], ["corner", "Corner"]],
+           main: ["handler", "screener"], team: { attack_rim: 0.4 } },
     pop: { name: "Pick-and-pop", say: "{handler} comes off {screener}'s screen; {screener} pops out to the three-point line for the shot.",
-           roles: [["handler", "Ball handler"], ["screener", "Screener"]], team: { three_point_rate: 0.3 } },
-    iso: { name: "Isolation", say: "{scorer} takes his man one-on-one on the wing; the other four clear out to the far side.", roles: [["scorer", "Scorer"]] },
+           roles: [["handler", "Ball handler"], ["screener", "Screener"], ["lwing", "Left wing"], ["rwing", "Right wing"], ["corner", "Corner"]],
+           main: ["handler", "screener"], team: { three_point_rate: 0.3 } },
+    iso: { name: "Isolation", say: "{scorer} takes his man one-on-one on the wing; the other four clear out to the far side.",
+           roles: [["scorer", "Scorer"], ["top", "Top"], ["lwing", "Far wing"], ["corner", "Far corner"], ["dunker", "Dunker spot"]], main: ["scorer"] },
     post: { name: "Post-up", say: "{entry} feeds {post} on the block; the others space out on the far side.",
-            roles: [["post", "Post player"], ["entry", "Entry passer"]], team: { attack_rim: 0.5, pace: -0.3 } },
+            roles: [["post", "Post player"], ["entry", "Entry passer"], ["top", "Top"], ["lwing", "Far wing"], ["corner", "Far corner"]],
+            main: ["post", "entry"], team: { attack_rim: 0.5, pace: -0.3 } },
     triangle: { name: "Triangle", say: "{post} on the block, {wing} on the wing and {corner} in the corner make the triangle on one side; {point} sits at the top and {weak} cuts from the weak side.",
-                roles: [["post", "Post"], ["wing", "Wing"], ["corner", "Corner"], ["point", "Point"], ["weak", "Weak side"]], team: { attack_rim: 0.2, pace: -0.2 } },
-    five_out: { name: "Five-out", say: "All five outside the arc: drive and kick.", roles: [], team: { three_point_rate: 0.6 } },
-    motion: { name: "Motion", say: "Keep cutting and passing until someone is open.", roles: [] },
+                roles: [["post", "Post"], ["wing", "Wing"], ["corner", "Corner"], ["point", "Point"], ["weak", "Weak side"]],
+                main: ["post", "wing", "corner", "point", "weak"], team: { attack_rim: 0.2, pace: -0.2 } },
+    five_out: { name: "Five-out", say: "All five outside the arc: drive and kick.", main: [], team: { three_point_rate: 0.6 },
+                roles: [["point", "Top"], ["lwing", "Left wing"], ["rwing", "Right wing"], ["lcorner", "Left corner"], ["rcorner", "Right corner"]] },
+    motion: { name: "Motion", say: "Keep cutting and passing until someone is open.", roles: SPACING, main: [] },
   };
-  const SCHEMES = {
-    man: { name: "Man to man", say: "Each defender guards his man. No double teams.", roles: [] },
-    switch: { name: "Switch everything", say: "Swap men on every screen.", roles: [] },
-    drop: { name: "Drop coverage", say: "The big stays back near the rim on screens.", roles: [], team: { protect_paint: 0.4 } },
-    blitz: { name: "Blitz the ball", say: "Two defenders jump the ball handler on every screen.", roles: [], team: { pressure: 0.5 } },
-    zone23: { name: "2-3 zone", say: "Two up top, three across the paint.", roles: [], team: { protect_paint: 0.7 } },
-    press: { name: "Full-court press", say: "Pick them up the length of the floor.", roles: [], team: { pressure: 0.8 } },
-    box1: { name: "Box-and-one", say: "{chaser} chases their main scorer everywhere; the other four play a box around the paint.",
-            roles: [["chaser", "Chaser"]], team: { protect_paint: 0.5 } },
+  const SCHEMES = {   // matchups: each defender's role is his man
+    man: { name: "Man to man", say: "Each defender guards his man. No double teams.", matchups: true, main: [] },
+    switch: { name: "Switch everything", say: "Each defender starts on his man and swaps men on every screen.", matchups: true, main: [] },
+    drop: { name: "Drop coverage", say: "Man to man; the big on their big stays back near the rim on screens.", matchups: true, main: [], team: { protect_paint: 0.4 } },
+    blitz: { name: "Blitz the ball", say: "Man to man; two defenders jump the ball handler on every screen.", matchups: true, main: [], team: { pressure: 0.5 } },
+    zone23: { name: "2-3 zone", say: "Two up top, three across the paint: each defender guards an area, not a man.", main: [], team: { protect_paint: 0.7 },
+              roles: [["topl", "Top left"], ["topr", "Top right"], ["wingl", "Left wing"], ["wingr", "Right wing"], ["middle", "Middle"]] },
+    press: { name: "Full-court press", say: "Each defender picks up his man the length of the floor.", matchups: true, main: [], team: { pressure: 0.8 } },
+    box1: { name: "Box-and-one", say: "{chaser} chases their main scorer everywhere; the other four play a box around the paint.", main: ["chaser"],
+            roles: [["chaser", "Chaser"], ["boxtl", "Box top left"], ["boxtr", "Box top right"], ["boxll", "Box low left"], ["boxlr", "Box low right"]],
+            team: { protect_paint: 0.5 } },
   };
   let tactic = { play: "free", scheme: "man", roles: {} };
   const tacticFor = (phase) => (phase === "offense" ? PLAYS[tactic.play] : SCHEMES[tactic.scheme]);
+  const roleList = (t) => (t.matchups ? roles(awayFloor()).map((id) => [`on:${id}`, `On ${last(playerById[id].name)}`]) : t.roles);
   function guessOrder(role, ids) {   // who suits a role best, most likely first
     const [handler, w1, w2, w3, big] = roles(ids);
+    if (role.startsWith("on:")) {   // a matchup: the man at the same place in their five (point on point, big on big)
+      const k = roles(awayFloor()).indexOf(Number(role.slice(3)));
+      return [roles(ids)[k]];
+    }
     const by = (key) => [...ids].sort((a, b) => playerById[b][key] - playerById[a][key]);
     return ({ handler: [handler, w1], screener: [big, w3, w2], scorer: [handler, w1, w2], post: [big, w3], entry: [handler, w1, w2],
-              wing: [w1, w2], corner: [w3, w2, w1], point: [handler, w1], weak: [w2, w1, w3], chaser: by("steal") })[role] || ids;
+              wing: [w1, w2], corner: [w3, w2, w1], point: [handler, w1], weak: [w2, w1, w3], top: [handler, w1, w2],
+              lwing: [w1, w2, w3], rwing: [w2, w1, w3], lcorner: [w3, w2], rcorner: [w2, w3], dunker: [big, w3],
+              chaser: by("steal"), boxtl: [handler, w1], boxtr: [w1, w2], boxll: [w3, big], boxlr: [big, w3],
+              topl: [handler, w1], topr: [w1, w2], wingl: [w2, w3], wingr: [w3, w2], middle: [big] })[role] || ids;
   }
-  function fillRoles() {   // keep the coach's choices while those players are on the floor; fill the rest by fit
+  function fillRoles() {   // every player has one role at each end: the coach's choice while he's on the floor, else the best fit
     const ids = homeFloor(), out = {};
-    for (const t of [PLAYS[tactic.play], SCHEMES[tactic.scheme]]) {   // offense and defense roles are separate
-      const want = t.roles.map(([r]) => r), taken = new Set();
+    for (const t of [PLAYS[tactic.play], SCHEMES[tactic.scheme]]) {
+      const want = roleList(t).map(([r]) => r), taken = new Set();
       for (const r of want) { const id = tactic.roles[r]; if (ids.includes(id) && !taken.has(id)) { out[r] = id; taken.add(id); } }
       for (const r of want) if (!out[r]) { const id = [...guessOrder(r, ids), ...ids].find((p) => p && !taken.has(p)); if (id) { out[r] = id; taken.add(id); } }
     }
     tactic.roles = out;
   }
-  function tacticWords() {
+  function tacticWords() {   // the tactic and its key roles, for the chatter and the language log
     const name = (id) => (id ? last(playerById[id].name) : "?");
-    const part = (t) => `${t.name}${t.roles.length ? ` (${t.roles.map(([r, label]) => `${name(tactic.roles[r])}: ${label.toLowerCase()}`).join(", ")})` : ""}`;
+    const part = (t) => {
+      const key = t.roles ? t.roles.filter(([r]) => t.main.includes(r)) : [];
+      return `${t.name}${key.length ? ` (${key.map(([r, label]) => `${name(tactic.roles[r])}: ${label.toLowerCase()}`).join(", ")})` : ""}`;
+    };
     return `${part(PLAYS[tactic.play])} · ${part(SCHEMES[tactic.scheme])}`;
   }
   // The tactic as engine levers: the play's and the scheme's team levers, and what the roles mean for who gets the ball.
@@ -1853,22 +1884,20 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       addHuman({ t: T, speaker: "note", text: `Couldn't set the tactic (${err.message}).`, kind: "note" });
     }
   }
-  // The first list in each row: the tactic (All team) or the player's role in it.
+  // The first list in each row: the tactic (All team) or the player's role in it. Every player always has one.
   function buildRole(row, phase) {
     const sel = row.role;
     if (row.i === 5) {
       const list = phase === "offense" ? PLAYS : SCHEMES, current = phase === "offense" ? tactic.play : tactic.scheme;
       sel.replaceChildren(...Object.entries(list).map(([k, t]) => new Option(t.name, k, false, k === current)));
-      sel.value = current; sel.disabled = false;
+      sel.value = current;
       sel.title = phase === "offense" ? "Your set play: the court acts it out" : "Your defense";
       return;
     }
-    const t = tacticFor(phase);
-    if (!t.roles.length) { sel.replaceChildren(new Option(phase === "offense" ? "Spacer" : "Defender", "")); sel.disabled = true; sel.title = `${t.name} has no roles to give`; return; }
-    const mine = t.roles.find(([r]) => tactic.roles[r] === row.id);
-    sel.replaceChildren(...t.roles.map(([r, label]) => new Option(label, r)), new Option(phase === "offense" ? "Spacer" : "In the box", ""));
-    sel.value = mine ? mine[0] : ""; sel.disabled = false;
-    sel.title = `His role in the ${t.name.toLowerCase()}`;
+    const t = tacticFor(phase), list = roleList(t), mine = list.find(([r]) => tactic.roles[r] === row.id);
+    sel.replaceChildren(...list.map(([r, label]) => new Option(label, r)));
+    sel.value = mine ? mine[0] : list[0][0];
+    sel.title = t.matchups ? "The man he guards" : `His role in the ${t.name.toLowerCase()}`;
   }
   function roleChanged(row) {
     const phase = phaseNow();
@@ -1878,17 +1907,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       sendTactic(phase === "defense" && tactic.scheme === "man");
       return;
     }
-    const t = tacticFor(phase), want = row.role.value, ids = homeFloor();
-    if (want && !t.roles.some(([r]) => r === want)) { buildRole(row, phase); return; }
-    const had = t.roles.find(([r]) => tactic.roles[r] === row.id);   // his role until now
-    if (want) {   // he takes the role; whoever had it takes his old one
-      const holder = tactic.roles[want];
-      tactic.roles[want] = row.id;
-      if (had) { if (holder && holder !== row.id) tactic.roles[had[0]] = holder; else delete tactic.roles[had[0]]; }
-    } else if (had) {   // a spacer now: the role goes to the next best player
-      const busy = new Set(t.roles.map(([r]) => tactic.roles[r]));
-      tactic.roles[had[0]] = guessOrder(had[0], ids).concat(ids).find((p) => p && p !== row.id && !busy.has(p));
-    }
+    const t = tacticFor(phase), list = roleList(t), want = row.role.value;
+    if (!list.some(([r]) => r === want)) { buildRole(row, phase); return; }
+    const had = list.find(([r]) => tactic.roles[r] === row.id), holder = tactic.roles[want];
+    tactic.roles[want] = row.id;   // he takes the role; whoever had it takes his old one
+    if (had && had[0] !== want) { if (holder && holder !== row.id) tactic.roles[had[0]] = holder; else delete tactic.roles[had[0]]; }
     sendTactic();
   }
   // Substitutions: a player's name is a list of the bench; picking someone brings him in for this player.
@@ -1921,31 +1944,40 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
 
   // The helper: the tactic drawn on a half court with your players in their roles, and a sentence on what they do.
+  // The helper: the tactic drawn on a half court with your five in their roles, and a sentence on who does what.
   function renderHelper() {
     const box = $("helper");
     if (!box) return;
     fillRoles();
     const phase = phaseNow(), key = phase === "offense" ? tactic.play : tactic.scheme, t = tacticFor(phase), lay = LAYOUT[key];
-    const ids = homeFloor(), order = roles(ids), at = {};
-    for (const [r, spot] of Object.entries(lay.spots)) if (tactic.roles[r]) at[tactic.roles[r]] = spot;
-    const free = order.filter((id) => !at[id]);
-    free.forEach((id, k) => { at[id] = lay.rest[k] || [20, 0]; });
+    const ids = homeFloor(), list = roleList(t), at = {}, label = {};
+    const theirs = roles(awayFloor());
+    for (const [r, name] of list) {
+      const id = tactic.roles[r];
+      if (!id) continue;
+      label[id] = name;
+      if (lay.spots && lay.spots[r]) at[id] = lay.spots[r];
+      else if (r.startsWith("on:")) {   // on his man: where his man plays, a step toward the basket (a press: far out)
+        const k = Math.max(0, theirs.indexOf(Number(r.slice(3)))), [dx, dy] = MAN_SPOTS[k];
+        const bigOnBig = key === "drop" && k === 4, onBall = key === "blitz" && (k === 0 || k === 4);
+        at[id] = bigOnBig ? [7, 0] : onBall ? [23.5, k === 0 ? -2 : 2.5] : key === "press" ? [dx + 9, dy * 0.8] : [dx, dy];
+      }
+    }
+    ids.forEach((id, k) => { at[id] = at[id] || MAN_SPOTS[k]; });
     const P = ([dx, dy]) => [25 + dy, 35.75 - dx];   // feet from the basket -> the drawing
-    const roleOf = (id) => (t.roles.find(([r]) => tactic.roles[r] === id) || [])[1];
     const color = G.home.primary === "#1A1A1A" ? "#ffffff" : G.home.primary;
-    const whoFor = (role) => (role.startsWith("@") ? free[Number(role.slice(1))] : tactic.roles[role]);
     let moves = "";
     for (const [role, from, to, kind] of lay.moves || []) {
-      if (!whoFor(role)) continue;
+      if (!tactic.roles[role]) continue;
       const [x1, y1] = P(from), [x2, y2] = P(to), mx = (x1 + x2) / 2 + (y2 - y1) * 0.15, my = (y1 + y2) / 2 - (x2 - x1) * 0.15;
       moves += `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} Q${mx.toFixed(1)} ${my.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}" class="hc-${kind}" marker-end="url(#hc-arrow)"/>`;
     }
     const tri = lay.triangle ? `<polygon points="${lay.triangle.map((r) => P(at[tactic.roles[r]] || [0, 0]).join(",")).join(" ")}" class="hc-tri"/>` : "";
     const dots = ids.map((id) => {
-      const [x, y] = P(at[id] || [20, 0]), role = roleOf(id);
+      const [x, y] = P(at[id]), role = label[id];
       return `<g><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.1" fill="${color}" stroke="${G.home.secondary}" stroke-width="0.35"/>
         <text x="${x.toFixed(1)}" y="${(y + 0.6).toFixed(1)}" class="hc-ini" style="fill:${color === "#ffffff" ? "#111" : "#fff"}">${initials(playerById[id].name)}</text>
-        <text x="${x.toFixed(1)}" y="${(y + 4.2).toFixed(1)}" class="hc-name${role ? " role" : ""}">${last(playerById[id].name)}${role ? ` · ${role}` : ""}</text></g>`;
+        <text x="${x.toFixed(1)}" y="${(y + 4.2).toFixed(1)}" class="hc-name role">${last(playerById[id].name)}${role ? ` · ${role}` : ""}</text></g>`;
     }).join("");
     const say = t.say.replace(/\{(\w+)\}/g, (_, r) => (tactic.roles[r] ? last(playerById[tactic.roles[r]].name) : "?"));
     box.innerHTML = `<svg viewBox="0 -2 50 45" class="helper-court" role="img" aria-label="${t.name}, drawn on a half court">

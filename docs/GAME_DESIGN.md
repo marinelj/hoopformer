@@ -369,6 +369,21 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - **Substitutions:** a player's name in his row is a list of the bench; picking someone brings him in (`POST /api/call` with `substitutions`), and he takes over the role.
 - **The pop-up between possessions** is now a window over the whole page, with the rows, the tactic and the helper.
 
+**Eleventh follow-up (Oct 5): every player always has a role; the 1990s vs the 2000s.**
+- **Every tactic gives all five a role, so no list is ever greyed out.**
+  - On offense, each play's special roles plus spots for the rest. For example the pick-and-roll: ball handler, screener, left wing, right wing, corner. A free offense: point, wings, corner, dunker spot.
+  - In man-to-man defenses (man to man, switch, drop, blitz, press), each defender's role is his man: "On Bryant".
+  - In the 2-3 zone, a zone spot; in the box-and-one, the chaser and the four box spots.
+  - Picking a role swaps it with whoever had it. Defaults pair players by size: each five is ordered handler, wings from smallest to biggest, big, so Olajuwon takes Shaq and Pippen takes Kobe.
+  - The court follows: the offense sets up at its role spots, and each defender guards his chosen man, zone spot or box spot. In drop coverage, the defender on their biggest man sags.
+  - Each chance carries both teams' roles (`Event.tactics.off.roles`, `def.roles`).
+- **Classic teams** (`game/legends.py`): the 1990s All-Stars (90S) and the 2000s All-Stars (00S), twelve players each as they were in one season of their prime. Jordan 1995-96, Olajuwon 1993-94, Stockton 1993-94 and Rodman 1995-96 are on one side; Kobe 2005-06, Shaq 1999-00, Duncan 2001-02 and LeBron 2008-09 on the other.
+  - **Where the numbers come from:** there is no play-by-play before 1996-97, so their rates come from season totals (`hoopformer fetch --legends`: stats.nba.com career stats, 24 files, in the manifest). These are turned into per-chance rates with era averages (assumed: 92 possessions and 1.14 chances per possession per 48 minutes, 37.5 made and 44 missed field goals, 15 forced turnovers).
+  - Two-point shots are split into rim and midrange from each player's two-point percentage (rim 59%, midrange 40%), since season totals don't say where shots came from.
+  - Their ids are 90,000,000 plus the real id, so the 2008-09 LeBron never clashes with today's. Their defenses are league average, and the league around them (pace, home court) is the model's.
+  - **How they play:** 60 games end 115.9 to 107.5 on average (the 90s win 38 of 60; over 200 games 114.4 to 112.4, the 90s win 53%), and each team takes about 11.5 threes a game, like their eras.
+  - **The default live game:** `hoopformer serve` coaches the 90S against the 00S once their careers are cached (`--home`/`--away` to change; OKC vs BOS otherwise).
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

@@ -507,7 +507,7 @@ class Game:
 
     def _calls(self, off: Side, dfn: Side) -> dict | None:
         """What both coaches have in force for this chance, so the page can show it and act it out."""
-        if not (off.directives or dfn.directives or off.play or dfn.scheme):
+        if not (off.directives or dfn.directives or off.play or dfn.scheme or off.roles or dfn.roles):
             return None
         calls = {"off": {k: v for k, v in off.tactics.items() if k in levers.OFFENSE_LEVERS},
                  "def": {k: v for k, v in dfn.tactics.items() if k in levers.DEFENSE_LEVERS}}
@@ -515,9 +515,12 @@ class Game:
             calls["off"]["focus"] = off.focus
         if off.play:
             calls["off"]["play"] = off.play
-            calls["off"]["roles"] = {role: pid for role, pid in off.roles.items() if pid in off.lineup and role != "chaser"}
+        if off.roles:   # who stands where in the play (one dict for both ends: the court picks what it needs)
+            calls["off"]["roles"] = {role: pid for role, pid in off.roles.items() if pid in off.lineup}
         if dfn.scheme:
             calls["def"]["scheme"] = dfn.scheme
+        if dfn.roles:   # zone spots, the chaser, or each defender's man ("on:<id>")
+            calls["def"]["roles"] = {role: pid for role, pid in dfn.roles.items() if pid in dfn.lineup}
             if dfn.roles.get("chaser") in dfn.lineup:
                 calls["def"]["chaser"] = dfn.roles["chaser"]
         players = {pid: {k: v for k, v in values.items() if k in ("aggression", "shot_preference")}

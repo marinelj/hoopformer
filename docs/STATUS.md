@@ -50,6 +50,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - Eighth follow-up (Oct 4): the press drops back smoothly (it was the remaining teleport), and in the live game a shot goes in at its chance times the shooter's energy (100% fresh, ~85% at a normal sub, 80% empty).
 - Ninth follow-up (Oct 4): the live game stops after every possession for your calls (they apply to the very next play), the tactics panel's pick-and-roll / pop / five-out / isolation are acted out on the court, and the spacing is wider.
 - Tenth follow-up (Oct 5): no timeouts for the coach; the tactic (a set play or a defensive scheme) is a list in the All team row, each player has a role list (handler, screener, post, chaser, ...), a helper draws the tactic, and substitutions are picked from a player's name.
+- Eleventh follow-up (Oct 5): every player always has a role (spots, matchups like "On Bryant", zone spots), and the live game's default matchup is the 1990s All-Stars against the 2000s All-Stars (`hoopformer fetch --legends`, then `hoopformer serve`). Their rates come from career season totals with era averages; a shot-chart refinement is open for Codex (see below).
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next
