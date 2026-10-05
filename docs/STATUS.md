@@ -45,6 +45,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - Fourth follow-up (Oct 4): a monitor card for each player on the floor replaces the bench panels; the call list switches between offense and defense even while open; a 0.5× button. Details are in GAME_DESIGN.md §9.
 - Fifth follow-up (Oct 4): game mode. The live app boosts every coached effect 5× (simulations stay faithful), tired legs cost shooting in game mode, plays are credited to the calls that made them (callouts, a tally, badges, speech bubbles), and each call reports its biggest effects. `hoopformer serve --boost 1` plays the faithful version. Details are in GAME_DESIGN.md §9.
 - Sixth follow-up (Oct 4): calls wear off in the live game (half-life 3 minutes of game time, `--half-life`); repeat a call to keep it strong. Details are in GAME_DESIGN.md §9.
+- Fix (Oct 4): players no longer jump at the end of a possession. The free-throw line-up, the rebounder going up for the ball and a substitute walking on are part of the animation, each possession starts exactly where the last one ended, and anything left glides instead of teleporting.
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next

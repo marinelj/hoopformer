@@ -184,6 +184,7 @@ tbody tr.on td:first-child { color: var(--led); }
 .sound[aria-pressed="true"] { color: var(--led); border-color: rgba(255, 178, 62, 0.5); }
 
 .figure { transition: opacity 0.35s ease; pointer-events: auto; cursor: pointer; }
+.figure.glide { transition: left 0.5s ease, top 0.5s ease, opacity 0.35s ease; }
 .figure.holder .tag { background: var(--led); color: #111; }
 .figure.doubled .tag { box-shadow: 0 0 0 2px var(--shot); }
 .figure.doubled .tag::after { content: " ×2"; color: var(--shot); font-weight: 700; }
@@ -488,6 +489,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
 
   const RESOLVE = new Set(["shot", "turnover", "free_throws"]);
+  const benchSpot = (id) => ({ x: 47 + ((id % 9) - 4) * 0.9, y: 48.6 });   // a player coming in walks on from the scorer's table
   // the opening tip: starters stand around the centre circle
   const TIP = {};
   { const ids = [...G.events[0].home_lineup, ...G.events[0].away_lineup];
@@ -507,12 +509,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       // the calls in force (engine's chance event): the figures act them out on every possession,
       // while the outcome stays the one the engine rolled
       const tac = ev.tactics || null, offT = (tac && tac.off) || {}, defT = (tac && tac.def) || {};
-      let resolve = null, shootingFoul = null, rebound = null;
+      let resolve = null, shootingFoul = null, rebound = null, ftShooter = null;
       for (let j = s + 1; j < next; j++) {
         const e = G.events[j];
         if (!resolve && e.kind === "foul" && e.zone === "shooting") shootingFoul = e;
         if (!resolve && RESOLVE.has(e.kind)) resolve = e;
         if (e.kind === "rebound" && !rebound) rebound = e;
+        if (e.kind === "free_throws") ftShooter = e.actor;   // the possession ends at the line (a foul, an and-one)
       }
       const t0 = ev.t;
       const t1 = resolve ? resolve.t : (next < G.events.length ? G.events[next].t : t0 + 6);
@@ -522,7 +525,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const pace = offT.pace || 0;
       if (firstChance && pace > 0.2) travel *= 1 - 0.4 * pace;                                   // they sprint into the offense
       if (firstChance && pace < -0.2) travel = Math.min(dur * 0.65, travel * (1 + 0.5 * -pace));  // they walk it up
-      const bench = { x: 47 + (r() - 0.5) * 6, y: 49 };
 
       // offense: start where they were, run to their spots on a curved path, then keep moving
       const keys = {};
@@ -534,7 +536,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         if (spotsUp) { const d = Math.hypot(dx, dy) || 1; dx = (dx / d) * 25.5; dy = Math.max(-21, Math.min(21, (dy / d) * 25.5)); }   // spaced beyond the arc
         const spot = clampCourt(toCourt(right, dx + (r() - 0.5) * 3, dy + (r() - 0.5) * 3));
         homeSpot[id] = spot;
-        const start = where[id] || bench;
+        const start = where[id] || benchSpot(id);
         const mid = lerp(start, spot, 0.5);
         const bend = (r() - 0.5) * 14;
         const curve = clampCourt({ x: mid.x + bend * 0.25, y: mid.y + bend });
@@ -647,17 +649,22 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         pressUntil: (defT.pressure || 0) > 0.2 ? t0 + Math.max(travel, dur * 0.45) : null };
       plans.push(plan);
 
-      // where everyone ends up, and who starts the next possession with the ball
+      // where everyone ends up (the next possession starts exactly there), and who has the ball
+      plan.ftShooter = ftShooter;
       for (const id of off) where[id] = track(keys[id], t1);
       for (let i = 0; i < def.length; i++) where[def[i]] = defenderAt(plan, i, t1);
+      if (ftShooter) Object.assign(where, freeThrowFormation(plan, ftShooter));   // they were lined up for free throws
       if (rebound && rebound.actor) {
-        where[rebound.actor] = clampCourt({ x: basket.x + (right ? -4 : 4) * r(), y: basket.y + (r() - 0.5) * 8 });
+        Object.assign(plan, { rebounder: rebound.actor, reboundT: rebound.t,
+                              reboundSpot: clampCourt({ x: basket.x + (right ? -4 : 4) * r(), y: basket.y + (r() - 0.5) * 8 }) });
+        where[rebound.actor] = plan.reboundSpot;
         carrier = rebound.actor;
       } else if (final.kind === "turnover" && final.thief) {
         carrier = final.thief;
       } else {
         carrier = null; // inbound after a make, free throws or a dead ball
       }
+      plan.endAt = Object.fromEntries([...off, ...def].map((id) => [id, where[id]]));
     });
     return plans;
   }
@@ -706,13 +713,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     plan.def.forEach((id, i) => {
       let p = defenderAt(plan, i, t);
       if (t < blendIn) {  // defenders were somewhere else a moment ago: ease them over
-        const was = !prevPlan ? (TIP[id] || { x: 47, y: 49 })
-          : prevPlan.off.includes(id) ? track(prevPlan.keys[id], prevPlan.t1)
-          : prevPlan.def.includes(id) ? defenderAt(prevPlan, prevPlan.def.indexOf(id), prevPlan.t1) : { x: 47, y: 49 };
+        const was = !prevPlan ? (TIP[id] || benchSpot(id)) : prevPlan.endAt[id] || benchSpot(id);   // exactly where the last possession left him
         p = lerp(was, p, ease(Math.max(0, (t - plan.t0) / 1.2)));
       }
       pos[id] = p;
     });
+    if (plan.ftShooter && t >= plan.t1) Object.assign(pos, freeThrowFormation(plan, plan.ftShooter));   // lined up at the line
+    if (plan.rebounder && pos[plan.rebounder] && t > plan.reboundT - 0.8) {   // he goes up for the rebound as the ball comes off
+      pos[plan.rebounder] = lerp(pos[plan.rebounder], plan.reboundSpot, ease(Math.min(1, (t - (plan.reboundT - 0.8)) / 0.8)));
+    }
     return { pos, plan };
   }
   function ballAt(t, plan, pos) {
@@ -1208,8 +1217,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     for (const id of Object.keys(figures)) if (!onFloor.has(Number(id))) figures[id].style.opacity = "0";
     const ball = S.dead && plan ? { ...toCourt(plan.right, 15, 0), y: toCourt(plan.right, 15, 0).y - 1.4, holder: S.dead.shooter } : ballAt(t, plan, pos);
     for (const id of onFloor) {
-      const p = pos[id]; if (!p) continue;
+      const p = pos[id] || benchSpot(id);   // just subbed in, before his first possession
       const el = figureFor(id);
+      const was = el._at, shown = el.style.opacity !== "0";
+      if (was && shown && !instant && Math.hypot(p.x - was.x, p.y - was.y) > 6) glide(el);   // never teleport during play
+      el._at = p;
       place(el, p);
       el.classList.toggle("holder", ball.holder === id);
       el.classList.toggle("doubled", !!plan && plan.doubled === id && !S.dead);
@@ -1464,10 +1476,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   const ended = () => !LIVE || G.done;
   const bufferEnd = () => (ended() ? totalT : (G.events.length ? G.events.at(-1).t : 0));
+  let instant = false;   // a jump in time (scrubbing): figures go straight to their spots
+  function glide(el) {
+    el.classList.add("glide");
+    clearTimeout(el._glide); el._glide = setTimeout(() => el.classList.remove("glide"), 650);
+  }
   function seek(t) {
     S = freshState(); lastFeedLen = -1; lastChatterKey = ""; lastBubbled = -1;
     while (S.applied < G.events.length && G.events[S.applied].t <= t) apply(G.events[S.applied]);
-    T = t; render(T);
+    T = t; instant = true; render(T); instant = false;
     if (typeof rows !== "undefined") { for (const row of rows) row.nextAt = 0; updateTalk(); }   // a jump in time: fresh suggestions
   }
   function setPlaying(on) {
