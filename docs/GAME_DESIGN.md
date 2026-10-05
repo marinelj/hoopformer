@@ -384,6 +384,13 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - **How they play:** 60 games end 115.9 to 107.5 on average (the 90s win 38 of 60; over 200 games 114.4 to 112.4, the 90s win 53%), and each team takes about 11.5 threes a game, like their eras.
   - **The default live game:** `hoopformer serve` coaches the 90S against the 00S once their careers are cached (`--home`/`--away` to change; OKC vs BOS otherwise).
 
+**Twelfth follow-up (Oct 5): no pop-up, calls that agree with the tactic, 0.8x.**
+- **The break after each possession no longer covers the screen.** The talk panel lights up, with a bar at its top: "00S ball next: your defense", the last play, "Stop after every possession" and "▶ Next possession". The Play button says "▶ Next possession" too. The court stays in view.
+- **Calls never fight the tactic.**
+  - "Pressure the ball full court" and "Pack the paint (2-3 zone)" are gone: the full-court press and the 2-3 zone are tactics.
+  - Any other call about something the current tactic decides is left out of the list (`tacticControls`, `fights`). Under a press or a blitz there is no "Sit back" and no "Pressure / Play off your man"; under a zone, drop or box-and-one, no "Run them off the line", "Protect the rim" or "Stay home". Under a pick-and-roll, isolation or post-up, there is no "Run it through" and no aggression call for the player the play runs through. A screener or post player gets no shot-zone call.
+- **Playback runs at 0.8x** (a quarter takes 15 minutes).
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

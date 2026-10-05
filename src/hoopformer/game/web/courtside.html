@@ -88,12 +88,12 @@ h1 span { color: var(--led); }
 .tally .b { color: var(--shot); }
 
 /* between possessions (live): the game stops for your calls */
-.break { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(820px, 94vw); max-height: 92vh; z-index: 40; background: rgb(12, 15, 22); border: 1px solid var(--led); border-radius: 12px; padding: 14px 16px; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; overflow: auto; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.6), 0 20px 50px rgba(0, 0, 0, 0.6); }
-.break .helper { grid-template-columns: minmax(180px, 280px) minmax(0, 1fr); }
-.break .helper-text p { font-size: 13px; }
-.break[hidden] { display: none; }
-.break-head b { font-family: var(--display); font-size: clamp(18px, 2.4vw, 28px); color: var(--led); letter-spacing: 0.03em; }
-.break-head span { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+.talk-panel.breaking { border-color: var(--led); box-shadow: 0 0 0 2px var(--led), 0 0 28px rgba(255, 178, 62, 0.35); animation: call-glow 1.6s ease-in-out infinite; }
+@keyframes call-glow { 50% { box-shadow: 0 0 0 2px var(--led), 0 0 46px rgba(255, 178, 62, 0.6); } }
+.break-bar { display: grid; gap: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 178, 62, 0.08); border: 1px solid rgba(255, 178, 62, 0.45); }
+.break-bar[hidden] { display: none; }
+.break-bar b { font-family: var(--display); font-size: 20px; color: var(--led); letter-spacing: 0.03em; }
+.break-bar span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .break-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
 .controls-row .auto { font-size: 12px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
 
@@ -260,7 +260,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 .chatter li.note .said { color: var(--muted); }
 .chatter li.call .said { color: #c3cad6; }
 .chatter .at { color: var(--led); font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .figure, .flash, .callout { transition: none; } .figure.pulse svg { animation: none; } .talk-pick.fresh, .talk-menu .grp.switched, .talk-row .mic.rec { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .talk-panel.breaking { animation: none; } .figure, .flash, .callout { transition: none; } .figure.pulse svg { animation: none; } .talk-pick.fresh, .talk-menu .grp.switched, .talk-row .mic.rec { animation: none; } }
 </style>
 
 <div class="wrap">
@@ -327,12 +327,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         <div class="flash" id="flash"></div>
         <div class="banner" id="banner" hidden>TIMEOUT</div>
         <div class="callout" id="callout" aria-live="polite"><div class="big"></div><div class="small"></div></div>
-        <div class="break" id="break" hidden role="dialog" aria-labelledby="break-title">
-          <div class="break-head"><b id="break-title"></b><span id="break-last"></span></div>
-          <div class="break-talk" id="break-talk"></div>
-          <div class="break-foot"><label><input type="checkbox" id="auto-break"> Stop after every possession</label>
-            <button class="play" id="break-go" type="button">▶ Next possession</button></div>
-        </div>
         <div class="ball" id="ball"></div>
       </div>
 
@@ -357,6 +351,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     <aside class="side">
       <div class="panel talk-panel">
         <div class="talk-head"><h2>Talk to your players</h2><span class="phase" id="talk-phase"></span><span class="note">Pick a tactic, roles and calls, or hold 🎙 to say anything in <select id="voice-lang" class="voice-lang" aria-label="Voice language"><option value="en-US">English</option><option value="zh-CN">中文</option></select></span></div>
+        <div class="break-bar" id="break" hidden aria-live="polite">
+          <div><b id="break-title"></b><span id="break-last"></span></div>
+          <div class="break-foot"><label><input type="checkbox" id="auto-break"> Stop after every possession</label>
+            <button class="play" id="break-go" type="button">▶ Next possession</button></div>
+        </div>
         <div class="talk-box" id="talk-box"><div class="talk" id="talk"></div><div class="helper" id="helper"></div></div>
         <div class="note" id="chat-note"></div>
       </div>
@@ -1418,13 +1417,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     midrange: ["MIDRANGE MAGIC", "Hunt your midrange"], focus: ["RUN IT THROUGH HIM!", "Run it through"],
     aggressive: ["TAKING OVER!", "Be aggressive"], leak_out: ["LEAK-OUT BUCKET!", "Leak out for the break"],
     push: ["BEAT THEM DOWN THE FLOOR!", "Push the pace"], crash: ["CRASHED THE GLASS!", "Crash the offensive glass"],
-    boxed_out: ["BOXED OUT!", "Box out, finish the play"], press: ["THE PRESS WORKS!", "Pressure the ball full court"],
+    boxed_out: ["BOXED OUT!", "Box out, finish the play"], press: ["THE PRESS WORKS!", "Full-court press / Blitz"],
     steal: ["PICKED HIS POCKET!", "Pressure your man"], trap: ["TRAPPED!", "Double-team"],
-    rim_block: ["RIM PROTECTED!", "Protect the rim / Pack the paint"], zone_stop: ["THE ZONE HOLDS!", "Pack the paint (2-3 zone)"],
+    rim_block: ["RIM PROTECTED!", "Protect the rim / a zone"], zone_stop: ["THE ZONE HOLDS!", "2-3 zone / Drop coverage"],
     run_off: ["RAN HIM OFF THE LINE!", "Run them off the three-point line"],
-    press_broken: ["PRESS BROKEN", "Pressure the ball"], hands_back: ["EASY FINISH", "No fouls, hands back"],
+    press_broken: ["PRESS BROKEN", "Full-court press / Blitz"], hands_back: ["EASY FINISH", "No fouls, hands back"],
     paint_open: ["PAINT WIDE OPEN", "Run them off the three-point line"], double_open: ["OPEN MAN BURNS THE DOUBLE", "Double-team"],
-    zone_beaten: ["ZONE BEATEN FROM DEEP", "Pack the paint (2-3 zone)"], burned: ["BURNED IN TRANSITION", "Crash the offensive glass"],
+    zone_beaten: ["ZONE BEATEN FROM DEEP", "2-3 zone / Drop coverage"], burned: ["BURNED IN TRANSITION", "Crash the offensive glass"],
     forced: ["FORCED IT", "Be aggressive"], leak_cost: ["LEAKED OUT, LOST THE BOARD", "Leak out for the break"],
     physical: ["TOO PHYSICAL", "Get physical"], tired_legs: ["TIRED LEGS", "a tiring call (energy)"],
   };
@@ -1498,7 +1497,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
 
   // ---------- playback ----------
-  const speed = 0.5;   // half of real time (a quarter takes 24 minutes): time to think about the next call
+  const speed = 0.8;   // a little slower than real time (a quarter takes 15 minutes): time to think about the next call
   let playing = false, T = 0, lastFrame = null, hold = 0, dribble = 0, bannerTimer;
   function renderTicks() {
     $("ticks").innerHTML = Array.from({ length: Math.max(4, G.periods) }, (_, i) => i + 1).map((p) => `<span style="left:${(periodStart(p) / totalT) * 100}%">${periodLabel(p).replace(" QTR", "")}</span>`).join("");
@@ -2005,9 +2004,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     ["offense", "Take care of the ball", { team: { ball_security: V } }],
     ["offense", "Crash the offensive glass", { team: { crash_glass: V } }],
     ["offense", "Get back after every shot", { team: { crash_glass: -V } }],
-    ["defense", "Pressure the ball full court", { team: { pressure: V } }],
     ["defense", "Sit back, no gambling", { team: { pressure: -V } }],
-    ["defense", "Pack the paint (2-3 zone)", { team: { protect_paint: V } }],
     ["defense", "Run them off the three-point line", { team: { protect_paint: -V } }],
     ["defense", "No fouls, hands back", { team: { foul_caution: V } }],
     ["defense", "Get physical", { team: { foul_caution: -V } }],
@@ -2032,8 +2029,32 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     ["any", "Great job, keep it up!", { confidence: 0.5 }],
   ];
   const phaseNow = () => (breakOffense ? (breakOffense === "home" ? "offense" : "defense") : S.offense === "away" ? "defense" : "offense");
+  // What the tactic already decides at this end of the floor: a call about the same thing would fight it, so it's left out.
+  function tacticControls(phase) {
+    fillRoles();
+    const t = tacticFor(phase), r = tactic.roles, key = phase === "offense" ? tactic.play : tactic.scheme;
+    const players = {}, mark = (pid, lever) => { if (pid) (players[pid] ||= new Set()).add(lever); };
+    let focus = null;
+    if (key === "pnr" || key === "pop") { focus = r.handler; mark(r.screener, "shot_preference"); }
+    if (key === "iso") focus = r.scorer;
+    if (key === "post") { focus = r.post; mark(r.post, "shot_preference"); }
+    if (key === "triangle") mark(r.post, "shot_preference");
+    if (key === "box1") mark(r.chaser, "pressure");
+    return { team: new Set(Object.keys(t.team || {})), players, focus };
+  }
+  function fights(raw, c) {
+    if (Object.keys(raw.team || {}).some((k) => c.team.has(k))) return true;
+    for (const entry of raw.players || []) for (const k of Object.keys(entry)) {
+      if (k === "person_id") continue;
+      if (c.team.has(k)) return true;   // one player's pressure or paint adds to the team's, which the tactic sets
+      if (c.players[entry.person_id] && c.players[entry.person_id].has(k)) return true;   // his role already says it
+      if (k === "aggression" && c.focus === entry.person_id) return true;   // the play already runs through him
+    }
+    return raw.focus !== undefined && c.focus !== null;   // the play decides who it runs through
+  }
   function callsFor(row, phase) {
-    const list = [], add = (when, label, raw) => { if (when === phase || when === "any") list.push({ when, label, raw }); };
+    const list = [], c = tacticControls(phase);
+    const add = (when, label, raw) => { if ((when === phase || when === "any") && !fights(raw, c)) list.push({ when, label, raw }); };
     if (row.i === 5) {
       for (const [when, label, raw] of TEAM_CALLS) add(when, label, raw);
       for (const id of homeFloor()) add("offense", `Run it through ${last(playerById[id].name)}`, { focus: id });
@@ -2102,8 +2123,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         const top = [...awayFloor()].sort((a, b) => pts(b) - pts(a))[0];
         if (top && pts(top) >= 18) out.push(`Double-team ${last(playerById[top].name)}`);
         if (S.teamThrees.away >= 8) out.push("Run them off the three-point line");
-        if (S.teamOreb.away >= 8) out.push("Pack the paint (2-3 zone)");
-        out.push("Pressure the ball full court", "Pack the paint (2-3 zone)");
+        if (S.teamOreb.away >= 8) out.push("Get physical");   // they keep getting second chances
+        out.push("No fouls, hands back", "Sit back, no gambling");
       }
       out.push("Great job, everybody!");
       return out;
@@ -2316,7 +2337,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const meta = row.form.querySelector(".meta");
       if (row.i === 5) meta.textContent = `${S.home}–${S.away}`;
       else { const b = S.box[id] || {}; meta.textContent = `${b.PTS || 0} pts · ${b.PF || 0} pf`; }
-      const key = `${id}/${phase}/${floor.join(",")}/${awayFloor().join(",")}/${forceKey}`;
+      const key = `${id}/${phase}/${floor.join(",")}/${awayFloor().join(",")}/${forceKey}/${tactic.play}/${tactic.scheme}/${JSON.stringify(tactic.roles)}`;
       const roleKey = `${key}/${JSON.stringify(tactic)}`, whoKey = `${id}/${floor.join(",")}/${G.home.players.map((p) => (S.box[p.id] || {}).PF || 0).join("")}`;
       if (roleKey !== row.roleKey && document.activeElement !== row.role) { row.roleKey = roleKey; fillRoles(); buildRole(row, phase); }
       if (row.who && whoKey !== row.whoKey && document.activeElement !== row.who) { row.whoKey = whoKey; buildWho(row); }
@@ -2339,10 +2360,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
   // ---------- between possessions (live) ----------
   // The game stops after each possession, before the server plays the next one, so whatever you call here is
-  // in force from the very next play. The talk rows move into the pop-up, set for that possession's end of the floor.
+  // in force from the very next play. The talk panel lights up, its lists set for that possession's end of the floor.
   let autoBreak = LIVE, breakFor = -1, breakOffense = null;
   try { autoBreak = LIVE && localStorage.getItem("courtside-break") !== "off"; } catch { /* storage blocked: on */ }
-  const talkHome = { parent: $("talk-box").parentNode, next: $("talk-box").nextSibling };
   function setAutoBreak(on) {
     autoBreak = on; $("auto-break").checked = on; $("auto-break-bar").checked = on;
     try { localStorage.setItem("courtside-break", on ? "on" : "off"); } catch { /* not saved */ }
@@ -2366,16 +2386,17 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     $("break-title").textContent = breakOffense === "home" ? `${G.home.tricode} ball next: your offense` : breakOffense === "away" ? `${G.away.tricode} ball next: your defense` : "Next possession";
     const lastPlay = [...G.events].reverse().find((e) => ["shot", "turnover", "free_throws", "rebound"].includes(e.kind) && e.text);
     $("break-last").textContent = `${lastPlay ? `${lastPlay.text} · ` : ""}${G.away.tricode} ${S.away} – ${S.home} ${G.home.tricode} · make your calls, then go`;
-    $("break-talk").appendChild($("talk-box"));
     $("break").hidden = false;
+    document.querySelector(".talk-panel").classList.add("breaking");   // the talk panel lights up; the court stays in view
+    document.querySelector(".talk-panel").scrollIntoView({ block: "nearest", behavior: "smooth" });
+    $("play").textContent = "▶ Next possession";
     updateTalk();
-    $("break-go").focus();
   }
   function closeBreak() {
     if ($("break").hidden) return;
     $("break").hidden = true; breakOffense = null;
+    document.querySelector(".talk-panel").classList.remove("breaking");
     closeMenu();
-    talkHome.parent.insertBefore($("talk-box"), talkHome.next);
     updateTalk();
   }
   $("break-go").addEventListener("click", () => { Sound.unlock(); closeBreak(); setPlaying(true); });
