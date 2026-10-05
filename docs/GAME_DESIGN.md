@@ -391,6 +391,19 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - Any other call about something the current tactic decides is left out of the list (`tacticControls`, `fights`). Under a press or a blitz there is no "Sit back" and no "Pressure / Play off your man"; under a zone, drop or box-and-one, no "Run them off the line", "Protect the rim" or "Stay home". Under a pick-and-roll, isolation or post-up, there is no "Run it through" and no aggression call for the player the play runs through. A screener or post player gets no shot-zone call.
 - **Playback runs at 0.8x** (a quarter takes 15 minutes).
 
+**Thirteenth follow-up (Oct 5): the court shows the tactic in the talk panel.**
+- **Why they disagreed:** a tactic change applies to the engine from the next possession, so the court kept playing the possession in progress with the old tactic while the panel already showed the new one. In the 2-3 zone, each defender also leaned toward the man in the same place in the other five, so the zone looked like a smeared man-to-man.
+- **The court switches at once.** Picking a tactic or a role redraws the possession in progress with it (`shapeFrom`, `withShape`): the defenders walk from the old shape to the new one, and the strip above the court says what they are in. The engine's numbers still change from the next possession.
+- **Zones look like zones.** In the 2-3 zone and the box-and-one, each defender stands on his role's spot (two up top and three across the paint; four in a box with the chaser on their main scorer). The five slide together toward the side of the floor the ball is on, up to 7 ft. A dashed outline joins them on the floor, and a dashed line joins the chaser to his man.
+- **No more sprints across the floor.** Frame by frame, a few players ran 40-75 ft/s for a moment. The causes:
+  - the run up the floor went up a fixed lane and cut across the whole width to the spot at the end; the lane is now on his spot's side;
+  - every bend of a run was a full stop; a run now passes through its bends;
+  - run times were set from the average speed, so the peak was 1.5x faster; they now allow for speeding up and slowing down;
+  - the shooter's last run to his shot spot started too late;
+  - on a one-second putback chance, players ran all the way to their set spots; they now go only as far as they can.
+
+  Over a minute and a half of play, the 99th percentile of running speed fell from 37 to 26 ft/s (an NBA sprint is about 25-30). The remaining jumps are dead-ball glides (free-throw line-ups, a tactic switch).
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

@@ -90,6 +90,9 @@ h1 span { color: var(--led); }
 /* between possessions (live): the game stops for your calls */
 .talk-panel.breaking { border-color: var(--led); box-shadow: 0 0 0 2px var(--led), 0 0 28px rgba(255, 178, 62, 0.35); animation: call-glow 1.6s ease-in-out infinite; }
 @keyframes call-glow { 50% { box-shadow: 0 0 0 2px var(--led), 0 0 46px rgba(255, 178, 62, 0.6); } }
+.shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+#shape-area { fill: var(--shape, #fff); fill-opacity: 0.2; stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; stroke-dasharray: 7 5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }   /* widths in screen pixels */
+#shape-chase { stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .break-bar { display: grid; gap: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 178, 62, 0.08); border: 1px solid rgba(255, 178, 62, 0.45); }
 .break-bar[hidden] { display: none; }
 .break-bar b { font-family: var(--display); font-size: 20px; color: var(--led); letter-spacing: 0.03em; }
@@ -327,6 +330,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         <div class="flash" id="flash"></div>
         <div class="banner" id="banner" hidden>TIMEOUT</div>
         <div class="callout" id="callout" aria-live="polite"><div class="big"></div><div class="small"></div></div>
+        <svg class="shape" id="shape" viewBox="0 0 94 50" preserveAspectRatio="none" aria-hidden="true"><polygon id="shape-area"/><line id="shape-chase"/></svg>
         <div class="ball" id="ball"></div>
       </div>
 
@@ -477,11 +481,28 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     five_out: { spots: { point: [25, 0], lwing: [17, -18], rwing: [17, 18], lcorner: [1.5, -22.5], rcorner: [1.5, 22.5] } },
     motion: { spots: { point: [25, 0], lwing: [15, -20], rwing: [15, 20], corner: [1.5, -22.5], dunker: [4.5, 10] },
               moves: [["lwing", [15, -20], [8, -6], "run"], ["rwing", [15, 20], [8, 6], "run"]] },
-    zone23: { spots: { topl: [17, -7], topr: [17, 7], wingl: [6, -14], wingr: [6, 14], middle: [4, 0] } },
-    box1: { spots: { chaser: [22, 4], boxtl: [14, -8], boxtr: [14, 8], boxll: [5, -9], boxlr: [5, 9] }, moves: [["chaser", [22, 4], [22, 1], "chase"]] },
+    zone23: { spots: { topl: [19, -7.5], topr: [19, 7.5], wingl: [6, -13], wingr: [6, 13], middle: [4.5, 0] } },
+    box1: { spots: { chaser: [22, 4], boxtl: [15, -8], boxtr: [15, 8], boxll: [5, -9], boxlr: [5, 9] }, moves: [["chaser", [22, 4], [22, 1], "chase"]] },
     man: {}, switch: {}, drop: {}, blitz: {}, press: {},
   };
   const MAN_SPOTS = [[22, 0], [13, -17], [13, 17], [3, -19], [4, 7]];   // on the offense's point guard, wings, corner and big
+  let shapeFrom = null;   // the coach's last tactic change: { at: game time, events: how many the page had then }
+  function withShape(tac, ev) {   // a chance's calls with the coach's current tactic in place of the one it was played with
+    const ours = ev.team === G.home.tricode ? "off" : "def", out = { off: { ...((tac && tac.off) || {}) }, def: { ...((tac && tac.def) || {}) } };
+    if (ours === "off") {
+      out.off.play = tactic.play === "free" ? undefined : tactic.play;
+      out.off.roles = { ...tactic.roles };
+    } else {
+      const scheme = SCHEMES[tactic.scheme];
+      out.def.scheme = tactic.scheme === "man" ? undefined : tactic.scheme;
+      out.def.roles = { ...tactic.roles };
+      out.def.chaser = tactic.scheme === "box1" ? tactic.roles.chaser : undefined;
+      out.def.protect_paint = (scheme.team || {}).protect_paint || 0;   // the shape comes from the tactic, not the old levers
+      out.def.pressure = (scheme.team || {}).pressure || 0;
+      if (tactic.scheme === "man") delete out.def.double_team;
+    }
+    return out;
+  }
   function playSpots(offT, off, r) {   // where each player sets up for a set play (his role's spot), mirrored at random each possession
     const lay = LAYOUT[offT.play || "free"], rl = offT.roles || {};
     if (!lay || !lay.spots) return {};
@@ -511,12 +532,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const ease = (u) => u * u * (3 - 2 * u);
   const lerp = (a, b, u) => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
   const clampCourt = (p) => ({ x: Math.max(1, Math.min(93, p.x)), y: Math.max(1, Math.min(49, p.y)) });
-  function track(keys, t) {
+  function track(keys, t) {   // a key [t, x, y, true] is a bend he runs through without stopping
     if (t <= keys[0][0]) return { x: keys[0][1], y: keys[0][2] };
     for (let i = 1; i < keys.length; i++) {
       if (t <= keys[i][0]) {
-        const [t0, x0, y0] = keys[i - 1], [t1, x1, y1] = keys[i];
-        const u = t1 > t0 ? ease((t - t0) / (t1 - t0)) : 1;
+        const [t0, x0, y0, from] = keys[i - 1], [t1, x1, y1, to] = keys[i];
+        const v = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
+        const u = from && to ? v : from ? 1 - (1 - v) * (1 - v) : to ? v * v : ease(v);   // speeds up from a stop, slows into one
         return { x: x0 + (x1 - x0) * u, y: y0 + (y1 - y0) * u };
       }
     }
@@ -525,7 +547,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
   const RESOLVE = new Set(["shot", "turnover", "free_throws"]);
   const VMAX = 26;   // feet per game second: nobody on the court runs faster (an NBA sprint is about 25-30)
-  const LANES = [0, -19, 19, -12, 12];   // filling the lanes up the floor (feet across from the middle, on each player's side)
   const benchSpot = (id) => ({ x: 47 + ((id % 9) - 4) * 0.9, y: 48.6 });   // a player coming in walks on from the scorer's table
   // the opening tip: starters stand around the centre circle
   const TIP = {};
@@ -547,7 +568,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       for (const id of Object.keys(where).map(Number)) if (!off.includes(id) && !def.includes(id)) delete where[id];   // went to the bench: comes back from it
       // the calls in force (engine's chance event): the figures act them out on every possession,
       // while the outcome stays the one the engine rolled
-      const tac = ev.tactics || null, offT = (tac && tac.off) || {}, defT = (tac && tac.def) || {};
+      let tac = ev.tactics || null;
+      // A tactic changed while this possession plays: the court shows the new one now (the engine played it with the old)
+      if (shapeFrom && s < shapeFrom.events && (k + 1 >= chanceAt.length ? Infinity : G.events[chanceAt[k + 1]].t) > shapeFrom.at) tac = withShape(tac, ev);
+      const offT = (tac && tac.off) || {}, defT = (tac && tac.def) || {};
       let resolve = null, shootingFoul = null, rebound = null, ftShooter = null;
       for (let j = s + 1; j < next; j++) {
         const e = G.events[j];
@@ -581,16 +605,26 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         const mid = lerp(start, spot, 0.5);
         const bend = (r() - 0.5) * 14;
         const long = Math.abs(spot.x - start.x) > 30;   // a run up the floor: out to his lane early, up it, then to his spot
-        const lane = 25 + (right ? 1 : -1) * (LANES[i] || 0) + bend * 0.15;
+        const lane = Math.max(4, Math.min(46, 25 + (spot.y - 25) * 0.9 + bend * 0.15));   // the lane on his spot's side of the floor
         const curve = clampCourt({ x: mid.x + bend * 0.25, y: mid.y + bend });
-        // his run takes as long as its distance needs at VMAX (not a fixed share of the possession), within the possession
-        const need = Math.hypot(spot.x - start.x, spot.y - start.y) / VMAX;
+        // his run takes as long as its distance needs at VMAX, plus half again for speeding up and slowing down
+        // (not a fixed share of the possession), within the possession
+        const need = (1.5 * Math.hypot(spot.x - start.x, spot.y - start.y)) / VMAX;
         const run = Math.min(Math.max(travel, need), firstChance ? dur * 0.85 : Math.max(travel, dur * 0.6));
+        // one run, no stops at the bends: speeding up to the first, full speed between, slowing into his spot
+        const legs = (pts) => {   // times for the bends: a speeding-up or slowing-down leg takes twice as long per foot
+          const d = pts.map((q, j) => Math.hypot(q.x - (j ? pts[j - 1] : start).x, q.y - (j ? pts[j - 1] : start).y) * (j === 0 || j === pts.length - 1 ? 2 : 1));
+          const sum = d.reduce((a, b) => a + b, 0) || 1;
+          let at = t0;
+          return pts.map((q, j) => { at += (run * d[j]) / sum; return [j === pts.length - 1 ? t0 + run : at, q.x, q.y, j < pts.length - 1]; });
+        };
         const k0 = [[t0, start.x, start.y]];
         if (long && run > 1.5) {
-          k0.push([t0 + run * 0.3, start.x + (spot.x - start.x) * 0.3, lane], [t0 + run * 0.72, start.x + (spot.x - start.x) * 0.72, lane]);
-        } else if (run > 1.2) k0.push([t0 + run * (0.4 + r() * 0.2), curve.x, curve.y]);
-        k0.push([t0 + run, spot.x, spot.y]);
+          k0.push(...legs([{ x: start.x + (spot.x - start.x) * 0.3, y: lane }, { x: start.x + (spot.x - start.x) * 0.72, y: lane }, spot]));
+        } else {   // a short run; on a short chance (a putback) he only gets as far toward his spot as he can
+          const to = lerp(start, spot, Math.min(1, run / need));
+          if (run > 1.2) k0.push(...legs([lerp(start, curve, Math.min(1, run / need)), to])); else k0.push([t0 + run, to.x, to.y]);
+        }
         let tt = t0 + run;
         while (tt + 2.2 < t1 - 1.6) {
           tt += 1.8 + r() * 2.2;
@@ -660,9 +694,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       if (final.shooter && keys[final.shooter]) {
         const set = track(keys[final.shooter], Math.max(t0, t1 - 1.3));   // where he is when the shot is coming
         const [dx, dy] = shotSpot(final.zone, r, Math.atan2(right ? set.y - 25 : 25 - set.y, Math.max(0.5, right ? 88.75 - set.x : set.x - 5.25)));
-        const spot = clampCourt(toCourt(right, dx, dy)), from = track(keys[final.shooter], t0);
-        const arrive = Math.min(t1 - 0.15, Math.max(t1 - 1.3, t0 + Math.hypot(spot.x - from.x, spot.y - from.y) / VMAX));
-        const ks = keys[final.shooter].filter((k, j) => j === 0 || k[0] < arrive - 0.3);
+        const spot = clampCourt(toCourt(right, dx, dy)), ks0 = keys[final.shooter];
+        const need = (at) => { const q = track(ks0, at); return (1.5 * Math.hypot(spot.x - q.x, spot.y - q.y)) / VMAX; };
+        let leave = Math.max(t0, t1 - 1.6);   // he heads for his shot from wherever he is then, early enough to get there running
+        for (let n = 0; n < 2; n++) leave = Math.max(t0, Math.min(leave, t1 - 0.15 - need(leave)));
+        const from = track(ks0, leave), before = track(ks0, Math.max(t0, leave - 0.1));
+        const moving = Math.hypot(from.x - before.x, from.y - before.y) > 0.3;   // already running: no stop on the way
+        const arrive = Math.min(t1 - 0.15, Math.max(t1 - 1.3, leave + need(leave)));
+        const ks = ks0.filter((k, j) => j === 0 || k[0] < leave - 0.05);
+        if (leave > t0) ks.push([leave, from.x, from.y, moving]);
         ks.push([Math.max(t0 + 0.2, arrive), spot.x, spot.y], [t1, spot.x, spot.y]);
         keys[final.shooter] = ks;
       }
@@ -746,6 +786,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         dropper: null,   // drop coverage: whoever guards their biggest (set below, once the plan exists)
         pressUntil: (defT.pressure || 0) > 0.2 ? t0 + Math.max(travel, dur * 0.45) : null };
       plans.push(plan);
+      const shape = plan.box ? "box1" : plan.zone ? "zone23" : null;
+      if (shape) {   // each defender's spot in the zone or the box: his role's, or a free one
+        const spots = LAYOUT[shape].spots, free = Object.keys(spots).filter((r) => r !== "chaser"), out = {};
+        for (const [r, id] of Object.entries(plan.droles)) {
+          if (spots[r] && r !== "chaser" && def.includes(id) && !out[id] && free.includes(r)) { out[id] = spots[r]; free.splice(free.indexOf(r), 1); }
+        }
+        for (const id of def) if (!out[id] && id !== plan.chaser) out[id] = spots[free.shift()] || [8, 0];
+        plan.zoneSpot = out;
+      }
       if (defT.scheme === "drop") {   // the defender on their biggest man stays back near the rim
         const theirBig = off.reduce((a, b) => (playerById[b].big > playerById[a].big ? b : a));
         plan.dropper = def.find((d, i) => markOf(plan, i) === theirBig) || null;
@@ -754,7 +803,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       def.forEach((id, i) => {   // defenders run over from where they were, on their own path, at most VMAX
         const was = where[id] || benchSpot(id), at = defenderAt(plan, i, t0 + Math.min(travel, dur * 0.85));
         plan.was[id] = was;
-        plan.blend[id] = Math.min(Math.max(1.2, Math.hypot(at.x - was.x, at.y - was.y) / VMAX), Math.max(1.2, dur * 0.85));
+        plan.blend[id] = Math.min(Math.max(1.2, (1.5 * Math.hypot(at.x - was.x, at.y - was.y)) / VMAX), Math.max(1.2, dur * 0.85));
         plan.arrive[id] = defenderAt(plan, i, t0 + plan.blend[id]);   // where he picks up his man
       });
 
@@ -778,12 +827,24 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     });
     return plans;
   }
+  function zoneSlide(plan, t) {   // a zone moves as one toward the side of the floor the ball is on
+    const at = (id) => (plan.keys[id] ? track(plan.keys[id], t - 0.3) : plan.basket);
+    let y = plan.basket.y;
+    for (const seg of plan.ball) {
+      if (t < seg.from || t > seg.to) continue;
+      if (seg.hold !== undefined) y = at(seg.hold).y;
+      else if (seg.pass) y = lerp(at(seg.pass[0]), at(seg.pass[1]), (t - seg.from) / Math.max(0.01, seg.to - seg.from)).y;
+      else if (seg.shot !== undefined) y = at(seg.shot).y;
+      else if (seg.loose !== undefined) y = at(seg.loose).y;
+      break;
+    }
+    return Math.max(-7, Math.min(7, (y - 25) * 0.35));
+  }
   function markOf(plan, i) {   // the man this defender guards: the coach's matchup ("on:<id>"), else the same place in their five
     const me = plan.def[i];
     for (const [r, id] of Object.entries(plan.droles || {})) if (id === me && r.startsWith("on:") && plan.off.includes(Number(r.slice(3)))) return Number(r.slice(3));
     return plan.off[i];
   }
-  const roleIn = (plan, id) => Object.keys(plan.droles || {}).find((r) => plan.droles[r] === id && !r.startsWith("on:"));
   const PRESS_RELEASE = 1.5;   // game seconds to drop back from the press into the half-court defense
   function pressAt(plan, i, t) {   // pressure: picked up full court, two on the ball handler
     const target = i === 1 ? plan.off[0] : markOf(plan, i);
@@ -810,15 +871,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         const o = track(plan.keys[plan.star], t - 0.25), b = plan.basket;
         return clampCourt({ x: o.x + (b.x - o.x) * 0.08, y: o.y + (b.y - o.y) * 0.08 + 0.8 });
       }
-      const k = plan.def.filter((id) => id !== plan.chaser).indexOf(plan.def[i]), mine = LAYOUT.box1.spots[roleIn(plan, plan.def[i])];
-      const z = mine || [[14, -8], [14, 8], [5, -9], [5, 9]][k] || [8, 0];
-      return clampCourt(toCourt(plan.right, z[0], z[1]));
+      const z = (plan.zoneSpot || {})[plan.def[i]] || [8, 0], spot = toCourt(plan.right, z[0], z[1]);
+      return clampCourt({ x: spot.x, y: spot.y + zoneSlide(plan, t) });
     }
-    if (plan.zone) {   // a 2-3 zone: spots around the paint, leaning a little toward the nearest attacker
-      const z = LAYOUT.zone23.spots[roleIn(plan, plan.def[i])] || [[17, -7], [17, 7], [6, -14], [6, 14], [4, 0]][i] || [8, 0];
-      const spot = toCourt(plan.right, z[0], z[1]);
-      const man = plan.off[i] && plan.keys[plan.off[i]] ? track(plan.keys[plan.off[i]], t - 0.5) : spot;
-      return clampCourt(lerp(spot, man, 0.18));
+    if (plan.zone) {   // a 2-3 zone: two up top, three low, the five sliding together toward the ball
+      const z = (plan.zoneSpot || {})[plan.def[i]] || [8, 0], spot = toCourt(plan.right, z[0], z[1]);
+      return clampCourt({ x: spot.x, y: spot.y + zoneSlide(plan, t) });
     }
     const mark = markOf(plan, i);
     if (!mark || !plan.keys[mark]) return plan.basket;
@@ -1367,6 +1425,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       $("tally").innerHTML = S.tally.good || S.tally.bad ? `your calls <span class="g">✓${S.tally.good} paid off</span> · <span class="b">✗${S.tally.bad} cost you</span>` : "";
     }
     place($("ball"), { x: ball.x, y: ball.y });
+    drawShape(plan, pos);
     renderCalls(plan);
 
     if (S.feed.length !== lastFeedLen) {
@@ -1380,6 +1439,20 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
     renderTimeouts();
     renderChatter();
+  }
+  // A zone or a box-and-one, outlined on the floor through its defenders (the chaser: a dashed line to his man).
+  function drawShape(plan, pos) {
+    const area = $("shape-area"), chase = $("shape-chase");
+    const ids = plan && plan.zoneSpot && !S.dead ? Object.keys(plan.zoneSpot).map(Number).filter((id) => pos[id]) : [];
+    if (ids.length < 3) { area.setAttribute("points", ""); chase.setAttribute("x1", 0); chase.setAttribute("x2", 0); chase.setAttribute("y1", 0); chase.setAttribute("y2", 0); return; }
+    const c = ids.reduce((m, id) => ({ x: m.x + pos[id].x / ids.length, y: m.y + pos[id].y / ids.length }), { x: 0, y: 0 });
+    ids.sort((a, b) => Math.atan2(pos[a].y - c.y, pos[a].x - c.x) - Math.atan2(pos[b].y - c.y, pos[b].x - c.x));
+    area.setAttribute("points", ids.map((id) => `${pos[id].x.toFixed(2)},${pos[id].y.toFixed(2)}`).join(" "));
+    const color = sides[plan.defKey].primary === "#1A1A1A" ? "#ffffff" : sides[plan.defKey].primary;
+    $("shape").style.setProperty("--shape", color);
+    const ch = plan.box && plan.chaser && pos[plan.chaser] && pos[plan.star];
+    chase.setAttribute("x1", ch ? pos[plan.chaser].x : 0); chase.setAttribute("y1", ch ? pos[plan.chaser].y : 0);
+    chase.setAttribute("x2", ch ? pos[plan.star].x : 0); chase.setAttribute("y2", ch ? pos[plan.star].y : 0);
   }
   function renderBox(t) {
     const mins = minutesUpTo(t);
@@ -1857,6 +1930,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // The tactic as engine levers: the play's and the scheme's team levers, and what the roles mean for who gets the ball.
   async function sendTactic(stopDouble = false) {
     fillRoles();
+    shapeFrom = { at: T, events: G.events.length };   // the court shows it from now; the engine from the next possession
+    plans = buildPlans(); startOf = plans.map((p) => p.t0); settleTimes();
     const r = tactic.roles, play = PLAYS[tactic.play], scheme = SCHEMES[tactic.scheme];
     const raw = { team: { ...(play.team || {}), ...(scheme.team || {}) }, players: [], roles: r, unmapped: [] };
     if (tactic.play !== "free") raw.play = tactic.play;
