@@ -445,7 +445,7 @@ def test_each_players_card_shows_what_his_calls_change(fitted, limits):
     rim = next(r for r in sga["offense"] if r["label"] == "a shot at the rim")
     steals = next(r for r in sga["defense"] if r["label"] == "of our steals")
     assert rim["after"] > rim["before"] and steals["after"] > steals["before"] and sga["effort"] > 1.0
-    assert abs(sum(r["after"] for r in sga["offense"]) - 1) < 1e-9, "his chances end in one of five ways"
+    assert abs(sum(r["after"] for r in sga["offense"]) - sga["after"]) < 1e-9, "his rows add up to the share of our chances he takes"
     others = [p for pid, p in cards.items() if pid != SGA]
     assert all(next(r for r in p["defense"] if r["label"] == "of our steals")["after"] < next(r for r in p["defense"] if r["label"] == "of our steals")["before"]
                for p in others), "his teammates' share of the steals drops to match"
@@ -523,3 +523,18 @@ def test_calls_wear_off_unless_repeated(fitted, limits):
     for _ in range(40):
         quiet.step()
     assert quiet.home.tactics["pressure"] == 1.0
+
+
+def test_be_aggressive_shows_in_every_shot_he_takes(fitted, limits):
+    """The card counts his shots as shares of all our chances, so a call that gives him the ball more
+    raises each kind of shot he takes, not only his total."""
+    model, _ = fitted
+    game = Game(model, OKC, BOS, seed=8, limits=limits, boost=BOOST)
+    game.step()
+    game.nudge(game.home, validate({"players": [{"person_id": SGA, "aggression": 1}]}, "be aggressive",
+                                   set(game.home.athletes), set(game.away.athletes), SGA, "call"))
+    sga = next(p for p in game.monitor(game.home)["players"] if p["id"] == SGA)
+    for row in sga["offense"]:
+        print(f"{row['label']:24s} {100 * row['before']:5.1f}% -> {100 * row['after']:5.1f}% of our chances")
+    assert all(row["after"] > row["before"] for row in sga["offense"])
+

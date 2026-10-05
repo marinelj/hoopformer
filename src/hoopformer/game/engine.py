@@ -523,7 +523,7 @@ class Game:
         """What the coach's directives change in the engine right now.
 
         The odds of the next chance at each end, with the current lineups, with and without the
-        directives in force; for each player on the floor, his share of chances and how his chances end,
+        directives in force; for each player on the floor, his share of our chances and each way they end with him,
         his share of the team's steals, blocks, defensive rebounds and fouls, his energy, how fast he tires,
         and his confidence; the opponents' energy and confidence; and every directive with the coach's words
         and how long it has left.
@@ -550,10 +550,8 @@ class Game:
         pace = self._lever(side, "pace") if "pace" in side.tactics else 1.0
         offense.append({"label": "seconds per first chance", "before": self.mean_first_seconds, "after": self.mean_first_seconds / pace, "unit": "s"})
         defense, their_before, their_after = rows(other, side)
-        def mix(outs: list, pid: int) -> dict:  # how his own chances end
-            mine = {e: p for q, e, p in outs if q == pid}
-            total = sum(mine.values()) or 1.0
-            return {e: p / total for e, p in mine.items()}
+        def mix(outs: list, pid: int) -> dict:  # how our chances end with him, as shares of all our chances
+            return {e: p for q, e, p in outs if q == pid}
 
         def shares(weight) -> dict:  # each defender's share of a team total
             weights = {p: weight(p) for p in side.lineup}

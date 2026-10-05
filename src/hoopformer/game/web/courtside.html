@@ -1446,7 +1446,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       res.append(energy, conf);
       const calls = callsOn(p.id);
       const said = mk("div", "pc-calls" + (calls.length ? "" : " none"), calls.length ? calls.join(" · ") : "No calls to him yet");
-      const off = table("offense", [{ label: "our chances he takes", before: p.before, after: p.after },
+      const off = table("offense: % of our chances", [{ label: "all he takes", before: p.before, after: p.after },
                                     ...p.offense.map((r, i) => ({ ...r, label: `· ${short[i]}` }))]);
       const def = table("defense: his share", p.defense.map((r, i) => ({ ...r, label: ["steals", "blocks", "def. rebounds", "fouls"][i] })));
       card.append(head, res, said, off, def);

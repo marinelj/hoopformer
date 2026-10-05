@@ -65,7 +65,7 @@ def impact(before: dict, after: dict, top: int = 3) -> list[str]:
         name = b["name"].split()[-1] if not b["name"].endswith(("Jr.", "III", "II")) else b["name"].split()[-2]
         rows.append((abs(a["after"] - b["after"]), f"{name} takes {pct(b['after'])} → {pct(a['after'])} of our chances"))
         for rb, ra in zip(b["offense"], a["offense"]):
-            rows.append((abs(ra["after"] - rb["after"]) * 0.5, f"{name}'s chances: {rb['label']} {pct(rb['after'])} → {pct(ra['after'])}"))
+            rows.append((abs(ra["after"] - rb["after"]), f"{name}, {rb['label']}: {pct(rb['after'])} → {pct(ra['after'])} of our chances"))
         for rb, ra in zip(b["defense"], a["defense"]):
             rows.append((abs(ra["after"] - rb["after"]) * 0.5, f"{name}'s share {rb['label']} {pct(rb['after'])} → {pct(ra['after'])}"))
         if abs(a["effort"] - b["effort"]) > 0.005:
