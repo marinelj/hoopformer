@@ -12,8 +12,8 @@ Routes:
 - GET  /            a new game (query: home, away, seed), as the live page
 - GET  /api/next    play the next possession; returns its events
 - POST /api/say     {"text", "to"}: translate the words and apply them
-- POST /api/timeout call a timeout for the coach's team
-- POST /api/tactics {"raw", "words"}: apply the tactics panel's plan (no language model needed)
+- POST /api/tactics {"raw", "words"}: the coach's tactic: a set play or a defensive scheme, its levers and who
+  plays which role (no language model needed). The coach has no timeouts: the game stops after every possession.
 - POST /api/call    {"raw", "words", "to"}: a call picked from a talk row's list (one step on each lever it names)
 """
 
@@ -34,7 +34,8 @@ from hoopformer.game.replay import event_row, replay_data, replay_html
 from hoopformer.game.translator import RULE_REPLIES, translate
 
 CALL_REPLIES = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
-SET_PLAYS = ("pnr", "pop", "iso", "post", "five_out", "motion")  # the tactics panel's offenses the court can act out
+SET_PLAYS = ("pnr", "pop", "iso", "post", "five_out", "motion", "triangle")  # set plays the court acts out
+SCHEMES = ("drop", "blitz", "zone23", "press", "box1", "switch")                   # defensive schemes (man to man is none)
 STOPPABLE = ("double_team",)  # calls that one pick ends at once (they don't fade)
 PLAYER_REPLIES = {  # one defender's calls, (+, -)
     "pressure": ("I'll pick him up full court.", "Giving him a little space."),
@@ -138,7 +139,7 @@ class LiveGame:
         with self.lock:
             stop = [k for k in raw.get("stop") or [] if k in STOPPABLE]   # "Man to man" ends the double team
             named = [*(raw.get("team") or {}).items(), *((k, v) for entry in raw.get("players") or [] for k, v in entry.items() if k != "person_id"),
-                      *((k, raw[k]) for k in ("focus", "double_team", "late_foul", "timeout", "team_confidence") if raw.get(k))]
+                      *((k, raw[k]) for k in ("focus", "double_team", "late_foul", "team_confidence") if raw.get(k))]
             first, value = named[0] if named else (None, None)
             value = value["value"] if isinstance(value, dict) else value
             negative = isinstance(value, (int, float)) and value < 0
@@ -177,20 +178,20 @@ class LiveGame:
             return {**self.status(events), "levers": described, "reply": instruction.reply, "impact": changes,
                     "replier": instruction.replier, "unmapped": instruction.unmapped}
 
-    def timeout(self) -> dict:
-        with self.lock:
-            start = len(self.game.events)
-            called = self.game.call_timeout(self.game.home, "coach")
-            return {**self.status(self.game.events[start:]), "called": called}
-
     def tactics(self, raw: dict, words: str) -> dict:
         game, side = self.game, self.game.home
         with self.lock:
             # the panel holds the whole plan: drop the previous plan's directives before applying this one
             side.directives = [d for d in side.directives if not d.words.startswith(TACTICS)]
             game._refresh(side)
-            side.play = raw.get("play") if raw.get("play") in SET_PLAYS else None  # what the court acts out
-            instruction = validate(raw, TACTICS + words, set(side.athletes), set(game.away.athletes), None, "tactics panel")
+            side.play = raw.get("play") if raw.get("play") in SET_PLAYS else None   # what the court acts out
+            side.scheme = raw.get("scheme") if raw.get("scheme") in SCHEMES else None
+            side.roles = {role: pid for role, pid in (raw.get("roles") or {}).items() if pid in side.athletes}
+            if raw.get("stop"):   # man to man: no double team either
+                side.directives = [d for d in side.directives if d.lever not in raw["stop"] or d.player is not None]
+                game._refresh(side)
+            instruction = validate(raw, TACTICS + words, set(side.athletes), set(game.away.athletes), None, "tactic")
+            instruction.fades = False   # the tactic holds until the coach changes it
             events, changes = self.measured(lambda: game.instruct(side, instruction))
             return {**self.status(events), "levers": instruction.describe(self.names()), "unmapped": instruction.unmapped, "impact": changes}
 
@@ -262,8 +263,6 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
                 self.answer(lambda: live.say(str(body.get("text", "")).strip()[:500], body.get("to")))
             elif url.path == "/api/call":
                 self.answer(lambda: live.call(body.get("raw") or {}, str(body.get("words", ""))[:200], body.get("to")))
-            elif url.path == "/api/timeout":
-                self.answer(live.timeout)
             elif url.path == "/api/tactics":
                 self.answer(lambda: live.tactics(body.get("raw") or {}, str(body.get("words", ""))[:300]))
             else:

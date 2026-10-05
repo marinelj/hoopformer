@@ -123,7 +123,9 @@ class Side:
     focus: int | None = None        # run the offense through this player
     double_team: int | None = None  # an opponent this defense doubles
     late_foul: bool = False
-    play: str | None = None         # the set play from the tactics panel ("pnr", "pop", ...), for the court to act out
+    play: str | None = None         # the coach's set play on offense ("pnr", "triangle", ...), for the court to act out
+    scheme: str | None = None       # and the defensive scheme ("zone23", "box1", ...)
+    roles: dict = field(default_factory=dict)  # who does what in them: {"handler": id, "screener": id, "chaser": id, ...}
 
 
 @dataclass
@@ -310,7 +312,7 @@ class Game:
 
         def remember(lever, value, player=None, lapse=until):
             side.directives = [d for d in side.directives if not (d.lever == lever and d.player == player)]
-            side.directives.append(Directive(lever, value, instruction.words, player, now, lapse))
+            side.directives.append(Directive(lever, value, instruction.words, player, now, lapse, instruction.fades))
 
         for lever, value in instruction.team.items():
             remember(lever, value)
@@ -382,7 +384,7 @@ class Game:
                 moved.add((lever, pid))
         kinds = {levers.kind(lever, player) for lever, player in moved} - {None}
         for d in side.directives:
-            if (d.lever, d.player) not in moved and levers.kind(d.lever, d.player) in kinds:
+            if (d.lever, d.player) not in moved and levers.kind(d.lever, d.player) in kinds and d.fades:
                 faded = round(strength(d.value) * levers.FADE, 2)
                 d.value = {**d.value, "value": faded} if isinstance(d.value, dict) else faded
         side.directives = [d for d in side.directives if levers.kind(d.lever, d.player) is None or abs(strength(d.value)) >= levers.FORGOTTEN]
@@ -505,7 +507,7 @@ class Game:
 
     def _calls(self, off: Side, dfn: Side) -> dict | None:
         """What both coaches have in force for this chance, so the page can show it and act it out."""
-        if not (off.directives or dfn.directives or off.play):
+        if not (off.directives or dfn.directives or off.play or dfn.scheme):
             return None
         calls = {"off": {k: v for k, v in off.tactics.items() if k in levers.OFFENSE_LEVERS},
                  "def": {k: v for k, v in dfn.tactics.items() if k in levers.DEFENSE_LEVERS}}
@@ -513,6 +515,11 @@ class Game:
             calls["off"]["focus"] = off.focus
         if off.play:
             calls["off"]["play"] = off.play
+            calls["off"]["roles"] = {role: pid for role, pid in off.roles.items() if pid in off.lineup and role != "chaser"}
+        if dfn.scheme:
+            calls["def"]["scheme"] = dfn.scheme
+            if dfn.roles.get("chaser") in dfn.lineup:
+                calls["def"]["chaser"] = dfn.roles["chaser"]
         players = {pid: {k: v for k, v in values.items() if k in ("aggression", "shot_preference")}
                    for pid, values in off.player_tactics.items() if pid in off.lineup}
         if any(players.values()):
@@ -871,7 +878,7 @@ class Game:
         weaker than levers.FORGOTTEN is dropped. Focus, double teams, fouling late and rest don't fade."""
         keep = 0.5 ** (seconds / self.half_life)
         for side in (self.home, self.away):
-            fading = [d for d in side.directives if levers.kind(d.lever, d.player) is not None]
+            fading = [d for d in side.directives if levers.kind(d.lever, d.player) is not None and d.fades]
             if not fading:
                 continue
             for d in fading:

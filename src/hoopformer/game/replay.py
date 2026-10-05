@@ -39,7 +39,9 @@ def team_data(side: Side, coach: str) -> dict:
     for pid, athlete in side.athletes.items():
         profile = athlete.profile
         players.append({"id": pid, "name": profile.name, "minutesShare": round(side.share[pid], 3),
-                        "handler": round(profile.assist, 4), "big": round(profile.dreb, 4)})
+                        "handler": round(profile.assist, 4), "big": round(profile.dreb, 4),
+                        "steal": round(profile.steal, 4),   # the box-and-one's chaser: our best ball hawk...
+                        "usage": round(sum(profile.events[e] for e in ("rim", "mid", "three", "free_throws")), 4)})   # ...on their main scorer
     return {"tricode": side.tricode, "name": side.name, "primary": primary, "secondary": secondary,
             "coach": coach, "players": players}
 

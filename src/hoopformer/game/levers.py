@@ -220,6 +220,7 @@ class Instruction:
     confidence: dict[int | str, float] = field(default_factory=dict)    # person id or "team" -> change, -1 to 1
     duration: str = "game"            # "game", "quarter" or "possessions"
     possessions: int | None = None    # with duration "possessions"
+    fades: bool = True                # False for a tactic: its levers hold while the court plays it
     reply: str = ""
     replier: int | None = None
     unmapped: list[str] = field(default_factory=list)
@@ -260,6 +261,7 @@ class Directive:
     player: int | None   # None for a team directive
     since: float         # game seconds
     until: float | None  # game seconds when it lapses; None for the rest of the game
+    fades: bool = True   # a call wears off with time and newer calls; a tactic's levers don't
 
 
 def clamp(value) -> float:

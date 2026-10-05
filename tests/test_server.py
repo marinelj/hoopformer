@@ -85,27 +85,30 @@ def test_words_change_the_game_from_the_next_possession(server):
     assert courtside.live.game.home.tactics == {"pace": 0.6} and "pace +0.6" in team["levers"]
 
 
-def test_timeout_and_the_tactics_panel(server):
+def test_a_tactic_with_roles_and_substitutions(server):
     base, courtside = server
     get(f"{base}/?seed=8")
     for _ in range(5):
         get(f"{base}/api/next")
-    timeout = post(f"{base}/api/timeout", {})
-    assert timeout["called"] and [e["kind"] for e in timeout["events"]] == ["timeout"]
     game = courtside.live.game
     bench = next(pid for pid in game.home.athletes if pid not in game.home.lineup)
-    out = game.home.lineup[0]
-    plan = post(f"{base}/api/tactics", {"raw": {"team": {"pressure": 0.8}, "substitutions": [{"in": bench, "out": out}]}, "words": "press"})
-    print(plan["levers"])
-    assert game.home.tactics == {"pressure": 0.8} and bench in game.home.lineup
+    out = next(pid for pid in game.home.lineup if pid != SGA)
+    swap = post(f"{base}/api/call", {"raw": {"substitutions": [{"in": bench, "out": out}]}, "words": "sub", "to": None})
+    print(swap["levers"])
+    assert bench in game.home.lineup and out not in game.home.lineup, "a substitution between possessions"
+    screener = next(pid for pid in game.home.lineup if pid != SGA)
+    plan = post(f"{base}/api/tactics", {"raw": {"team": {"attack_rim": 0.4}, "focus": SGA, "play": "pnr", "scheme": "zone23",
+                                                "roles": {"handler": SGA, "screener": screener}}, "words": "Pick-and-roll"})
+    print(plan["levers"], "|", plan["impact"])
+    assert game.home.play == "pnr" and game.home.scheme == "zone23" and game.home.roles == {"handler": SGA, "screener": screener}
+    events = [e for _ in range(6) for e in json.loads(get(f"{base}/api/next")[1])["events"] if e["kind"] == "chance"]
+    ours = [e["tactics"]["off"] for e in events if e["team"] == "OKC" and e["tactics"]]
+    theirs = [e["tactics"]["def"] for e in events if e["team"] == "BOS" and e["tactics"]]
+    print("OKC chances carry:", ours[:1], "| BOS chances face:", theirs[:1])
+    assert ours and all(o["play"] == "pnr" and o["roles"].get("handler") in (SGA, None) for o in ours), "the court sees the play and its roles"
+    assert theirs and all(d["scheme"] == "zone23" for d in theirs), "and the scheme"
     post(f"{base}/api/tactics", {"raw": {"team": {"protect_paint": 0.7}}, "words": "zone"})
-    assert game.home.tactics == {"protect_paint": 0.7}, "a new plan replaces the old one"
-    post(f"{base}/api/tactics", {"raw": {"team": {"attack_rim": 0.4}, "focus": SGA, "play": "pnr"}, "words": "Pick-and-roll through SGA"})
-    chances = [e for _ in range(4) for e in json.loads(get(f"{base}/api/next")[1])["events"] if e["kind"] == "chance" and e["team"] == "OKC"]
-    print("OKC chances carry:", [c["tactics"]["off"] for c in chances][:2])
-    assert game.home.play == "pnr" and chances and all(c["tactics"]["off"]["play"] == "pnr" for c in chances), "the court sees the set play"
-    print(game.home.timeouts, "timeouts left")
-    assert game.home.timeouts == 6
+    assert game.home.tactics == {"protect_paint": 0.7} and game.home.play is None, "a new tactic replaces the old one"
 
 
 def test_calls_from_the_list_need_no_language_model_and_stack(server):

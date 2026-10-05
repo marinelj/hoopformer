@@ -49,6 +49,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - Seventh follow-up (Oct 4): no cross-court zooms on short possessions (game mode: first chances of at least 4 seconds; runs paced by distance), players fill the lanes, playback is 0.5× only with sound always on, and "Man to man" ends a double team. Details are in GAME_DESIGN.md §9.
 - Eighth follow-up (Oct 4): the press drops back smoothly (it was the remaining teleport), and in the live game a shot goes in at its chance times the shooter's energy (100% fresh, ~85% at a normal sub, 80% empty).
 - Ninth follow-up (Oct 4): the live game stops after every possession for your calls (they apply to the very next play), the tactics panel's pick-and-roll / pop / five-out / isolation are acted out on the court, and the spacing is wider.
+- Tenth follow-up (Oct 5): no timeouts for the coach; the tactic (a set play or a defensive scheme) is a list in the All team row, each player has a role list (handler, screener, post, chaser, ...), a helper draws the tactic, and substitutions are picked from a player's name.
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next

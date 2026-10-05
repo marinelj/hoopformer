@@ -344,6 +344,31 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - **isolation:** the other four clear out wide.
 - **Wider spacing:** half-court spots at the top beyond the arc, both wings at 45° beyond the arc, the corner, and the dunker spot. On the run up the floor each player goes out to his lane early, on his own side.
 
+**Tenth follow-up (Oct 5): tactics in the talk rows, roles, no timeouts.**
+- **No timeouts for the coach.** The button, the "Timeout!" call and the timeout-locked tactics panel are gone, and the break after every possession replaces them. The engine's scripted coaches still call their own (TV breaks, stopping a run), which rest players.
+- **The tactic is the first list in the All team row**, in front of its calls, and follows the ball like the calls do.
+  - On offense, a set play: free offense, pick-and-roll, pick-and-pop, isolation, post-up, triangle, five-out, motion.
+  - On defense, a scheme: man to man (also ends a double team), switch everything, drop coverage, blitz, 2-3 zone, full-court press, box-and-one.
+  - It goes to `POST /api/tactics` as levers plus `play`, `scheme` and `roles` (`Side.play`, `Side.scheme`, `Side.roles`, sent with every chance).
+  - A tactic's levers don't fade (`Instruction.fades = False`); calls still do.
+- **Each player's first list is his role in the tactic:**
+  - pick-and-roll: ball handler and screener;
+  - isolation: scorer;
+  - post-up: post player and entry passer;
+  - triangle: post, wing, corner, point and weak side;
+  - box-and-one: the chaser.
+  - The rest are spacers (or in the box). Roles start with the likeliest players (handler by assist rate, big by rebounding, chaser by steal rate). Picking a role for one player swaps it with whoever had it.
+  - Roles mean something in the engine: the pick-and-roll runs through the handler (focus) and the screener looks for the rim (or the three on a pop); the isolation and the post-up run through their scorer; the chaser pressures his man.
+- **A helper under the rows** draws the tactic on a half court with your five in their roles (screens, rolls, passes, the triangle, the box) and says in a sentence who does what.
+- **On the court:**
+  - the pick-and-roll uses the chosen handler and screener;
+  - the post-up feeds the post;
+  - the triangle sets up its triangle, swings the ball point → wing → post, and the weak side cuts;
+  - the box-and-one's chaser stays on their main scorer (by usage) while four play the box;
+  - drop coverage sags the big.
+- **Substitutions:** a player's name in his row is a list of the bench; picking someone brings him in (`POST /api/call` with `substitutions`), and he takes over the role.
+- **The pop-up between possessions** is now a window over the whole page, with the rows, the tactic and the helper.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).
