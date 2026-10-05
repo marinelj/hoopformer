@@ -34,6 +34,7 @@ from hoopformer.game.replay import event_row, replay_data, replay_html
 from hoopformer.game.translator import RULE_REPLIES, translate
 
 CALL_REPLIES = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
+STOPPABLE = ("double_team",)  # calls that one pick ends at once (they don't fade)
 PLAYER_REPLIES = {  # one defender's calls, (+, -)
     "pressure": ("I'll pick him up full court.", "Giving him a little space."),
     "protect_paint": ("Nothing easy at the rim.", "Staying home on my shooter."),
@@ -83,7 +84,8 @@ class LiveGame:
                  unmapped_log: Path | None = None, boost: float = levers.BOOST, half_life: float | None = levers.CALL_HALF_LIFE):
         self.model, self.use, self.unmapped_log = model, use, unmapped_log
         # game mode: calls are felt, and wear off unless repeated
-        self.game = Game(model, home, away, seed=seed, limits=limits, boost=boost, half_life=half_life)
+        self.game = Game(model, home, away, seed=seed, limits=limits, boost=boost, half_life=half_life,
+                         min_first_seconds=levers.MIN_FIRST_SECONDS if boost != 1 else 0.0)
         self.lock = threading.Lock()
         self.game.step()  # the tip-off and first possession, so the page opens with players on the floor
 
@@ -133,21 +135,32 @@ class LiveGame:
         game, side = self.game, self.game.home
         addressed = to if to in side.athletes else None
         with self.lock:
+            stop = [k for k in raw.get("stop") or [] if k in STOPPABLE]   # "Man to man" ends the double team
             named = [*(raw.get("team") or {}).items(), *((k, v) for entry in raw.get("players") or [] for k, v in entry.items() if k != "person_id"),
                       *((k, raw[k]) for k in ("focus", "double_team", "late_foul", "timeout", "team_confidence") if raw.get(k))]
             first, value = named[0] if named else (None, None)
             value = value["value"] if isinstance(value, dict) else value
             negative = isinstance(value, (int, float)) and value < 0
-            reply = ((PLAYER_REPLIES[first][negative] if addressed is not None and first in PLAYER_REPLIES else None)
-                     or (BACKING_OFF.get(first) if negative else None) or CALL_REPLIES.get(first, "Got it, coach."))
+            if stop and first is None:
+                reply = "Man to man. Got it."
+            elif addressed is not None and first in PLAYER_REPLIES:
+                reply = PLAYER_REPLIES[first][negative]
+            else:
+                reply = (BACKING_OFF.get(first) if negative else None) or CALL_REPLIES.get(first, "Got it, coach.")
             replier = addressed if addressed in side.lineup else (side.lineup[0] if side.lineup else None)
             instruction = validate({**raw, "reply": reply, "replier": replier}, words, set(side.athletes), set(game.away.athletes), addressed, "call")
             def tiring():  # how fast the players this call covers tire, on average (1 = normal)
                 who = [addressed] if addressed in side.lineup else side.lineup
                 return sum(game.effort(side, p) for p in who) / max(1, len(who))
 
+            def apply():
+                if stop:
+                    side.directives = [d for d in side.directives if not (d.lever in stop and d.player is None)]
+                    game._refresh(side)
+                return game.nudge(side, instruction)
+
             before, tired_before = {(d.lever, d.player): d.value for d in side.directives}, tiring()
-            events, changes = self.measured(lambda: game.nudge(side, instruction))
+            events, changes = self.measured(apply)
             after = {(d.lever, d.player): d.value for d in side.directives}
             moved = {(k, None) for k in instruction.team} | {(k, pid) for pid, values in instruction.players.items() for k in values}
             names, faded = self.names(), []
@@ -157,7 +170,7 @@ class LiveGame:
                 who = f"{names.get(pid, pid)} " if pid else ""
                 now = after.get((lever, pid))
                 faded.append(f"{who}{lever} {levers.signed(now['value'] if isinstance(now, dict) else now)}" if now is not None else f"{who}{lever} forgotten")
-            described = instruction.describe(names) + (f" (fading: {', '.join(faded)})" if faded else "")
+            described = ("double team off" if stop and instruction.lever_count == 0 else instruction.describe(names)) + (f" (fading: {', '.join(faded)})" if faded else "")
             if abs(tiring() - tired_before) > 0.005:  # the call's price in legs
                 described += f" · energy use x{tired_before:.2f} → x{tiring():.2f}"
             return {**self.status(events), "levers": described, "reply": instruction.reply, "impact": changes,

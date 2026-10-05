@@ -90,6 +90,10 @@ CREDIT_FLOOR = 0.5  # a play a call made likelier is put down to it at least hal
 # sub them out first; but boosted calls tire players far faster, so in the game a player below FATIGUE_START
 # energy pays for it: at empty he makes 15% fewer shots and turns it over 40% more (assumed). That is what
 # makes a tiring call a trade-off and not a free win.
+# Game mode only: no first chance shorter than this. Real play-by-play has some (6.6% under 4 seconds), mostly
+# transition plays where players are already running; the court can't show those, and five players covering
+# the floor in two seconds looks like a teleport.
+MIN_FIRST_SECONDS = 4.0
 FATIGUE_START = 0.6
 FATIGUE_MAKES = 0.15
 FATIGUE_TURNOVERS = 0.4

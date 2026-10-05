@@ -318,6 +318,17 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - The meter shows half steps (◐) so the fade is visible, and the monitor says "fading: forgotten in 9:45 unless you repeat it".
 - `hoopformer serve --half-life 300` makes calls last longer, `--half-life 0` keeps them forever. Simulations and tests keep calls at full strength.
 
+**Seventh follow-up (Oct 4): smooth, spread-out movement; 0.5×; man to man.**
+- **No more cross-court teleports.** Some possessions are very short in game time; real play-by-play has 6.6% of first chances under 4 seconds, mostly transition plays where players are already running.
+  - The animation had to fit a full-court run into them, so players crossed 77 feet in under a second.
+  - Now the live game (game mode) has no first chance under 4 seconds (`levers.MIN_FIRST_SECONDS`, `Game(min_first_seconds=...)`); simulations keep the real distribution.
+  - On the court, every run is paced by its distance at up to 26 ft/s (`VMAX`), not by a fixed share of the possession. Defenders run back on their own path to where they pick up their man, and a shot is taken on the side of the floor the shooter is on.
+  - After a basket, the ball goes from the rim to the inbounder. A player coming off the bench walks on from the scorer's table, not from where he last stood.
+  - Measured over several hundred game seconds with calls in force: median speed 2 ft/s, 99% under 32, 99.9% under 45.
+- **Spread out:** on a run up the floor the offense fills the lanes (the handler in the middle, wings on both sidelines, trailers between), and defenders move toward their man's side of the floor first.
+- **Playback is 0.5× only**, and sound is always on: the speed and sound buttons are gone.
+- **"Man to man"** (team, defense) ends a double team (`stop: ["double_team"]` in `POST /api/call`); ● shows while nobody is doubled. A double team in force shows 👥 on the doubled player at once, before it reaches the court on their next possession.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

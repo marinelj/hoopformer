@@ -129,6 +129,12 @@ def test_calls_from_the_list_need_no_language_model_and_stack(server):
     shown = {(d["lever"], d["player_id"]) for d in threes["monitor"]["directives"]}
     print("in force:", shown)
     assert shown == {("pace", None), ("shot_preference", SGA), ("three_point_rate", None)}, "the page reads each call's player to show where it stands"
+    tatum = next(pid for pid, a in game.away.athletes.items() if a.profile.name == "Jayson Tatum")
+    post(f"{base}/api/call", {"raw": {"double_team": tatum}, "words": "Double-team Tatum", "to": None})
+    assert game.home.double_team == tatum
+    straight = post(f"{base}/api/call", {"raw": {"stop": ["double_team"]}, "words": "Man to man", "to": None})
+    print(straight["levers"], "|", straight["reply"], "|", straight["impact"])
+    assert game.home.double_team is None and straight["levers"].startswith("double team off") and straight["reply"] == "Man to man. Got it."
     before = game.home.timeouts
     timeout = post(f"{base}/api/call", {"raw": {"timeout": True}, "words": "Timeout!", "to": None})
     assert game.home.timeouts == before - 1 and "timeout" in [e["kind"] for e in timeout["events"]]
