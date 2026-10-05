@@ -34,6 +34,7 @@ from hoopformer.game.replay import event_row, replay_data, replay_html
 from hoopformer.game.translator import RULE_REPLIES, translate
 
 CALL_REPLIES = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
+SET_PLAYS = ("pnr", "pop", "iso", "post", "five_out", "motion")  # the tactics panel's offenses the court can act out
 STOPPABLE = ("double_team",)  # calls that one pick ends at once (they don't fade)
 PLAYER_REPLIES = {  # one defender's calls, (+, -)
     "pressure": ("I'll pick him up full court.", "Giving him a little space."),
@@ -188,6 +189,7 @@ class LiveGame:
             # the panel holds the whole plan: drop the previous plan's directives before applying this one
             side.directives = [d for d in side.directives if not d.words.startswith(TACTICS)]
             game._refresh(side)
+            side.play = raw.get("play") if raw.get("play") in SET_PLAYS else None  # what the court acts out
             instruction = validate(raw, TACTICS + words, set(side.athletes), set(game.away.athletes), None, "tactics panel")
             events, changes = self.measured(lambda: game.instruct(side, instruction))
             return {**self.status(events), "levers": instruction.describe(self.names()), "unmapped": instruction.unmapped, "impact": changes}

@@ -87,6 +87,14 @@ h1 span { color: var(--led); }
 .tally .g { color: #3ddc84; }
 .tally .b { color: var(--shot); }
 
+/* between possessions (live): the game stops for your calls */
+.break { position: absolute; inset: 5% 7%; z-index: 8; background: rgba(9, 12, 18, 0.95); border: 1px solid var(--led); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-rows: auto 1fr auto; gap: 10px; overflow: auto; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6); }
+.break[hidden] { display: none; }
+.break-head b { font-family: var(--display); font-size: clamp(18px, 2.4vw, 28px); color: var(--led); letter-spacing: 0.03em; }
+.break-head span { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+.break-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.controls-row .auto { font-size: 12px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
+
 /* one monitor card per player on the floor (live) */
 .players-panel { display: grid; gap: 8px; padding: 10px 12px 12px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 8px; }
@@ -312,12 +320,19 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         <div class="flash" id="flash"></div>
         <div class="banner" id="banner" hidden>TIMEOUT</div>
         <div class="callout" id="callout" aria-live="polite"><div class="big"></div><div class="small"></div></div>
+        <div class="break" id="break" hidden role="dialog" aria-labelledby="break-title">
+          <div class="break-head"><b id="break-title"></b><span id="break-last"></span></div>
+          <div class="break-talk" id="break-talk"></div>
+          <div class="break-foot"><label><input type="checkbox" id="auto-break"> Stop after every possession</label>
+            <button class="play" id="break-go" type="button">▶ Next possession</button></div>
+        </div>
         <div class="ball" id="ball"></div>
       </div>
 
       <div class="controls">
         <div class="controls-row">
           <button class="play" id="play" type="button">▶ Play</button>
+          <label class="auto" id="auto-break-wrap" hidden><input type="checkbox" id="auto-break-bar"> Stop after every possession</label>
           <div class="elapsed" id="elapsed"></div>
         </div>
         <div class="timeline">
@@ -452,7 +467,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const attacksRight = (key, period) => { const homeRight = period <= 2 || period >= 5; return key === "home" ? homeRight : !homeRight; };
   const toCourt = (right, dx, dy) => ({ x: right ? 88.75 - dx : 5.25 + dx, y: 25 + (right ? dy : -dy) });
   const basketOf = (right) => toCourt(right, 0, 0);
-  const SPOTS = [[23, 0], [19, -14], [19, 14], [2.5, -21.5], [4.5, 7]];
+  const SPOTS = [[25, 0], [15, -20], [15, 20], [1.5, -22.5], [4.5, 10]];   // feet from the basket: top, wings, corner, dunker spot
   const LANE = [[11, -7], [11, 7], [7, -7], [7, 7], [16, -9], [16, 9], [24, -3], [24, 3]];
   function seeded(n) { let s = (n * 9301 + 49297) % 233280 || 1; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; }
   function roles(ids) {
@@ -489,7 +504,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
   const RESOLVE = new Set(["shot", "turnover", "free_throws"]);
   const VMAX = 26;   // feet per game second: nobody on the court runs faster (an NBA sprint is about 25-30)
-  const LANES = [25, 6, 44, 15, 35];   // filling the lanes up the floor: the handler in the middle, wings wide, trailers between
+  const LANES = [0, -19, 19, -12, 12];   // filling the lanes up the floor (feet across from the middle, on each player's side)
   const benchSpot = (id) => ({ x: 47 + ((id % 9) - 4) * 0.9, y: 48.6 });   // a player coming in walks on from the scorer's table
   // the opening tip: starters stand around the centre circle
   const TIP = {};
@@ -535,20 +550,25 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       off.forEach((id, i) => {
         let [dx, dy] = SPOTS[i] || [20, 0];
         const pref = (offT.players || {})[id];
-        const spotsUp = (i <= 2 && (offT.three_point_rate || 0) > 0.2) || (pref && pref.shot_preference && pref.shot_preference.zone === "three");
+        const spotsUp = (i <= 2 && (offT.three_point_rate || 0) > 0.2) || (pref && pref.shot_preference && pref.shot_preference.zone === "three")
+          || offT.play === "five_out";   // five-out: even the big stands beyond the arc
+        if (offT.play === "iso" && i > 0) dy = (dy >= 0 ? 1 : -1) * Math.max(Math.abs(dy), 17);   // isolation: the others clear out wide
         if (spotsUp) { const d = Math.hypot(dx, dy) || 1; dx = (dx / d) * 25.5; dy = Math.max(-21, Math.min(21, (dy / d) * 25.5)); }   // spaced beyond the arc
         const spot = clampCourt(toCourt(right, dx + (r() - 0.5) * 3, dy + (r() - 0.5) * 3));
         homeSpot[id] = spot;
         const start = where[id] || benchSpot(id);
         const mid = lerp(start, spot, 0.5);
         const bend = (r() - 0.5) * 14;
-        const long = Math.abs(spot.x - start.x) > 30;   // a run up the floor: through his lane, not down the middle with everyone
-        const curve = clampCourt(long ? { x: mid.x + bend * 0.25, y: LANES[i] + bend * 0.3 } : { x: mid.x + bend * 0.25, y: mid.y + bend });
+        const long = Math.abs(spot.x - start.x) > 30;   // a run up the floor: out to his lane early, up it, then to his spot
+        const lane = 25 + (right ? 1 : -1) * (LANES[i] || 0) + bend * 0.15;
+        const curve = clampCourt({ x: mid.x + bend * 0.25, y: mid.y + bend });
         // his run takes as long as its distance needs at VMAX (not a fixed share of the possession), within the possession
         const need = Math.hypot(spot.x - start.x, spot.y - start.y) / VMAX;
         const run = Math.min(Math.max(travel, need), firstChance ? dur * 0.85 : Math.max(travel, dur * 0.6));
         const k0 = [[t0, start.x, start.y]];
-        if (run > 1.2) k0.push([t0 + run * (0.4 + r() * 0.2), curve.x, curve.y]);
+        if (long && run > 1.5) {
+          k0.push([t0 + run * 0.3, start.x + (spot.x - start.x) * 0.3, lane], [t0 + run * 0.72, start.x + (spot.x - start.x) * 0.72, lane]);
+        } else if (run > 1.2) k0.push([t0 + run * (0.4 + r() * 0.2), curve.x, curve.y]);
         k0.push([t0 + run, spot.x, spot.y]);
         let tt = t0 + run;
         while (tt + 2.2 < t1 - 1.6) {
@@ -559,11 +579,32 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         }
         keys[id] = k0;
       });
+      // a pick-and-roll (or pop) from the tactics panel: the big comes up to screen for the handler, the handler
+      // comes off it downhill, and the screener rolls to the rim (or pops out to the arc)
+      let pnr = null;
+      if ((offT.play === "pnr" || offT.play === "pop") && firstChance) {
+        const handler = offT.focus && off.includes(offT.focus) ? offT.focus : off[0];
+        const screener = off.filter((p) => p !== handler).reduce((a, b) => (playerById[b].big > playerById[a].big ? b : a));
+        const ts = t0 + travel + 0.8;
+        if (ts + 3.4 < t1 - 1.0) {
+          const h = track(keys[handler], ts), side = h.y < 25 ? 1 : -1;
+          const screen = clampCourt({ x: h.x + (basket.x - h.x) * 0.1, y: h.y + side * 2.8 });
+          const downhill = clampCourt(lerp(h, basket, 0.6));
+          const away = Math.hypot(screen.x - basket.x, screen.y - basket.y) || 1;
+          const finish = offT.play === "pnr" ? clampCourt(lerp(basket, screen, 4 / away))   // rolls to the rim
+            : clampCourt(lerp(basket, screen, 23.5 / away));                                  // pops to the arc
+          keys[screener] = [...keys[screener].filter((k, j) => j === 0 || k[0] < ts - 1.4), [ts, screen.x, screen.y], [ts + 0.8, screen.x, screen.y],
+                            [ts + 2.3, finish.x, finish.y], [ts + 3.4, finish.x, finish.y]];
+          keys[handler] = [...keys[handler].filter((k, j) => j === 0 || k[0] < ts - 0.4), [ts, h.x, h.y], [ts + 0.8, h.x, h.y],
+                           [ts + 2.1, downhill.x, downhill.y], ...keys[handler].filter((k) => k[0] > ts + 3.6)];
+          pnr = { handler, screener, ts };
+        }
+      }
       // the player told to attack (or the one the offense runs through) drives at the rim mid-possession
       const told = offT.players || {};
       const driver = [offT.focus, ...Object.keys(told).map(Number).filter((p) => (told[p].aggression || 0) > 0.2 || (told[p].shot_preference && told[p].shot_preference.zone === "rim"))]
         .find((p) => p && off.includes(p)) || ((offT.attack_rim || 0) > 0.2 ? off[0] : null);
-      if (driver && keys[driver]) {
+      if (driver && keys[driver] && !pnr) {
         const td = t0 + travel + Math.max(0.3, (t1 - t0 - travel) * 0.3);
         if (td + 1.6 < t1 - 1.6) {
           const lane = clampCourt(toCourt(right, 5 + r() * 3, (r() - 0.5) * 8)), back = homeSpot[driver];
@@ -608,11 +649,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       };
       if (holder !== off[0] && firstChance) pass(off[0], t0 + Math.min(1.2, dur * 0.2));
       const passes = Math.max(0, Math.min(4, Math.round((dur - travel - 2.5) / 4)));
+      let handedOff = !pnr;
       for (let i = 0; i < passes; i++) {
         const when = t0 + travel + (dur - travel - 2.8) * ((i + 0.5 + (r() - 0.5) * 0.4) / passes);
         const choices = off.filter((p) => p !== holder);
+        if (pnr && !handedOff && when > pnr.ts - 1.8) { pass(pnr.handler, pnr.ts - 1.0); handedOff = true; }   // he has it for the screen
+        if (pnr && when > pnr.ts - 1.8 && when < pnr.ts + 2.4) continue;
         pass(driver && driver !== holder && r() < 0.6 ? driver : choices[Math.floor(r() * choices.length)], when);
       }
+      if (!handedOff) pass(pnr.handler, pnr.ts - 1.0);
       // The last touches are fixed by the engine. Schedule them backwards from the end of the
       // possession, shortening pass flights when the clock is short, so they always fit.
       const f = Math.max(0.12, Math.min(0.55, (t1 - tb) / 6));
@@ -653,7 +698,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const doubled = off.includes(ev.other) ? ev.other : null;
       const near = (id) => Math.hypot(homeSpot[id].x - homeSpot[doubled].x, homeSpot[id].y - homeSpot[doubled].y);
       const helper = doubled ? off.map((id, i) => [id, i]).filter(([id]) => id !== doubled).sort((a, b) => near(a[0]) - near(b[0]))[0][1] : -1;
-      const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul, doubled, helper, tac, driver,
+      const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul, doubled, helper, tac, driver, pnr,
         zone: (defT.protect_paint || 0) > 0.2, hug: (defT.protect_paint || 0) < -0.2,
         pressUntil: (defT.pressure || 0) > 0.2 ? t0 + Math.max(travel, dur * 0.45) : null };
       plans.push(plan);
@@ -1206,6 +1251,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       if ((lv.aggression || 0) < -0.2) offCalls.push(`${n} moving it`);
       if (lv.shot_preference) offCalls.push(`${n} looking for ${{ rim: "the rim", mid: "midrange", three: "threes" }[lv.shot_preference.zone]}`);
     }
+    if (o.play) offCalls.unshift(plan.pnr ? `${o.play === "pnr" ? "pick-and-roll" : "pick-and-pop"} ${last(playerById[plan.pnr.handler].name)}–${last(playerById[plan.pnr.screener].name)}`
+      : { pnr: "pick-and-roll", pop: "pick-and-pop", iso: "isolation", post: "post-up", five_out: "five-out", motion: "motion" }[o.play]);
     if (d.double_team) defCalls.push(`doubling ${last(playerById[d.double_team].name)}`);
     const parts = [];
     if (offCalls.length) parts.push([`${sides[plan.offKey].tricode} offense`, offCalls.join(" · ")]);
@@ -1247,7 +1294,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       place(el, p);
       el.classList.toggle("holder", ball.holder === id);
       el.classList.toggle("doubled", !!plan && plan.doubled === id && !S.dead);
-      el.classList.toggle("called", !!plan && plan.driver === id && !S.dead);
+      const inPnr = plan && plan.pnr && (id === plan.pnr.handler || id === plan.pnr.screener) && t > plan.pnr.ts - 0.5 && t < plan.pnr.ts + 2.6;
+      el.classList.toggle("called", !!plan && (plan.driver === id || inPnr) && !S.dead);
       const badges = badgesFor(id);
       if (el.dataset.badges !== badges) { el.dataset.badges = badges; el.querySelector(".badges").textContent = badges; }
     }
@@ -1537,11 +1585,14 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     // a dribble now and then while the ball is live
     if (!S.dead && S.offense && T < totalT) { dribble -= dt; if (dribble <= 0) { Sound.bounce(); dribble = 0.55; } }
     render(T);
-    if (LIVE && !G.done && S.applied >= G.events.length) fetchNext();   // shown everything we have: the next possession
+    if (LIVE && !G.done && S.applied >= G.events.length) {   // shown everything we have: the next possession
+      if (autoBreak && breakFor !== G.events.length && T > 1) { openBreak(); return false; }   // first, your calls for it
+      fetchNext();
+    }
     if (ended() && T >= totalT && S.applied >= G.events.length) { setPlaying(false); return false; }
     return true;
   }
-  $("play").addEventListener("click", () => { Sound.unlock(); if (ended() && T >= totalT) seek(0); setPlaying(!playing); });
+  $("play").addEventListener("click", () => { Sound.unlock(); closeBreak(); if (ended() && T >= totalT) seek(0); setPlaying(!playing); });
   $("scrub").addEventListener("input", (ev) => seek(Number(ev.target.value)));
 
   // tabs
@@ -1712,7 +1763,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     ["any", "Take a breather (3 min)", { rest_minutes: 3 }],
     ["any", "Great job, keep it up!", { confidence: 0.5 }],
   ];
-  const phaseNow = () => (S.offense === "away" ? "defense" : "offense");
+  const phaseNow = () => (breakOffense ? (breakOffense === "home" ? "offense" : "defense") : S.offense === "away" ? "defense" : "offense");
   function callsFor(row, phase) {
     const list = [], add = (when, label, raw) => { if (when === phase || when === "any") list.push({ when, label, raw }); };
     if (row.i === 5) {
@@ -2012,6 +2063,52 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     openMenu(row);
   }
 
+  // ---------- between possessions (live) ----------
+  // The game stops after each possession, before the server plays the next one, so whatever you call here is
+  // in force from the very next play. The talk rows move into the pop-up, set for that possession's end of the floor.
+  let autoBreak = LIVE, breakFor = -1, breakOffense = null;
+  try { autoBreak = LIVE && localStorage.getItem("courtside-break") !== "off"; } catch { /* storage blocked: on */ }
+  const talkHome = { parent: $("talk").parentNode, next: $("talk").nextSibling };
+  function setAutoBreak(on) {
+    autoBreak = on; $("auto-break").checked = on; $("auto-break-bar").checked = on;
+    try { localStorage.setItem("courtside-break", on ? "on" : "off"); } catch { /* not saved */ }
+  }
+  $("auto-break-wrap").hidden = !LIVE;
+  $("auto-break").checked = $("auto-break-bar").checked = autoBreak;
+  $("auto-break").addEventListener("change", (ev) => setAutoBreak(ev.target.checked));
+  $("auto-break-bar").addEventListener("change", (ev) => setAutoBreak(ev.target.checked));
+  function nextOffense() {   // who has the ball when the next possession starts
+    for (let i = G.events.length - 1; i >= 0; i--) {
+      const e = G.events[i], team = e.team === G.home.tricode ? "home" : "away", other = team === "home" ? "away" : "home";
+      if (e.kind === "rebound") return team;
+      if ((e.kind === "shot" && e.value) || e.kind === "turnover" || e.kind === "free_throws") return other;
+      if (e.kind === "period_start" || e.kind === "period_end") return null;
+    }
+    return null;
+  }
+  function openBreak() {
+    breakFor = G.events.length; breakOffense = nextOffense();
+    setPlaying(false);
+    $("break-title").textContent = breakOffense === "home" ? `${G.home.tricode} ball next: your offense` : breakOffense === "away" ? `${G.away.tricode} ball next: your defense` : "Next possession";
+    const lastPlay = [...G.events].reverse().find((e) => ["shot", "turnover", "free_throws", "rebound"].includes(e.kind) && e.text);
+    $("break-last").textContent = `${lastPlay ? `${lastPlay.text} · ` : ""}${G.away.tricode} ${S.away} – ${S.home} ${G.home.tricode} · make your calls, then go`;
+    $("break-talk").appendChild($("talk"));
+    $("break").hidden = false;
+    updateTalk();
+    $("break-go").focus();
+  }
+  function closeBreak() {
+    if ($("break").hidden) return;
+    $("break").hidden = true; breakOffense = null;
+    closeMenu();
+    talkHome.parent.insertBefore($("talk"), talkHome.next);
+    updateTalk();
+  }
+  $("break-go").addEventListener("click", () => { Sound.unlock(); closeBreak(); setPlaying(true); });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !$("break").hidden && !menu.row && document.activeElement === $("break-go")) { ev.preventDefault(); $("break-go").click(); }
+  });
+
   // Hold to talk: press and hold records, release sends the words to the language model. Speech recognition is the
   // browser's own; pages that can't use the microphone (like this hosted replay) say so instead.
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2118,6 +2215,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const raw = { team: { ...(TACTIC_LEVERS[p.offense] || {}), ...(TACTIC_LEVERS[p.defense] || {}) },
                   substitutions: swaps.map(([inn, out]) => ({ in: inn, out })), unmapped: [] };
     if (p.focus) raw.focus = Number(p.focus);
+    if (["pnr", "pop", "iso", "post", "five_out", "motion"].includes(p.offense)) raw.play = p.offense;   // for the court to act out
     if (p.target) raw.double_team = Number(p.target);
     if (p.lateFoul) raw.late_foul = true;
     if (p.offense === "motion") raw.unmapped.push("motion offense");

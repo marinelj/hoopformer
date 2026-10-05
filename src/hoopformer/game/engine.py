@@ -123,6 +123,7 @@ class Side:
     focus: int | None = None        # run the offense through this player
     double_team: int | None = None  # an opponent this defense doubles
     late_foul: bool = False
+    play: str | None = None         # the set play from the tactics panel ("pnr", "pop", ...), for the court to act out
 
 
 @dataclass
@@ -504,12 +505,14 @@ class Game:
 
     def _calls(self, off: Side, dfn: Side) -> dict | None:
         """What both coaches have in force for this chance, so the page can show it and act it out."""
-        if not (off.directives or dfn.directives):
+        if not (off.directives or dfn.directives or off.play):
             return None
         calls = {"off": {k: v for k, v in off.tactics.items() if k in levers.OFFENSE_LEVERS},
                  "def": {k: v for k, v in dfn.tactics.items() if k in levers.DEFENSE_LEVERS}}
         if off.focus in off.lineup:
             calls["off"]["focus"] = off.focus
+        if off.play:
+            calls["off"]["play"] = off.play
         players = {pid: {k: v for k, v in values.items() if k in ("aggression", "shot_preference")}
                    for pid, values in off.player_tactics.items() if pid in off.lineup}
         if any(players.values()):

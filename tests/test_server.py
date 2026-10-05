@@ -100,6 +100,10 @@ def test_timeout_and_the_tactics_panel(server):
     assert game.home.tactics == {"pressure": 0.8} and bench in game.home.lineup
     post(f"{base}/api/tactics", {"raw": {"team": {"protect_paint": 0.7}}, "words": "zone"})
     assert game.home.tactics == {"protect_paint": 0.7}, "a new plan replaces the old one"
+    post(f"{base}/api/tactics", {"raw": {"team": {"attack_rim": 0.4}, "focus": SGA, "play": "pnr"}, "words": "Pick-and-roll through SGA"})
+    chances = [e for _ in range(4) for e in json.loads(get(f"{base}/api/next")[1])["events"] if e["kind"] == "chance" and e["team"] == "OKC"]
+    print("OKC chances carry:", [c["tactics"]["off"] for c in chances][:2])
+    assert game.home.play == "pnr" and chances and all(c["tactics"]["off"]["play"] == "pnr" for c in chances), "the court sees the set play"
     print(game.home.timeouts, "timeouts left")
     assert game.home.timeouts == 6
 

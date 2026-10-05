@@ -334,6 +334,16 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 
 **Eighth follow-up (Oct 4): the press no longer teleports.** When a press ended a few seconds into a possession, all five defenders switched from the full-court press to their half-court spots in a single frame (jumps of 6–25 feet). Now they run back over 1.5 seconds (`PRESS_RELEASE`), and anything else that has to move at once (the free-throw line-up) walks over 0.9 seconds. Checked frame by frame with a press, a double team, a zone, crashing and pushing the pace in force: no player moved more than 2 feet in a frame in 99 seconds of game time.
 
+**Ninth follow-up (Oct 4): a break after every possession, set plays you can see, wider spacing.**
+- **The game stops between possessions (live).** After a possession has been shown, and before the server plays the next one, a pop-up over the court holds the talk rows, set for the coming possession ("BOS ball next: your defense"), with the last play and the score.
+  - Whatever you call there is in force from the very next play, not the one after.
+  - "▶ Next possession" (or Enter) goes on. "Stop after every possession", in the pop-up and next to Play, turns it off.
+- **Set plays from the tactics panel are acted out.** The plan's offense is sent with every chance (`Side.play`, `Event.tactics.off.play`):
+  - **pick-and-roll / pick-and-pop:** the big comes up to screen for the handler (the "run it through" player, or the point guard), the handler comes off it downhill, and the screener rolls to the rim or pops to the arc. Both are outlined while it happens, and the strip above the court names them ("pick-and-roll Gilgeous-Alexander–Holmgren").
+  - **five-out:** all five beyond the arc.
+  - **isolation:** the other four clear out wide.
+- **Wider spacing:** half-court spots at the top beyond the arc, both wings at 45° beyond the arc, the corner, and the dunker spot. On the run up the floor each player goes out to his lane early, on his own side.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).
