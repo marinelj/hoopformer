@@ -437,6 +437,16 @@ Decision: real players, for a private prototype. The risk to remember: analysing
 - **The scripted coach never spends them.** A side coached by a person (`Side.human`) is skipped when the scripted coach looks for a timeout to stop a run, draw up a late play or take a TV-style breather. Over 5 games it called 32 timeouts for the other team and none for the human's.
 - **No more stop after every possession:** the checkbox, the break bar and "▶ Next possession" are gone, and the game plays straight through. The walk into the next possession's shape went with the break: each possession starts with the run up the floor again.
 
+**Sixteenth follow-up (Oct 6): a tactic change never moves the other team; tactics only in a timeout.**
+- **Why it was wrong:** picking a tactic redrew the whole possession from its start with the new tactic, so all ten players, the other team's too, jumped into new positions the moment the list changed. With two coaches in a game, one coach's choice can't move the other coach's players; they can only react on the court.
+- **Now a change continues the possession from that moment** (`restarts`, `planSegment`). The possession splits: the part already played stays as it was, and the rest starts from where everyone stands.
+  - **During the timeout nobody moves.** When play resumes, your five run into the new tactic at running speed (≤ 31 ft/s in the test: from about 45 ft away, set in 2.7 s).
+  - **The other team only reacts.** If they have the ball, their offense goes on exactly as before: 0.0 ft of change at every second after the timeout, checked. If you have the ball, their defenders follow your players as they move (≤ 24 ft/s), and their zone slides with the ball.
+  - A zone's outline appears once the defenders are in it.
+  - A double team called off in the timeout stops for the rest of the possession.
+  - A change made between possessions starts with the next one. In the engine, as always, the tactic plays from the next possession.
+- **The tactic and the roles are locked while play runs:** greyed out, with "Call a timeout to change the tactic" on hover. They open in a timeout and before the tip-off. Calls, voice, trash talk and substitutions stay open. A substitute takes over his man's role from the next possession.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

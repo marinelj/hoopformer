@@ -117,6 +117,7 @@ h1 span { color: var(--led); }
 button { font: inherit; color: inherit; cursor: pointer; }
 .play { background: var(--led); color: #15120c; border: 0; border-radius: 6px; padding: 7px 16px; font-weight: 600; min-width: 92px; }
 .play:disabled { opacity: 0.5; cursor: default; }
+.talk-row .talk-role:disabled { opacity: 0.6; cursor: not-allowed; }
 .elapsed { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
 .timeline { display: grid; gap: 2px; }
 input[type="range"] { width: 100%; accent-color: var(--led); }
@@ -476,22 +477,22 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     man: {}, switch: {}, drop: {}, blitz: {}, press: {},
   };
   const MAN_SPOTS = [[22, 0], [13, -17], [13, 17], [3, -19], [4, 7]];   // on the offense's point guard, wings, corner and big
-  let shapeFrom = null;   // the coach's last tactic change: { at: game time, events: how many the page had then }
-  function withShape(tac, ev) {   // a chance's calls with the coach's current tactic in place of the one it was played with
+  let restarts = [];   // tactics changed in a timeout during a possession: { s: its chance's event index, at: game time, tactic }
+  function withShape(tac, ev, coach = tactic) {   // a chance's calls with the coach's tactic (now, or then) in place of the one it was played with
     const ours = ev.team === G.home.tricode ? "off" : "def", out = { off: { ...((tac && tac.off) || {}) }, def: { ...((tac && tac.def) || {}) } };
     if (ours === "off") {
       const FOCUS = { iso: "scorer", pnr: "handler", pop: "handler", post: "post" };   // the man a play runs through
-      if (FOCUS[out.off.play] || FOCUS[tactic.play]) out.off.focus = FOCUS[tactic.play] ? tactic.roles[FOCUS[tactic.play]] : undefined;
-      out.off.play = tactic.play === "free" ? undefined : tactic.play;
-      out.off.roles = { ...tactic.roles };
+      if (FOCUS[out.off.play] || FOCUS[coach.play]) out.off.focus = FOCUS[coach.play] ? coach.roles[FOCUS[coach.play]] : undefined;
+      out.off.play = coach.play === "free" ? undefined : coach.play;
+      out.off.roles = { ...coach.roles };
     } else {
-      const scheme = SCHEMES[tactic.scheme];
-      out.def.scheme = tactic.scheme === "man" ? undefined : tactic.scheme;
-      out.def.roles = { ...tactic.roles };
-      out.def.chaser = tactic.scheme === "box1" ? tactic.roles.chaser : undefined;
+      const scheme = SCHEMES[coach.scheme];
+      out.def.scheme = coach.scheme === "man" ? undefined : coach.scheme;
+      out.def.roles = { ...coach.roles };
+      out.def.chaser = coach.scheme === "box1" ? coach.roles.chaser : undefined;
       out.def.protect_paint = (scheme.team || {}).protect_paint || 0;   // the shape comes from the tactic, not the old levers
       out.def.pressure = (scheme.team || {}).pressure || 0;
-      if (tactic.scheme === "man") delete out.def.double_team;
+      if (coach.scheme === "man") delete out.def.double_team;
     }
     return out;
   }
@@ -575,43 +576,33 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const TIP = {};
   { const ids = [...G.events[0].home_lineup, ...G.events[0].away_lineup];
     ids.forEach((id, i) => { const a = (i / ids.length) * Math.PI * 2 + 0.3; TIP[id] = { x: 47 + Math.cos(a) * 9, y: 25 + Math.sin(a) * 9 }; }); }
-  function buildPlans() {
-    const plans = [];
-    const where = { ...TIP };    // last known position of every player
-    let carrier = null;          // who has the ball when the next possession starts
-    let inbound = null;          // after a basket or free throws: where the ball is when the next possession starts
-    const chanceAt = G.events.map((e, i) => (e.kind === "chance" ? i : -1)).filter((i) => i >= 0);
-    chanceAt.forEach((s, k) => {
-      const ev = G.events[s], next = k + 1 < chanceAt.length ? chanceAt[k + 1] : G.events.length;
-      const r = seeded(k + 1);
-      const offKey = ev.team === G.home.tricode ? "home" : "away", defKey = offKey === "home" ? "away" : "home";
-      const right = attacksRight(offKey, ev.period);
-      const basket = basketOf(right);
-      const off = roles(ev[offKey + "_lineup"]), def = roles(ev[defKey + "_lineup"]);
-      for (const id of Object.keys(where).map(Number)) if (!off.includes(id) && !def.includes(id)) delete where[id];   // went to the bench: comes back from it
-      let resolve = null, shootingFoul = null, rebound = null, ftShooter = null;
-      for (let j = s + 1; j < next; j++) {
-        const e = G.events[j];
-        if (!resolve && e.kind === "foul" && e.zone === "shooting") shootingFoul = e;
-        if (!resolve && RESOLVE.has(e.kind)) resolve = e;
-        if (e.kind === "rebound" && !rebound) rebound = e;
-        if (e.kind === "free_throws") ftShooter = e.actor;   // the possession ends at the line (a foul, an and-one)
-      }
-      const t0 = ev.t;
-      const t1 = resolve ? resolve.t : (next < G.events.length ? G.events[next].t : t0 + 6);
-      const dur = Math.max(0.5, t1 - t0);
-      // the calls in force (engine's chance event): the figures act them out on every possession,
-      // while the outcome stays the one the engine rolled
-      let tac = ev.tactics || null;
-      // A tactic changed while this possession plays: the court shows the new one now (the engine played it with the old)
-      if (shapeFrom && s < shapeFrom.events && t1 > shapeFrom.at) tac = withShape(tac, ev);
-      const offT = (tac && tac.off) || {}, defT = (tac && tac.def) || {};
-      const firstChance = ev.zone !== "second";
-      let travel = firstChance ? Math.min(7, dur * 0.45) : Math.min(1.5, dur * 0.4);
-      const pace = offT.pace || 0;
-      if (firstChance && pace > 0.2) travel *= 1 - 0.4 * pace;                                   // they sprint into the offense
-      if (firstChance && pace < -0.2) travel = Math.min(dur * 0.65, travel * (1 + 0.5 * -pace));  // they walk it up
+  // The plan of one possession (or of its rest, after a timeout in which the coach changed the tactic): where everyone
+  // is at every moment, from `where` at `start`, and the ball, from `carrier`. With `keep`, the offense (the other
+  // team's) goes on exactly as before and only the defense (the coach's) changes.
+  function planSegment({ k, s, next, ev, start, where, carrier, inbound, tac, r, keep }) {
+    const offKey = ev.team === G.home.tricode ? "home" : "away", defKey = offKey === "home" ? "away" : "home";
+    const right = attacksRight(offKey, ev.period);
+    const basket = basketOf(right);
+    const off = roles(ev[offKey + "_lineup"]), def = roles(ev[defKey + "_lineup"]);
+    let resolve = null, shootingFoul = null, rebound = null, ftShooter = null;
+    for (let j = s + 1; j < next; j++) {
+      const e = G.events[j];
+      if (!resolve && e.kind === "foul" && e.zone === "shooting") shootingFoul = e;
+      if (!resolve && RESOLVE.has(e.kind)) resolve = e;
+      if (e.kind === "rebound" && !rebound) rebound = e;
+      if (e.kind === "free_throws") ftShooter = e.actor;   // the possession ends at the line (a foul, an and-one)
+    }
+    const t0 = start, resumed = start > ev.t;   // resumed: the rest of a possession, after a timeout
+    const t1 = resolve ? resolve.t : (next < G.events.length ? G.events[next].t : ev.t + 6);
+    const dur = Math.max(0.5, t1 - t0);
+    const offT = (tac && tac.off) || {}, defT = (tac && tac.def) || {};
+    const firstChance = ev.zone !== "second";
+    let travel = resumed ? Math.min(1, dur * 0.3) : firstChance ? Math.min(7, dur * 0.45) : Math.min(1.5, dur * 0.4);
+    const pace = offT.pace || 0;
+    if (firstChance && !resumed && pace > 0.2) travel *= 1 - 0.4 * pace;                                   // they sprint into the offense
+    if (firstChance && !resumed && pace < -0.2) travel = Math.min(dur * 0.65, travel * (1 + 0.5 * -pace));  // they walk it up
 
+    function offense() {   // the offense's runs, its set play, the final action and the ball
       // offense: start where they were, run to their spots on a curved path, then keep moving
       const keys = {};
       const homeSpot = {};
@@ -749,7 +740,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         ball.push({ pass: [holder, to], from: when, to: when + flight });
         holder = to; tb = when + flight;
       };
-      if (holder !== off[0] && firstChance) pass(off[0], t0 + Math.min(1.2, dur * 0.2));
+      if (holder !== off[0] && firstChance && !resumed) pass(off[0], t0 + Math.min(1.2, dur * 0.2));
       const passes = Math.max(0, Math.min(4, Math.round((dur - travel - 2.5) / 4)));
       if (pnr) fixedPasses.push([pnr.handler, pnr.ts - 1.0]);   // he has it for the screen
       const quiet = fixedPasses.length ? [Math.min(...fixedPasses.map((f) => f[1])) - 0.9, iso ? t1 : Math.max(...fixedPasses.map((f) => f[1])) + (pnr ? 3.4 : 1.2)] : null;
@@ -797,30 +788,59 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       } else {
         ball.push({ hold: holder, from: tb, to: t1 });
       }
+      return { keys, homeSpot, pnr, driver, final, ball };
+    }
+    const { keys, homeSpot, pnr, driver, final, ball } = keep || offense();
 
-      // a double team: the defender whose man stands nearest the doubled player leaves him to help
-      const doubled = off.includes(ev.other) ? ev.other : null;
-      const near = (id) => Math.hypot(homeSpot[id].x - homeSpot[doubled].x, homeSpot[id].y - homeSpot[doubled].y);
-      const helper = doubled ? off.map((id, i) => [id, i]).filter(([id]) => id !== doubled).sort((a, b) => near(a[0]) - near(b[0]))[0][1] : -1;
-      const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul, doubled, helper, tac, driver, pnr,
-        zone: zoned(defT), hug: (defT.protect_paint || 0) < -0.2,
-        box: defT.scheme === "box1", chaser: def.includes(defT.chaser) ? defT.chaser : null, droles: defT.roles || {},
-        star: off.reduce((a, b) => ((playerById[b].usage || 0) > (playerById[a].usage || 0) ? b : a)),   // their main scorer
-        dropper: null,   // drop coverage: whoever guards their biggest (set below, once the plan exists)
-        pressUntil: pressing(defT) ? t0 + Math.max(travel, dur * 0.45) : null };
+    // a double team: the defender whose man stands nearest the doubled player leaves him to help
+    const doubled = off.includes(ev.other) && (!resumed || defT.double_team) ? ev.other : null;   // called off in a timeout: no more
+    const near = (id) => Math.hypot(homeSpot[id].x - homeSpot[doubled].x, homeSpot[id].y - homeSpot[doubled].y);
+    const helper = doubled ? off.map((id, i) => [id, i]).filter(([id]) => id !== doubled).sort((a, b) => near(a[0]) - near(b[0]))[0][1] : -1;
+    const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul, doubled, helper, tac, driver, pnr, homeSpot,
+      rebound, ftShooter,
+      zone: zoned(defT), hug: (defT.protect_paint || 0) < -0.2,
+      box: defT.scheme === "box1", chaser: def.includes(defT.chaser) ? defT.chaser : null, droles: defT.roles || {},
+      star: off.reduce((a, b) => ((playerById[b].usage || 0) > (playerById[a].usage || 0) ? b : a)),   // their main scorer
+      dropper: null,   // drop coverage: whoever guards their biggest (set below, once the plan exists)
+      pressUntil: pressing(defT) && !resumed ? t0 + Math.max(travel, dur * 0.45) : null };
+    plan.zoneSpot = zoneSpots(plan);
+    defenseRoles(plan, defT);
+    plan.was = {}; plan.blend = {}; plan.arrive = {}; plan.ballFrom = inbound;
+    def.forEach((id, i) => {   // defenders run over from where they were, on their own path, at most VMAX
+      const was = where[id] || benchSpot(id), at = defenderAt(plan, i, t0 + Math.min(travel, dur * 0.85));
+      plan.was[id] = was;
+      plan.blend[id] = Math.min(Math.max(1.2, (1.5 * Math.hypot(at.x - was.x, at.y - was.y)) / VMAX), Math.max(1.2, dur * 0.85));
+      plan.arrive[id] = defenderAt(plan, i, t0 + plan.blend[id]);   // where he picks up his man
+    });
+
+    return plan;
+  }
+
+  function buildPlans() {
+    const plans = [];
+    const where = { ...TIP };    // last known position of every player
+    let carrier = null;          // who has the ball when the next possession starts
+    let inbound = null;          // after a basket or free throws: where the ball is when the next possession starts
+    const chanceAt = G.events.map((e, i) => (e.kind === "chance" ? i : -1)).filter((i) => i >= 0);
+    chanceAt.forEach((s, k) => {
+      const ev = G.events[s], next = k + 1 < chanceAt.length ? chanceAt[k + 1] : G.events.length;
+      const floor = [...ev.home_lineup, ...ev.away_lineup];
+      for (const id of Object.keys(where).map(Number)) if (!floor.includes(id)) delete where[id];   // went to the bench: comes back from it
+      // the calls in force (engine's chance event): the figures act them out on every possession,
+      // while the outcome stays the one the engine rolled
+      let plan = planSegment({ k, s, next, ev, start: ev.t, where, carrier, inbound, tac: ev.tactics || null, r: seeded(k + 1) });
       plans.push(plan);
-      plan.zoneSpot = zoneSpots(plan);
-      defenseRoles(plan, defT);
-      plan.was = {}; plan.blend = {}; plan.arrive = {}; plan.ballFrom = inbound;
-      def.forEach((id, i) => {   // defenders run over from where they were, on their own path, at most VMAX
-        const was = where[id] || benchSpot(id), at = defenderAt(plan, i, t0 + Math.min(travel, dur * 0.85));
-        plan.was[id] = was;
-        plan.blend[id] = Math.min(Math.max(1.2, (1.5 * Math.hypot(at.x - was.x, at.y - was.y)) / VMAX), Math.max(1.2, dur * 0.85));
-        plan.arrive[id] = defenderAt(plan, i, t0 + plan.blend[id]);   // where he picks up his man
+      // A tactic changed in a timeout during this possession: from that moment the coach's five play it, moving
+      // into it at running speed once play resumes; the other team only reacts on the court
+      restarts.filter((x) => x.s === s && x.at > plan.t0 + 0.05 && x.at < plan.t1 - 1).sort((a, b) => a.at - b.at).forEach((x, j) => {
+        const ours = plan.offKey === "home" ? "off" : "def";
+        plan = planSegment({ k, s, next, ev, start: x.at, where: positionsIn(plan, x.at), carrier: holderAt(plan, x.at), inbound: null,
+                             tac: withShape(ev.tactics || null, ev, x.tactic), r: seeded((k + 1) * 97 + j), keep: ours === "def" ? plan : null });
+        plans.push(plan);
       });
 
       // where everyone ends up (the next possession starts exactly there), and who has the ball
-      plan.ftShooter = ftShooter;
+      const { off, def, keys, final, rebound, ftShooter, basket, right, t1 } = plan, r = seeded(k + 7);
       for (const id of off) where[id] = track(keys[id], t1);
       for (let i = 0; i < def.length; i++) where[def[i]] = defenderAt(plan, i, t1);
       if (ftShooter) Object.assign(where, freeThrowFormation(plan, ftShooter));   // they were lined up for free throws
@@ -905,12 +925,19 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   function positionsAt(t) {
     const plan = planAt(t);
-    const pos = {};
     if (!plan) {   // before the opening tip: line up around the centre circle
-      const ids = [...(G.events[0].home_lineup || []), ...(G.events[0].away_lineup || [])];
+      const pos = {}, ids = [...(G.events[0].home_lineup || []), ...(G.events[0].away_lineup || [])];
       ids.forEach((id, i) => { const a = (i / ids.length) * Math.PI * 2; pos[id] = { x: 47 + Math.cos(a) * 8, y: 25 + Math.sin(a) * 8 }; });
       return { pos, plan: null };
     }
+    return { pos: positionsIn(plan, t), plan };
+  }
+  function holderAt(plan, t) {   // who has the ball at t (a pass in the air: whoever it's going to)
+    for (const seg of plan.ball) if (t >= seg.from && t <= seg.to) return seg.hold ?? (seg.pass ? seg.pass[1] : null);
+    return null;
+  }
+  function positionsIn(plan, t) {   // everyone's spot at time t in this plan
+    const pos = {};
     plan.off.forEach((id) => { pos[id] = track(plan.keys[id], t); });
     plan.def.forEach((id, i) => {
       let p = defenderAt(plan, i, t);
@@ -925,7 +952,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (plan.rebounder && pos[plan.rebounder] && t > plan.reboundT - 0.8) {   // he goes up for the rebound as the ball comes off
       pos[plan.rebounder] = lerp(pos[plan.rebounder], plan.reboundSpot, ease(Math.min(1, (t - (plan.reboundT - 0.8)) / 0.8)));
     }
-    return { pos, plan };
+    return pos;
   }
   function ballAt(t, plan, pos) {
     if (!plan) return { x: 47, y: 25, holder: null };
@@ -1445,7 +1472,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       $("tally").innerHTML = S.tally.good || S.tally.bad ? `your calls <span class="g">✓${S.tally.good} paid off</span> · <span class="b">✗${S.tally.bad} cost you</span>` : "";
     }
     place($("ball"), { x: ball.x, y: ball.y });
-    drawShape(plan, pos);
+    drawShape(plan, pos, t);
     renderCalls(plan);
 
     if (S.feed.length !== lastFeedLen) {
@@ -1461,9 +1488,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     renderChatter();
   }
   // A zone or a box-and-one, outlined on the floor through its defenders (the chaser: a dashed line to his man).
-  function drawShape(plan, pos) {
+  function drawShape(plan, pos, t) {
     const area = $("shape-area"), chase = $("shape-chase");
-    const ids = plan && plan.zoneSpot && !S.dead ? Object.keys(plan.zoneSpot).map(Number).filter((id) => pos[id]) : [];
+    const set = plan && plan.blend && t >= plan.t0 + Math.max(0, ...Object.values(plan.blend));   // once they've run into it
+    const ids = plan && plan.zoneSpot && !S.dead && set ? Object.keys(plan.zoneSpot).map(Number).filter((id) => pos[id]) : [];
     if (ids.length < 3) { area.setAttribute("points", ""); chase.setAttribute("x1", 0); chase.setAttribute("x2", 0); chase.setAttribute("y1", 0); chase.setAttribute("y2", 0); return; }
     const c = ids.reduce((m, id) => ({ x: m.x + pos[id].x / ids.length, y: m.y + pos[id].y / ids.length }), { x: 0, y: 0 });
     ids.sort((a, b) => Math.atan2(pos[a].y - c.y, pos[a].x - c.x) - Math.atan2(pos[b].y - c.y, pos[b].x - c.x));
@@ -1714,6 +1742,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const left = timeoutsLeft("home"), over = ended() && T >= totalT;
     $("play").textContent = over ? "↺ Replay" : !playing ? (T < 1 ? "▶ Tip-off" : "▶ Resume") : !LIVE ? "⏱ Timeout" : left > 0 ? `⏱ Timeout · ${left} left` : "No timeouts left";
     $("play").disabled = playing && LIVE && left <= 0 && !over;
+    for (const row of rows) {   // the tactic and the roles: set them in a timeout (or before the tip-off)
+      row.role.disabled = playing;
+      if (playing) row.role.title = "Call a timeout to change the tactic"; else row.roleKey = "";   // its own title again
+    }
     if (playing) Sound.startBed(); else Sound.stopBed();
     lastFrame = null;
     if (playing) requestAnimationFrame(frame);
@@ -1987,11 +2019,17 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     return `${part(PLAYS[tactic.play])} · ${part(SCHEMES[tactic.scheme])}`;
   }
   // The tactic as engine levers: the play's and the scheme's team levers, and what the roles mean for who gets the ball.
-  async function sendTactic(stopDouble = false) {
+  async function sendTactic(stopDouble = false, now = true) {
     fillRoles();
-    shapeFrom = { at: T, events: G.events.length };   // the court shows it from now; the engine from the next possession
-    plans = buildPlans(); startOf = plans.map((p) => p.t0); settleTimes();
-    render(T);   // even in a timeout: they move into it now
+    // In a timeout during a possession, your five play it from this moment: nobody moves while the timeout lasts,
+    // then they run into it, and the other team only reacts on the court. The engine plays it from the next possession.
+    const at = planAt(T);
+    if (now && !playing && at && T > at.t0 && T < at.t1 - 1) {
+      const same = restarts.find((x) => x.s === at.s && x.at === T), snap = JSON.parse(JSON.stringify(tactic));
+      if (same) same.tactic = snap; else restarts.push({ s: at.s, at: T, tactic: snap });
+      plans = buildPlans(); startOf = plans.map((p) => p.t0); settleTimes();
+      render(T);
+    }
     const r = tactic.roles, play = PLAYS[tactic.play], scheme = SCHEMES[tactic.scheme];
     const raw = { team: { ...(play.team || {}), ...(scheme.team || {}) }, players: [], roles: r, unmapped: [] };
     if (tactic.play !== "free") raw.play = tactic.play;
@@ -2071,7 +2109,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       render(T);
       let handedOver = false;
       for (const [r, id] of Object.entries(tactic.roles)) if (id === out) { tactic.roles[r] = inn; handedOver = true; }   // he takes over the role
-      if (handedOver) sendTactic(); else { updateTalk(); renderHelper(); }
+      if (handedOver) sendTactic(false, false); else { updateTalk(); renderHelper(); }   // he takes the role from the next possession
     } catch (err) {
       addHuman({ t: T, speaker: "note", text: `Couldn't make the substitution (${err.message}).`, kind: "note" });
     }
@@ -2644,7 +2682,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   addHuman({ t: 0, speaker: "note", text: LIVE ? `Live game. Press Tip-off. You have ${TIMEOUTS_AT_TIP.home} timeouts: the same button stops play to talk to your players. A call is sent at once and changes the game from the next possession.` : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
   window.courtside = {   // for checking the page from the console
     lines: () => S.chatter.length, seek, rows, fetchNext, events: () => G.events, showCredit, advance,
-    trash: (i, text) => sendTrash(text, rows[i]), draw: () => render(T),
+    trash: (i, text) => sendTrash(text, rows[i]), draw: () => render(T), at: (t) => positionsAt(t).pos,
     state: () => ({ events: G.events.length, done: G.done === true, periods: G.periods, T, bufferEnd: bufferEnd(), plans: plans.length }),
   };
 })();

@@ -55,6 +55,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - Thirteenth follow-up (Oct 5): the court acts out the tactic shown in the talk panel at once (the engine follows from the next possession); the 2-3 zone and the box-and-one stand on their spots, slide with the ball and are outlined on the floor; no more sprints across the floor at possession starts.
 - Fourteenth follow-up (Oct 6): at the break the players walk into the next possession's tactic and it starts from there; the court draws every tactic as the helper does (the helper is drawn from the court's own formation); drop coverage, blitz, isolation and motion look like themselves; a 🗯 trash-talk button rattles or fires up his man (confidence ±0.05); the language choice is gone.
 - Fifteenth follow-up (Oct 6): the Play button is now the timeout (whistle; 15 a game, each a real breather in the engine, never spent by the scripted coach); the stop after every possession is gone.
+- Sixteenth follow-up (Oct 6): tactics and roles change only in a timeout; a change continues the possession from that moment (nobody moves during the timeout, your five run into it after, the other team only reacts) instead of redrawing it from its start.
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next
