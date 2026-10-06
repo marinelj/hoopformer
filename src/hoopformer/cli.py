@@ -84,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument("--use", choices=("auto", "qwen", "openai", "rules"), default="auto",
                       help="translator for your words (auto: the first LLM with a key set, else rules)")
     live.add_argument("--data-dir", type=Path, default=Path("data"))
+    live.add_argument("--debug", action="store_true", help="the debug page: the engine's numbers and the explanations too")
+    live.add_argument("--host", default="127.0.0.1",
+                      help="who can connect: 127.0.0.1, this computer only (default); 0.0.0.0, your local network too (a phone)")
 
     talk = commands.add_parser("coach", help="translate a coach's words into levers (Qwen or OpenAI, or keyword rules without a key)")
     talk.add_argument("words", nargs="?", help='e.g. "Push the pace and run their shooters off the line"')
@@ -335,7 +338,7 @@ def serve_command(args) -> int:
     courtside = Courtside(model, lever_limits(args.data_dir, args.season), args.home, args.away, use=args.use,
                           unmapped_log=args.data_dir / "derived" / "unmapped.jsonl",
                           boost=BOOST if args.boost is None else args.boost,
-                          half_life=CALL_HALF_LIFE if args.half_life is None else (args.half_life or None))
+                          half_life=CALL_HALF_LIFE if args.half_life is None else (args.half_life or None), debug=args.debug)
     if args.home.upper() not in courtside.by_code or args.away.upper() not in courtside.by_code:
         print(f"unknown team; choose from {' '.join(sorted(courtside.by_code))}")
         return 1
@@ -343,8 +346,8 @@ def serve_command(args) -> int:
         provider = next((name for name, config in PROVIDERS.items() if os.environ.get(config["key"])), "rules (no API key set)")
     else:
         provider = args.use
-    server = serve(courtside, args.port)
-    print(f"Courtside live: http://127.0.0.1:{args.port}/   {args.away.upper()} at {args.home.upper()}, your words go to {provider}")
+    server = serve(courtside, args.port, args.host)
+    print(f"Courtside live: http://127.0.0.1:{args.port}/{'?debug=1' if args.debug else ''}   {args.away.upper()} at {args.home.upper()}, your words go to {provider}")
     print("Open it in Chrome or Safari. Ctrl+C stops the server.")
     try:
         server.serve_forever()

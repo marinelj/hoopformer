@@ -184,6 +184,20 @@ def test_the_coach_has_fifteen_timeouts_and_each_is_a_breather(server):
     assert not out["called"] and out["events"] == [], "none left: nothing happens"
 
 
+
+def test_a_new_game_comes_as_data_for_the_wechat_client(server):
+    """GET /api/new starts a game like the page does and returns the data the page embeds: teams, players with their
+    archetypes, the events so far, and each team's timeouts."""
+    base, courtside = server
+    status, body = get(f"{base}/api/new?home=OKC&away=BOS&seed=7")
+    data = json.loads(body)
+    players = data["home"]["players"]
+    print(status, data["home"]["tricode"], len(players), "players;", [(p["name"], p["archetype"]) for p in players[:3]], data["timeouts"])
+    assert status == 200 and data["live"] and data["seed"] == 7 and data["events"][0]["kind"] == "period_start"
+    assert all(p["archetype"] for p in players) and data["timeouts"]["home"] == 15 and data["debug"] is False
+    assert courtside.live.game.seed == 7, "the game it describes is the one the API plays on"
+
+
 def test_bad_requests_are_refused(server):
     base, _ = server
     with pytest.raises(urllib.error.HTTPError) as error:

@@ -9,7 +9,8 @@ The coach's words go to the server, which calls the translator (the language
 model). The API key stays here: the browser never sees it.
 
 Routes:
-- GET  /            a new game (query: home, away, seed), as the live page
+- GET  /            a new game (query: home, away, seed), as the live page (the web client)
+- GET  /api/new     a new game the same way, as data (the WeChat client draws it itself)
 - GET  /api/next    play the next possession; returns its events
 - POST /api/say     {"text", "to"}: translate the words and apply them
 - POST /api/tactics {"raw", "words"}: the coach's tactic: a set play or a defensive scheme, its levers and who
@@ -107,12 +108,17 @@ class LiveGame:
     def names(self) -> dict[int, str]:
         return {pid: a.profile.name for side in (self.game.home, self.game.away) for pid, a in side.athletes.items()}
 
-    def page(self) -> str:
+    def data(self, debug: bool = False) -> dict:
+        """What a client starts from: the teams and players (with their archetypes), the events so far, the monitor.
+        debug: the web page shows the engine's numbers and the explanations too."""
         with self.lock:
             data = replay_data(self.game.result(), self.model)
             monitor = self.game.monitor(self.game.home)
         timeouts = {"home": COACH_TIMEOUTS, "away": TIMEOUTS}   # each team's timeouts at tip-off
-        return replay_html({**data, "live": True, "done": self.game.done, "monitor": monitor, "timeouts": timeouts})
+        return {**data, "live": True, "done": self.game.done, "monitor": monitor, "timeouts": timeouts, "debug": debug}
+
+    def page(self, debug: bool = False) -> str:
+        return replay_html(self.data(debug))
 
     def status(self, events: list) -> dict:
         game = self.game
@@ -253,9 +259,10 @@ class Courtside:
     """What the server knows: the model, the lever limits, and the game being played."""
 
     def __init__(self, model: ActionModel, limits: dict, home: str, away: str, use: str = "auto",
-                 unmapped_log: Path | None = None, boost: float = levers.BOOST, half_life: float | None = levers.CALL_HALF_LIFE):
+                 unmapped_log: Path | None = None, boost: float = levers.BOOST, half_life: float | None = levers.CALL_HALF_LIFE,
+                 debug: bool = False):
         self.model, self.limits, self.use, self.unmapped_log = model, limits, use, unmapped_log
-        self.boost, self.half_life = boost, half_life
+        self.boost, self.half_life, self.debug = boost, half_life, debug
         self.by_code = {team.tricode: team.team_id for team in model.teams.values()}
         self.home, self.away = home, away
         self.live: LiveGame | None = None
@@ -289,7 +296,7 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:
             url = urlparse(self.path)
-            if url.path == "/":
+            if url.path in ("/", "/api/new"):
                 query = {key: values[0] for key, values in parse_qs(url.query).items()}
                 try:
                     live = courtside.new_game(query.get("home"), query.get("away"),
@@ -297,7 +304,10 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
                 except ValueError as exc:
                     self.reply(400, str(exc), "text/plain")
                     return
-                self.reply(200, live.page(), "text/html")
+                if url.path == "/":
+                    self.reply(200, live.page(courtside.debug), "text/html")
+                else:
+                    self.reply(200, json.dumps(live.data(courtside.debug)))
             elif url.path == "/api/next" and courtside.live:
                 self.answer(courtside.live.next)
             elif url.path == "/favicon.ico":
@@ -331,6 +341,7 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def serve(courtside: Courtside, port: int = 8000) -> ThreadingHTTPServer:
-    """A server for this computer only (127.0.0.1). Call serve_forever() on it, or shutdown() to stop."""
-    return ThreadingHTTPServer(("127.0.0.1", port), handler_for(courtside))
+def serve(courtside: Courtside, port: int = 8000, host: str = "127.0.0.1") -> ThreadingHTTPServer:
+    """A server for this computer only (127.0.0.1), or for the local network too (host 0.0.0.0: a phone running the
+    WeChat client). Call serve_forever() on it, or shutdown() to stop."""
+    return ThreadingHTTPServer((host, port), handler_for(courtside))

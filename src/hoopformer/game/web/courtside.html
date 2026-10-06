@@ -133,6 +133,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .tabs button { flex: 1; background: transparent; border: 0; padding: 9px 8px; font-weight: 600; color: var(--muted); }
 .tabs button[aria-selected="true"] { color: var(--text); box-shadow: inset 0 -2px 0 var(--led); }
 .feed { list-style: none; margin: 0; padding: 6px 0; height: 190px; overflow-y: auto; }
+/* production: the game and the coaching only (debug: hoopformer serve --debug, or ?debug=1) */
+.production .players-panel, .production .monitor-panel, .production #chat-note, .production .eyebrow, .production .talk-head .note,
+.production .chatter-head .note { display: none !important; }
+.production .court-card .feed-panel { margin-top: 12px; }
+.production .court-card .feed { height: 260px; }
 .feed li { display: grid; grid-template-columns: 58px 40px 1fr; gap: 8px; padding: 5px 12px; font-size: 13px; border-bottom: 1px solid rgba(38, 47, 63, 0.55); }
 .feed li .clk, .feed li .score { font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .feed li .tm { font-family: var(--display); font-weight: 600; }
@@ -365,7 +370,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         <ol class="chatter" id="chatter" aria-live="polite"></ol>
       </div>
 
-      <div class="panel">
+      <div class="panel feed-panel" id="feed-panel">
         <div class="tabs" role="tablist">
           <button role="tab" id="tab-feed" aria-selected="true" type="button">Play-by-play</button>
           <button role="tab" id="tab-box" aria-selected="false" type="button">Box score</button>
@@ -405,10 +410,18 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const periodStart = (p) => p <= 4 ? (p - 1) * PERIOD : 4 * PERIOD + (p - 5) * OT;
   const periodLabel = (p) => p <= 4 ? ["1ST", "2ND", "3RD", "4TH"][p - 1] + " QTR" : (p === 5 ? "OT" : `${p - 4}OT`);
 
+  // Production (the default) is the game and the coaching; debug (hoopformer serve --debug, or ?debug=1 on the page)
+  // adds the engine's numbers (Your players, Engine monitor) and the explanations
+  const DEBUG = G.debug === true || new URLSearchParams(location.search).has("debug");
+  document.body.classList.toggle("production", !DEBUG);
+  if (!DEBUG) $("players-panel").before($("feed-panel"));   // the play-by-play takes Your players' place, under the court
+  if (!DEBUG && !LIVE) $("source-note").hidden = true;
+
   // header, scoreboard, paint
   $("meta").textContent = `${LIVE ? "Live game" : "Simulated game"} · ${G.away.name} at ${G.home.name} · seed ${G.seed} · ${G.season}`;
   if (LIVE) {
-    $("source-note").innerHTML = `Live: the engine plays one possession at a time, and what you say changes the game from the next one. <a href="/?home=${G.home.tricode}&away=${G.away.tricode}" style="color:var(--led)">New game</a>`;
+    const newGame = `<a href="/?home=${G.home.tricode}&away=${G.away.tricode}${DEBUG ? "&debug=1" : ""}" style="color:var(--led)">New game</a>`;
+    $("source-note").innerHTML = DEBUG ? `Live: the engine plays one possession at a time, and what you say changes the game from the next one. ${newGame}` : newGame;
   }
   for (const key of ["home", "away"]) {
     $(`${key}-code`).textContent = sides[key].tricode;
@@ -2918,7 +2931,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     $("monitor").textContent = "This server was started before the engine monitor existed. Stop it (Ctrl+C) and run uv run hoopformer serve again.";
   }
   updateTalk();
-  addHuman({ t: 0, speaker: "note", text: LIVE ? `Live game. Press Tip-off. You have ${TIMEOUTS_AT_TIP.home} timeouts: the same button stops play to talk to your players. A call is sent at once and changes the game from the next possession.` : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
+  if (DEBUG) addHuman({ t: 0, speaker: "note", text: LIVE ? `Live game. Press Tip-off. You have ${TIMEOUTS_AT_TIP.home} timeouts: the same button stops play to talk to your players. A call is sent at once and changes the game from the next possession.` : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
   window.courtside = {   // for checking the page from the console
     lines: () => S.chatter.length, seek, rows, fetchNext, events: () => G.events, showCredit, advance,
     trash: (i, text) => sendTrash(text, rows[i]), draw: () => render(T), at: (t) => positionsAt(t).pos,
