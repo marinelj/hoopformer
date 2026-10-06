@@ -7,5 +7,6 @@ This repo is the project's shared memory: read `docs/DESIGN.md`, `docs/GAME_DESI
 - **stats.nba.com only answers from marinelj's Mac,** not from cloud machines or sandboxed shells. Code that needs the network must be run there.
 - **API keys** (Qwen: `DASHSCOPE_API_KEY`, OpenAI: `OPENAI_API_KEY`) live in the shell profile or a git-ignored `.env`. Never write a key into code, docs, tests, logs or commits.
 - **Tests.** Every function gets a test on real data, no mocks. Print what the test sees, so a failing run explains itself. `uv run pytest` runs the offline tests; `uv run pytest -m network` runs the ones that hit stats.nba.com.
+- **Two clients, one game.** The web page (`clients/web`) and the WeChat Mini Program (`clients/wechat`) share the court's rules in `clients/core/court.js`; after changing it, run `uv run hoopformer clients` (the Mini Program keeps a copy). See `clients/README.md`.
 - **Keep it simple.** Plain functions, no abstractions until a second use needs them.
 - **Explain the why.** marinelj is learning ML through this project: every commit comes with a short note on what changed and why.

@@ -1,0 +1,13 @@
+{
+  "pages": ["pages/game/game"],
+  "window": {
+    "navigationBarTitleText": "Courtside",
+    "navigationBarBackgroundColor": "#0b0e14",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0b0e14"
+  },
+  "resizable": true,
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

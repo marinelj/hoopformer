@@ -88,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument("--host", default="127.0.0.1",
                       help="who can connect: 127.0.0.1, this computer only (default); 0.0.0.0, your local network too (a phone)")
 
+    commands.add_parser("clients", help="copy the court's shared rules (clients/core/court.js) into the WeChat client")
+
     talk = commands.add_parser("coach", help="translate a coach's words into levers (Qwen or OpenAI, or keyword rules without a key)")
     talk.add_argument("words", nargs="?", help='e.g. "Push the pace and run their shooters off the line"')
     talk.add_argument("--to", help='the player you\'re talking to, e.g. "Shai Gilgeous-Alexander" (default: the whole team)')
@@ -211,6 +213,12 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = coach_command(args)
     if args.command == "serve":
         exit_code = serve_command(args)
+    if args.command == "clients":
+        from hoopformer.game.replay import CLIENTS
+
+        source, copy = CLIENTS / "core" / "court.js", CLIENTS / "wechat" / "core" / "court.js"
+        copy.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")   # a Mini Program only loads its own files
+        print(f"{copy} now matches {source}")
     if args.command == "baselines":
         import pandas as pd
 

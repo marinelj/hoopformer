@@ -1,0 +1,16 @@
+{
+  "description": "Hoopformer Courtside: coach a live game. The WeChat client of the same engine as the web page.",
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "hoopformer-courtside",
+  "libVersion": "3.0.0",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true
+  },
+  "packOptions": { "ignore": [], "include": [] },
+  "condition": {}
+}

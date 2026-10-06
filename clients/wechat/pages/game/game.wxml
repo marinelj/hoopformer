@@ -1,0 +1,58 @@
+<view class="page {{landscape ? 'landscape' : 'portrait'}}">
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+
+  <!-- the court and the score -->
+  <view class="stage" style="width: {{courtW}}px">
+    <view class="board">
+      <view class="team"><view class="stripe" style="background: {{board.awayColor}}"></view><text class="code">{{board.awayCode}}</text><text class="pts">{{board.awayPts}}</text></view>
+      <view class="clocks"><text class="period">{{period}}</text><text class="clock">{{clock}}</text><text class="shot">{{shot}}</text></view>
+      <view class="team home"><text class="pts">{{board.homePts}}</text><text class="code">{{board.homeCode}}</text><view class="stripe" style="background: {{board.homeColor}}"></view></view>
+    </view>
+    <view class="court-box" style="height: {{courtH}}px">
+      <canvas type="2d" id="court" class="court" style="width: {{courtW}}px; height: {{courtH}}px" bindtap="tapCourt"></canvas>
+      <view wx:if="{{banner}}" class="banner">{{banner}}</view>
+      <view class="callout {{callout.show ? 'show' : ''}} {{callout.kind}}"><text class="big">{{callout.big}}</text><text class="small">{{callout.small}}</text></view>
+    </view>
+    <view class="strip"><text>{{strip}}</text></view>
+  </view>
+
+  <!-- the coaching: the Timeout button, then the rows or the play-by-play -->
+  <view class="panel" style="{{landscape ? 'width: ' + panelW + 'px' : ''}}">
+    <view class="controls">
+      <view class="play {{inTimeout ? 'resume' : ''}} {{timeoutDisabled ? 'off' : ''}}" bindtap="pressPlay">{{playLabel}}</view>
+      <view class="tabs">
+        <view class="tab {{tab === 'coach' ? 'on' : ''}}" data-tab="coach" bindtap="setTab">Coach</view>
+        <view class="tab {{tab === 'plays' ? 'on' : ''}}" data-tab="plays" bindtap="setTab">Play-by-play</view>
+      </view>
+    </view>
+
+    <scroll-view wx:if="{{tab === 'coach'}}" scroll-y class="body {{inTimeout ? 'lit' : ''}}">
+      <view class="phase">{{phaseLabel}}<text wx:if="{{locked}}" class="lock"> · tactics in a timeout</text></view>
+      <view class="row team-row">
+        <view class="who"><text class="nm">All team</text><text class="kind">tactic</text></view>
+        <picker class="pick" range="{{tactics}}" range-key="name" value="{{tacticIndex}}" disabled="{{locked}}" bindchange="pickTactic">
+          <view class="pick-face {{locked ? 'locked' : 'tactic'}}">{{tactics[tacticIndex].name}}</view>
+        </picker>
+        <picker class="pick" range="{{teamCalls}}" range-key="label" data-i="team" bindchange="pickCall"><view class="pick-face">Call…</view></picker>
+        <view class="icon" data-kind="say" data-i="team" bindtouchstart="voiceStart" bindtouchend="voiceEnd">🎙</view>
+        <view class="icon" data-kind="trash" data-i="team" bindtouchstart="voiceStart" bindtouchend="voiceEnd">🗯</view>
+      </view>
+      <view class="row" wx:for="{{rows}}" wx:key="id">
+        <view class="who"><text class="nm">{{item.name}}</text><text class="kind">{{item.kind}}</text></view>
+        <picker class="pick" range="{{item.roles}}" range-key="label" value="{{item.roleIndex}}" disabled="{{locked}}" data-i="{{index}}" bindchange="pickRole">
+          <view class="pick-face {{locked ? 'locked' : ''}}">{{item.roleLabel}}</view>
+        </picker>
+        <picker class="pick" range="{{item.calls}}" range-key="label" data-i="{{index}}" bindchange="pickCall"><view class="pick-face">Call…</view></picker>
+        <view class="icon" data-kind="say" data-i="{{index}}" bindtouchstart="voiceStart" bindtouchend="voiceEnd">🎙</view>
+        <view class="icon" data-kind="trash" data-i="{{index}}" bindtouchstart="voiceStart" bindtouchend="voiceEnd">🗯</view>
+      </view>
+      <view class="helper"><text class="helper-name">{{helper.name}}</text><text class="helper-say">{{helper.say}}</text></view>
+    </scroll-view>
+
+    <scroll-view wx:if="{{tab === 'plays'}}" scroll-y class="body">
+      <view class="feed" wx:for="{{feed}}" wx:key="key">
+        <text class="fclk">{{item.clock}}</text><text class="ftm" style="color: {{item.color}}">{{item.team}}</text><text class="ftx">{{item.text}}</text>
+      </view>
+    </scroll-view>
+  </view>
+</view>

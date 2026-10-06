@@ -58,6 +58,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - Sixteenth follow-up (Oct 6): tactics and roles change only in a timeout; a change continues the possession from that moment (nobody moves during the timeout, your five run into it after, the other team only reacts) instead of redrawing it from its start.
 - Seventeenth follow-up (Oct 6): no teleports at possession ends (free throws walked to, the ball carried from where it was, the next possession drawn only once it starts; one 4 ft ball flick left in a whole game, checked frame by frame); live second chances last at least 1.5 s; every player always has a role, and your own picks take their roles back after a substitution.
 - Eighteenth follow-up (Oct 6): player archetypes from each player's own numbers (Jordan a two-way scoring dominator, Klay a 3-and-D wing: tested), and every player moves by his; five scripted set plays (Elevator, Horns, Spain pick-and-roll, Floppy, Hammer) and two defenses (1-3-1, triangle-and-two), played exactly as the helper draws them.
+- Nineteenth follow-up (Oct 6): a production page (the default; debug with --debug or ?debug=1); the project now has two clients in clients/ (the web page and a WeChat Mini Program, compact in portrait and landscape) sharing the engine on the server and the court's rules in clients/core/court.js.
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next

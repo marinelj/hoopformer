@@ -499,6 +499,28 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   Both are drawn and outlined on the floor; the strip names each chaser's man.
 - **The tactics' numbers come from their definitions** (`focus`, `prefer`, `pressers` in `PLAYS`/`SCHEMES`): who the play runs through, who it wants shooting from where, who presses. The engine hears them, and the call lists leave out what they already decide.
 
+**Nineteenth follow-up (Oct 6): a production page, and two clients sharing one game.**
+- **Production and debug.**
+  - `hoopformer serve` shows the production page: the game and the coaching. The play-by-play sits under the court, where "Your players" was.
+  - The debug page (`--debug`, or `?debug=1`) keeps everything: the engine panels ("Your players", "Engine monitor") and the explanations.
+- **The project now has two clients** (`clients/`, see `clients/README.md`):
+  - **One engine.** The engine, the players' numbers, the levers and the coach's rules run once, in Python, behind `hoopformer serve`. Both clients use the same API, plus `GET /api/new` (a game as data) and `--host` (a phone on the local network).
+  - **One copy of the court's rules:** `clients/core/court.js`, a module with no page code. It holds:
+    - the choreography: every player's position at every moment of a possession;
+    - the tactics, the roles and who fits them;
+    - the archetype styles and the call catalog;
+    - the coach's tactic handling, the clock and the calls strip.
+
+    It was moved out of the web page, which now calls it; a whole game played through it, frame by frame (117,069 frames), has no jumps. It avoids syntax newer than ES2017 (checked with a parser), for older phones.
+  - **The web page** (`clients/web/courtside.html`) is assembled by the server with the core inlined.
+  - **The WeChat Mini Program** (`clients/wechat`) draws the court on a canvas from the same core, with the same timing (0.8x, the dead-ball walk to the line). It is compact and turns with the phone:
+    - portrait: a slim scoreboard, the court the full width, a strip, the Timeout button, and two tabs (Coach, Play-by-play);
+    - landscape: the court on the left, the coaching column on the right.
+
+    The coaching is the same as on the web: tactics and roles in a timeout only, a call per player or for the team, 🎙 and 🗯 (typed until the WechatSI speech plugin is added), 15 timeouts with a whistle (`assets/whistle.wav`, the web page's two tones).
+  - **How the WeChat client was checked** (no WeChat DevTools on this machine): its page code ran in a browser against the live server, with stand-ins for WeChat's request, canvas and dialog APIs. It played 600 game seconds (40 possessions, no jumps) and called a timeout, set an isolation for Jordan (the possession continued in it), made a call and talked trash ("BRYANT RATTLED"). Its layout and styles still need a look in WeChat DevTools.
+  - `hoopformer clients` copies the core into the Mini Program (it can only load its own files); `tests/test_clients.py` checks the copy matches, the web page carries the core, and the Mini Program has all its files.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).
