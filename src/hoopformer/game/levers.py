@@ -78,6 +78,10 @@ CONFIDENCE_SHOT = 0.1
 CONFIDENCE_USAGE = 0.4     # his share of chances x (1 + 0.4 x (confidence - 0.5)): 0.65 -> x1.06, 0.35 -> x0.94
 CONFIDENCE_QUALITY = 0.08  # his makes x (1 - 0.08 x (confidence - 0.5)): 0.65 -> x0.988, 0.35 -> x1.012
 CONFIDENCE_PLAY = 0.05     # assumed: a turnover costs this much, a steal or a block earns it
+# Trash talk (assumed): it reaches his man's confidence as much as a steal or a block, half that for each of
+# their five when the whole team talks. Cold players get rattled (down), hot ones feed off it (up).
+TRASH_TALK = 0.05
+TRASH_RATTLE = (0.2, 0.8)  # the chance he is rattled: 0.5 + (0.5 - his confidence) + half the talker's lead, kept in here
 
 # Game mode. The measured limits make a faithful simulation, where one call moves a stat by a few percent:
 # true to the NBA, but too small to feel in a game. The live app plays with every coached effect stretched

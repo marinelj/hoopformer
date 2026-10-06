@@ -214,7 +214,7 @@ Decision: real players, for a private prototype. The risk to remember: analysing
     | Run it through X / double-team X / foul late | focus X / double_team X / late_foul |
     | Motion offense, switch everything | no lever yet: logged as unmapped |
 
-  - **Voice:** hold 🎙, speak, release: the browser's own speech recognition shows the words over the row's list as you speak and sends them to the language model on release. Pick English or 中文 next to "Hold 🎙 to speak" (Qwen understands both). Chrome sends the audio to Google's speech service; Safari uses Apple's (Siri must be on). The browser asks for the microphone once; a press made while that prompt is open is finished when you answer it. Every failure (nothing heard, released too soon, microphone blocked, no connection to the speech service) shows up as a 🎙 note in the chatter.
+  - **Voice:** hold 🎙, speak, release: the browser's own speech recognition shows the words over the row's list as you speak and sends them to the language model on release. The voice is English (the language choice was removed in the fourteenth follow-up). Chrome sends the audio to Google's speech service; Safari uses Apple's (Siri must be on). The browser asks for the microphone once; a press made while that prompt is open is finished when you answer it. Every failure (nothing heard, released too soon, microphone blocked, no connection to the speech service) shows up as a 🎙 note in the chatter.
   - **Double teams on the court:** each possession records the player the defense is doubling (`Event.other` on the chance), and the defender whose man stands nearest leaves to help, so two figures stand on the doubled player, whose tag shows ×2.
 - **Measured:** a whole game streams in about 200 possession requests in 1.2 seconds on this Mac, so the engine never makes the page wait. Tests run a real server on a free port (`tests/test_server.py`).
 - **Not yet:** two human coaches; an AI coach that talks; voice tested by marinelj (the browser pane Claude uses can't grant a microphone).
@@ -403,6 +403,30 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - on a one-second putback chance, players ran all the way to their set spots; they now go only as far as they can.
 
   Over a minute and a half of play, the 99th percentile of running speed fell from 37 to 26 ft/s (an NBA sprint is about 25-30). The remaining jumps are dead-ball glides (free-throw line-ups, a tactic switch).
+
+**Fourteenth follow-up (Oct 6): every tactic on the court as the helper draws it; trash talk.**
+- **Why an isolation didn't look like one:** three causes.
+  - The court redrew only while the game played, so a tactic picked while paused moved nobody.
+  - Every possession began with a run up the floor, so the shape appeared only seconds in.
+  - The court drew every play as the mirror image of the helper, then flipped half the possessions at random.
+- **The break is now when they set up.** While the break is open (the clock is stopped), the ten on the floor walk from where the last possession ended into the next one's shape: the offense at its play's spots, the defense in its scheme. Against a full-court press, the offense stays back and the pressers pick them up there.
+  - Picking a tactic, a role or a substitute re-routes them at once.
+  - The next possession starts exactly where they stand, so the run up the floor happened during the break, and its first action comes after about a second instead of three or four.
+  - With "Stop after every possession" off, possessions still start with the run up the floor.
+- **Picking a tactic while paused** redraws the possession in progress with it; everyone glides into the new shape.
+- **The court and the helper agree.** The court draws a play exactly as the helper does, turned to face the basket, never mirrored. The helper now draws your five where the court will put them, from the same function (`shapeFor`), for every tactic except the press, which happens full court and stays a sketch. Checked at the break for all 8 plays and 6 half-court defenses: every player within 0.1 ft of his helper dot. Through a whole possession (isolation, 2-3 zone, box-and-one, blitz), players stayed within about 6 ft of their spots while cutting, and the zone and the box slid as one block toward the ball.
+- **Tactics that looked like something else:**
+  - Drop coverage was drawn as a 2-3 zone, because it packs the paint; a zone is now drawn only for the 2-3 zone (or for the other coach's pack-the-paint call).
+  - Blitz was drawn as a full-court press; it now sends the man on their big at the ball handler, together with the handler's own man (marked ×2).
+  - In an isolation the ball handler kept the ball while the scorer drove without it; the scorer now gets the ball early and keeps it.
+  - Motion offense now keeps cutting to the basket and back out.
+  - A new play's focus replaces the old play's (the strip said "triangle · through Jordan").
+- **Trash talk (🗯, next to 🎙 in every row):** hold it and say it. It goes to the opponent he's matched with: his man, the man guarding him, or in a zone the nearest. From the All team row, it goes to their whole five.
+  - The opponent answers over his head and in the chatter. A callout says whether he was rattled (green) or fired up (red), with what changed.
+  - `Game.trash_talk` moves his confidence by 0.05 (as much as a steal or a block; assumed), and with it his share of their chances (Athlete.usage). The whole team: 0.025 each.
+  - Cold players are rattled more often and hot ones feed off it: the chance of rattling him is 0.5 + (0.5 − his confidence) + half the talker's lead, kept between 0.2 and 0.8. Measured over 400 games: 72.5% rattled at confidence 0.3, 29.5% at 0.7.
+  - It has its own random numbers, so talking never changes the rest of the game's dice. What is said doesn't matter yet; who says it to whom does. Route: `POST /api/trash`.
+- **The language choice (English / 中文) is gone:** voice is English.
 
 ## 10. Open questions for marinelj
 

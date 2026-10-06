@@ -15,6 +15,8 @@ Routes:
 - POST /api/tactics {"raw", "words"}: the coach's tactic: a set play or a defensive scheme, its levers and who
   plays which role (no language model needed). The coach has no timeouts: the game stops after every possession.
 - POST /api/call    {"raw", "words", "to"}: a call picked from a talk row's list (one step on each lever it names)
+- POST /api/trash   {"text", "from", "to"}: one of our players (or the whole team, from null) talks trash to his man
+  (or their whole team, to null); they answer, rattled or fired up, and their confidence moves a little
 """
 
 from __future__ import annotations
@@ -49,6 +51,11 @@ BACKING_OFF = {  # the same levers called the other way
 }
 
 TACTICS = "Tactics: "  # how the tactics panel's directives are marked, so a new plan replaces the old one
+TRASH_BACK = {  # an opponent's answer to trash talk: (rattled, fired up)
+    True: ["Man, just play.", "Whatever.", "Get out of my face.", "You talk too much.", "Not now.", "Shut up and guard me."],
+    False: ["Keep talking. Watch this.", "You just woke me up.", "Bad idea.", "Say that again after this bucket.",
+            "Oh, now I'm locked in.", "Let's go then!"],
+}
 
 
 def impact(before: dict, after: dict, top: int = 3) -> list[str]:
@@ -178,6 +185,34 @@ class LiveGame:
             return {**self.status(events), "levers": described, "reply": instruction.reply, "impact": changes,
                     "replier": instruction.replier, "unmapped": instruction.unmapped}
 
+    def trash(self, text: str, talker: int | None, target: int | None) -> dict:
+        """Trash talk from one of our players to his man, or from the whole team to theirs (no language model:
+        what is said doesn't matter, who says it to whom does). The one it reached answers."""
+        game = self.game
+        with self.lock:
+            talker = talker if talker in game.home.lineup else None
+            done = game.trash_talk(game.home, talker, target)
+            names = self.names()
+
+            def last(pid):
+                return names[pid].split()[-1]
+
+            reached = done["players"]
+            if not reached:
+                return {**self.status([]), "reply": None, "replier": None, "rattled": False, "effect": []}
+            replier = max(reached, key=lambda r: r["share"][0])["id"]   # his man, or their main scorer for the team
+            reply = game.talk_rng.choice(TRASH_BACK[done["rattled"]])
+            how = "rattled" if done["rattled"] else "fired up"
+            if len(reached) == 1:   # his share of their chances moves with his confidence
+                r = reached[0]
+                effect = [f"{last(r['id'])} {how}: confidence {r['confidence'][0]:.2f} → {r['confidence'][1]:.2f}, "
+                          f"takes {100 * r['share'][0]:.1f}% → {100 * r['share'][1]:.1f}% of their chances"]
+            else:   # all five move together, so their shares hardly do
+                was, now = (sum(r["confidence"][k] for r in reached) / len(reached) for k in (0, 1))
+                effect = [f"{game.away.tricode} {how}: confidence {was:.2f} → {now:.2f} on average, all five"]
+            return {**self.status([]), "reply": reply, "replier": replier, "rattled": done["rattled"], "effect": effect,
+                    "reached": [r["id"] for r in reached]}
+
     def tactics(self, raw: dict, words: str) -> dict:
         game, side = self.game, self.game.home
         with self.lock:
@@ -265,6 +300,8 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
                 self.answer(lambda: live.call(body.get("raw") or {}, str(body.get("words", ""))[:200], body.get("to")))
             elif url.path == "/api/tactics":
                 self.answer(lambda: live.tactics(body.get("raw") or {}, str(body.get("words", ""))[:300]))
+            elif url.path == "/api/trash":
+                self.answer(lambda: live.trash(str(body.get("text", "")).strip()[:300], body.get("from"), body.get("to")))
             else:
                 self.reply(404, json.dumps({"error": "not found"}))
 

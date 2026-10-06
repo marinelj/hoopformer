@@ -545,3 +545,42 @@ def test_be_aggressive_shows_in_every_shot_he_takes(fitted, limits):
         print(f"{row['label']:24s} {100 * row['before']:5.1f}% -> {100 * row['after']:5.1f}% of our chances")
     assert all(row["after"] > row["before"] for row in sga["offense"])
 
+
+
+def test_trash_talk_rattles_cold_players_and_fires_up_hot_ones(fitted, limits):
+    """Talking trash moves his man's confidence by levers.TRASH_TALK, and with it his share of their chances;
+    the whole team reaches all five by half as much. Cold players are rattled more often than hot ones, and the
+    game's own random numbers are untouched (trash talk has its own)."""
+    from hoopformer.game.levers import TRASH_TALK
+
+    model, _ = fitted
+    game = Game(model, OKC, BOS, seed=3, limits=limits, boost=BOOST)
+    game.step()
+    state = game.rng.getstate()
+    tatum = game.away.athletes[TATUM]
+    before = {pid: a.confidence for pid, a in game.away.athletes.items()}
+    one = game.trash_talk(game.home, SGA, TATUM)
+    reached = one["players"][0]
+    print("SGA at Tatum:", "rattled" if one["rattled"] else "fired up", reached)
+    assert [p["id"] for p in one["players"]] == [TATUM]
+    assert abs(abs(tatum.confidence - before[TATUM]) - TRASH_TALK) < 1e-9
+    assert (reached["share"][1] < reached["share"][0]) == one["rattled"], "his share of their chances moves with his confidence"
+    assert all(a.confidence == before[pid] for pid, a in game.away.athletes.items() if pid != TATUM)
+    assert game.rng.getstate() == state, "talking never draws from the game's own numbers"
+
+    team = game.trash_talk(game.home, None, None)
+    moved = [round(abs(game.away.athletes[p["id"]].confidence - p["confidence"][0]), 3) for p in team["players"]]
+    print("the whole team:", "rattled" if team["rattled"] else "fired up", moved)
+    assert len(team["players"]) == 5 and set(moved) == {TRASH_TALK / 2}
+
+    rattled = {}
+    for feeling in (0.3, 0.7):
+        count = 0
+        for seed in range(400):
+            game = Game(model, OKC, BOS, seed=seed, limits=limits, boost=BOOST)
+            game.step()
+            game.away.athletes[TATUM].confidence = feeling
+            count += game.trash_talk(game.home, SGA, TATUM)["rattled"]
+        rattled[feeling] = count / 400
+    print("rattled when cold (0.3):", rattled[0.3], "when hot (0.7):", rattled[0.7])
+    assert rattled[0.3] > 0.6 and rattled[0.7] < 0.4

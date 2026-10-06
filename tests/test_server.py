@@ -147,6 +147,23 @@ def test_calls_from_the_list_need_no_language_model_and_stack(server):
     assert game.home.timeouts == before - 1 and "timeout" in [e["kind"] for e in timeout["events"]]
 
 
+
+def test_trash_talk_reaches_his_man_who_answers(server):
+    base, courtside = server
+    get(f"{base}/?home=OKC&away=BOS&seed=11")
+    game = courtside.live.game
+    tatum = next(pid for pid, a in game.away.athletes.items() if a.profile.name == "Jayson Tatum")
+    before = game.away.athletes[tatum].confidence
+    talk = post(f"{base}/api/trash", {"text": "You can't guard me", "from": SGA, "to": tatum})
+    print(talk["reply"], "|", talk["rattled"], "|", talk["effect"])
+    assert talk["replier"] == tatum and talk["reached"] == [tatum] and talk["reply"]
+    assert game.away.athletes[tatum].confidence == pytest.approx(before + (-0.05 if talk["rattled"] else 0.05))
+    assert talk["effect"][0].startswith("Tatum rattled: confidence" if talk["rattled"] else "Tatum fired up: confidence")
+    team = post(f"{base}/api/trash", {"text": "Nobody over there can play", "from": None, "to": None})
+    print(team["reply"], "|", team["effect"])
+    assert len(team["reached"]) == 5 and team["replier"] in team["reached"] and team["effect"][0].startswith("BOS ")
+
+
 def test_bad_requests_are_refused(server):
     base, _ = server
     with pytest.raises(urllib.error.HTTPError) as error:

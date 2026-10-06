@@ -216,6 +216,7 @@ class Game:
         # how far each lever reaches (levers.lever_limits), stretched by the boost; needed only for instructions
         self.limits = levers.boosted(limits, boost) if limits and boost != 1 else limits
         self.credit_rng = random.Random(seed + 7919)  # its own numbers, so crediting plays never changes the game
+        self.talk_rng = random.Random(seed + 104729)  # and for trash talk, so talking never changes the rest of the game
         self.seed = seed
         self.rng = random.Random(seed)
         self.home = self._side(home_team_id, True, home_roster or default_roster(model, home_team_id))
@@ -398,6 +399,36 @@ class Game:
                     del values[lever]
                     forget(lever, pid)
         return self.instruct(side, instruction)
+
+    def trash_talk(self, side: Side, talker: int | None, target: int | None) -> dict:
+        """One of our players talks trash to his man (target), or the whole team (talker None) to their five.
+
+        They are rattled (confidence down) or fired up (up) by levers.TRASH_TALK each, half that for a whole team.
+        Cold players rattle more easily and hot ones feed off it; a talker who is hot himself is harder to shrug off.
+        Confidence moves their share of the chances (Athlete.usage). Returns who it reached, which way, and their
+        confidence and share of their team's chances before and after.
+        """
+        other = self.other(side)
+        reached = [target] if target in other.lineup else list(other.lineup)
+        if not reached:
+            return {"rattled": False, "players": []}
+        hot = side.athletes[talker].confidence if talker in side.athletes else 0.5
+        theirs = sum(other.athletes[p].confidence for p in reached) / len(reached)
+        low, high = levers.TRASH_RATTLE
+        rattled = self.talk_rng.random() < min(high, max(low, 0.5 + (0.5 - theirs) + 0.5 * (hot - 0.5)))
+        size = levers.TRASH_TALK / (1 if len(reached) == 1 else 2)
+
+        def share() -> dict:  # each player's share of their team's chances
+            choices, weights = self.chance_weights(other, side)
+            total = sum(weights) or 1.0
+            return {p: float(sum(w for (q, _), w in zip(choices, weights) if q == p) / total) for p in reached}
+
+        before, confidence = share(), {p: other.athletes[p].confidence for p in reached}
+        for p in reached:
+            other.athletes[p].feel(-size if rattled else size)
+        after = share()
+        return {"rattled": rattled, "players": [{"id": p, "confidence": [confidence[p], other.athletes[p].confidence],
+                                                  "share": [before[p], after[p]]} for p in reached]}
 
     def _refresh(self, side: Side) -> None:
         """Rebuild a team's tactics from the directives still in force."""
