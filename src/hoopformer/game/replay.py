@@ -73,8 +73,12 @@ def replay_data(result: GameResult, model: ActionModel, home_coach: str = "You",
     }
 
 
-TEMPLATE = Path(__file__).parent / "web" / "courtside.html"
-PAGE = TEMPLATE.read_text(encoding="utf-8")  # read once: a running server keeps the page that matches its own code
+# The user interfaces live in clients/: the web page (web/), the WeChat Mini Program (wechat/) and the court's rules
+# they share (core/court.js). The page is read once, with the rules inlined, so it stands alone and a running server
+# keeps the page that matches its own code.
+CLIENTS = Path(__file__).resolve().parents[3] / "clients"
+TEMPLATE, CORE = CLIENTS / "web" / "courtside.html", CLIENTS / "core" / "court.js"
+PAGE = TEMPLATE.read_text(encoding="utf-8").replace("/*__COURT_CORE__*/", CORE.read_text(encoding="utf-8"))
 
 
 def replay_html(data: dict) -> str:
