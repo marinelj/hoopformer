@@ -601,3 +601,26 @@ def test_the_scripted_coach_never_spends_a_human_coachs_timeouts(fitted, limits)
         assert result.home.timeouts == 15
     print("timeouts called over 5 games:", called)
     assert called["home"] == 0 and called["away"] > 0
+
+
+def test_in_game_mode_every_chance_lasts_long_enough_to_show(fitted, limits):
+    """The live game's court needs time to show a possession: first chances last at least MIN_FIRST_SECONDS and
+    second chances (after an offensive rebound) at least MIN_SECOND_SECONDS. Simulations keep the real lengths."""
+    from hoopformer.game.levers import MIN_FIRST_SECONDS, MIN_SECOND_SECONDS
+
+    model, _ = fitted
+    shortest = {}
+    for live in (False, True):
+        game = Game(model, OKC, BOS, seed=4, limits=limits, boost=BOOST if live else 1.0,
+                    min_first_seconds=MIN_FIRST_SECONDS if live else 0.0, min_second_seconds=MIN_SECOND_SECONDS if live else 0.0)
+        events = game.play().events
+        lengths = {"first": [], "second": []}
+        for i, e in enumerate(events):
+            if e.kind != "chance":
+                continue
+            after = next(x for x in events[i + 1:] if x.kind in ("chance", "period_end") or x.period != e.period)
+            lengths[e.zone].append(round(e.clock - after.clock, 1))
+        shortest[live] = {k: min(v) for k, v in lengths.items()}
+        print("live" if live else "simulation", shortest[live], {k: len(v) for k, v in lengths.items()})
+    assert shortest[True]["first"] >= MIN_FIRST_SECONDS and shortest[True]["second"] >= MIN_SECOND_SECONDS
+    assert shortest[False]["second"] < MIN_SECOND_SECONDS, "a faithful simulation keeps the real tip-ins"

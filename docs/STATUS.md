@@ -56,6 +56,7 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - Fourteenth follow-up (Oct 6): at the break the players walk into the next possession's tactic and it starts from there; the court draws every tactic as the helper does (the helper is drawn from the court's own formation); drop coverage, blitz, isolation and motion look like themselves; a 🗯 trash-talk button rattles or fires up his man (confidence ±0.05); the language choice is gone.
 - Fifteenth follow-up (Oct 6): the Play button is now the timeout (whistle; 15 a game, each a real breather in the engine, never spent by the scripted coach); the stop after every possession is gone.
 - Sixteenth follow-up (Oct 6): tactics and roles change only in a timeout; a change continues the possession from that moment (nobody moves during the timeout, your five run into it after, the other team only reacts) instead of redrawing it from its start.
+- Seventeenth follow-up (Oct 6): no teleports at possession ends (free throws walked to, the ball carried from where it was, the next possession drawn only once it starts; one 4 ft ball flick left in a whole game, checked frame by frame); live second chances last at least 1.5 s; every player always has a role, and your own picks take their roles back after a substitution.
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next

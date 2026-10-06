@@ -208,12 +208,13 @@ class Game:
     def __init__(self, model: ActionModel, home_team_id: int, away_team_id: int, seed: int,
                  home_roster: list[int] | None = None, away_roster: list[int] | None = None,
                  limits: dict[str, list[float]] | None = None, boost: float = 1.0, half_life: float | None = None,
-                 min_first_seconds: float = 0.0):
+                 min_first_seconds: float = 0.0, min_second_seconds: float = 0.0):
         self.model = model
         self.league = model.league
         self.boost = boost  # 1 for a faithful simulation; levers.BOOST in the live game, so calls are felt
         self.half_life = half_life  # game seconds for a call to lose half its strength (live game); None: calls never fade
         self.min_first_seconds = min_first_seconds  # live game: levers.MIN_FIRST_SECONDS, so the court can show every possession
+        self.min_second_seconds = min_second_seconds  # live game: levers.MIN_SECOND_SECONDS, ...and every putback
         # how far each lever reaches (levers.lever_limits), stretched by the boost; needed only for instructions
         self.limits = levers.boosted(limits, boost) if limits and boost != 1 else limits
         self.credit_rng = random.Random(seed + 7919)  # its own numbers, so crediting plays never changes the game
@@ -935,8 +936,7 @@ class Game:
             seconds = self.rng.choice(durations)
             if first and "pace" in off.tactics:
                 seconds /= self._lever(off, "pace")
-            if first:
-                seconds = max(seconds, self.min_first_seconds)
+            seconds = max(seconds, self.min_first_seconds if first else self.min_second_seconds)
             if seconds >= self.clock:
                 self._run_clock(self.clock)
                 return False

@@ -97,7 +97,8 @@ class LiveGame:
         self.model, self.use, self.unmapped_log = model, use, unmapped_log
         # game mode: calls are felt, and wear off unless repeated
         self.game = Game(model, home, away, seed=seed, limits=limits, boost=boost, half_life=half_life,
-                         min_first_seconds=levers.MIN_FIRST_SECONDS if boost != 1 else 0.0)
+                         min_first_seconds=levers.MIN_FIRST_SECONDS if boost != 1 else 0.0,
+                         min_second_seconds=levers.MIN_SECOND_SECONDS if boost != 1 else 0.0)
         self.game.home.human, self.game.home.timeouts = True, COACH_TIMEOUTS
         self.lock = threading.Lock()
         self.game.step()  # the tip-off and first possession, so the page opens with players on the floor

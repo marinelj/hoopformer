@@ -447,6 +447,22 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - A change made between possessions starts with the next one. In the engine, as always, the tactic plays from the next possession.
 - **The tactic and the roles are locked while play runs:** greyed out, with "Call a timeout to change the tactic" on hover. They open in a timeout and before the tip-off. Calls, voice, trash talk and substitutions stay open. A substitute takes over his man's role from the next possession.
 
+**Seventeenth follow-up (Oct 6): no teleports when a possession ends without a basket; roles that hold through substitutions.**
+- **How it was found:** a detector fetches a whole live game, then plays it frame by frame through the page's own render, reading every figure and the ball as drawn. It flags any move over 2 ft (4 ft for the ball) in one frame at 30 fps, with the events around it.
+  - Before the fixes, one game had 416 jumps, nearly all at possession ends without a basket.
+  - After them: one 4.1 ft ball flick off an offensive rebound in a whole game (about 87,500 frames). A second game, played possession by possession with an isolation set in a timeout and ten substitutions, had none.
+- **The causes, and the fixes:**
+  - **The court switched to the next possession too early.** At the moment one possession ended, it already drew the next one's starting spots: before free throws were walked to, before a substitute left. It now shows the next possession only once its first event is shown (`planShown`).
+  - **Free throws snapped everyone into the line-up.** A shooting foul now stops play while all ten walk there (`deadBall`; about 15 ft a second). The dead ball lasts until they are on the line, the ball goes to the shooter (out of the net on an and-one), and the free throw goes up to the rim. The walk runs on the playback clock, so it pauses in a timeout. Free throws at the end of a quarter keep them on the line until play restarts.
+  - **The ball jumped to the next ball handler** after a missed shot that went out of bounds (about 20 ft), a turnover out of bounds (25 ft), an offensive foul (7 ft) and a rebound (4 ft). It now travels from wherever the last possession left it: the net or the rim, the sideline, a player's hands.
+  - **The rebounder's grab began before his possession did** on a short possession (a 15–23 ft jump). The grab now stays inside his possession, and off a free throw he is already on the lane.
+  - **A possession ended where the plan said, not where it was drawn** (a defender still running back on a short possession, up to 3 ft). It now ends exactly as drawn.
+  - **Zero-second second chances.** A third of real second chances are logged under half a second (tip-ins, and whole-second clocks), too short to draw. In the live game a second chance now lasts at least 1.5 s (`levers.MIN_SECOND_SECONDS`, like `MIN_FIRST_SECONDS` = 4); simulations keep the real lengths.
+- **Roles that hold through substitutions:**
+  - When the scripted coach subbed out a role holder (Jordan as the isolation scorer), the court left his role empty and the substitute ran to a default spot. Every player on the floor now has a role in the current tactic (`completeRoles`, the same function the talk rows and the helper use), and the engine hears about it before it plays the next possession.
+  - **Your own picks come back:** the roles you picked yourself are remembered (`tactic.picked`, `pickLog`), and a picked player takes his role back whenever he is on the floor. Before, the stand-in kept it (6 of 25 isolations ran for Payton with Jordan back on the floor); now 53 of 53.
+  - **Second chances:** a tactic changed in a timeout also plays on in the possession's later chances (an offensive rebound's second chance), which the engine had already played with the old tactic.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

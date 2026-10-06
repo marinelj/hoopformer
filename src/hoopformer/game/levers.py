@@ -100,6 +100,9 @@ LEGS_DROP = 0.2  # energy shown = 1 - LEGS_DROP x (fatigue: 0 fresh, 1 empty)
 # transition plays where players are already running; the court can't show those, and five players covering
 # the floor in two seconds looks like a teleport.
 MIN_FIRST_SECONDS = 4.0
+# Game mode only: no second chance shorter than this. A third of real ones last under half a second (tip-ins, and
+# the play-by-play clock counts whole seconds); the court needs a moment to show the rebounder going back up.
+MIN_SECOND_SECONDS = 1.5
 
 
 def boosted(limits: dict, boost: float) -> dict:
