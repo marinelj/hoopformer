@@ -12,7 +12,7 @@
   function createCourt(G) {   // the rules for one game (G: the game data the server sends)
   const playerById = {};
   for (const key of ["home", "away"]) for (const p of G[key].players) playerById[p.id] = p;
-  const last = (name) => { const parts = name.split(" "); return parts.length > 1 && /^(Jr\.|Sr\.|II|III|IV)$/.test(parts.at(-1)) ? parts.at(-2) : parts.at(-1); };
+  const last = (name) => { const parts = name.split(" "), n = parts.length; return n > 1 && /^(Jr\.|Sr\.|II|III|IV)$/.test(parts[n - 1]) ? parts[n - 2] : parts[n - 1]; };
 
   // ---------- choreography: positions are a function of game time ----------
   // Court in feet: 94 x 50, baskets at x = 5.25 and 88.75. Every possession gets a plan built from
@@ -184,7 +184,7 @@
   const boxed = (defT) => defT.scheme === "box1" || defT.scheme === "tri2";   // chasers on their scorers, the rest in a zone
   function chasersOf(defT, def, off) {   // [defender, the man he chases]: their main scorers, by usage
     const stars = [...off].sort((a, b) => (playerById[b].usage || 0) - (playerById[a].usage || 0)), rl = defT.roles || {};
-    const pairs = defT.scheme === "box1" ? [[rl.chaser ?? defT.chaser, stars[0]]] : defT.scheme === "tri2" ? [[rl.chaser, stars[0]], [rl.chaser2, stars[1]]] : [];
+    const pairs = defT.scheme === "box1" ? [[rl.chaser != null ? rl.chaser : defT.chaser, stars[0]]] : defT.scheme === "tri2" ? [[rl.chaser, stars[0]], [rl.chaser2, stars[1]]] : [];
     return pairs.filter(([d]) => def.includes(d));
   }
   function zoneSpots(plan) {   // each defender's spot in the zone or the box: his role's, or a free one (null: a man-to-man defense)
@@ -661,7 +661,7 @@
     return { pos: positionsIn(plan, t), plan };
   }
   function holderAt(plan, t) {   // who has the ball at t (a pass in the air: whoever it's going to)
-    for (const seg of plan.ball) if (t >= seg.from && t <= seg.to) return seg.hold ?? (seg.pass ? seg.pass[1] : null);
+    for (const seg of plan.ball) if (t >= seg.from && t <= seg.to) return seg.hold !== undefined ? seg.hold : seg.pass ? seg.pass[1] : null;
     return null;
   }
   function positionsIn(plan, t) {   // everyone's spot at time t in this plan
@@ -776,7 +776,7 @@
       return [roles(ids)[k]];
     }
     if (role === "chaser" || role === "chaser2") return [...ids].sort((a, b) => playerById[b].steal * 10 - styleOf(b).gap - (playerById[a].steal * 10 - styleOf(a).gap));
-    const kind = ROLE_KIND[role] ?? WING;
+    const kind = role in ROLE_KIND ? ROLE_KIND[role] : WING;
     return [...ids].sort((a, b) => fitScore(b, kind) - fitScore(a, kind));   // the best fit for the role, by archetype
   }
   // the kind of player each role wants: [handle, wing, spot up, inside, score]
@@ -791,7 +791,7 @@
   function completeRoles(t, given, ids, theirs) {
     const want = t.matchups ? roles(theirs).map((id) => `on:${id}`) : t.roles.map(([r]) => r), out = {}, taken = new Set();
     for (const r of want) { const id = given[r]; if (ids.includes(id) && !taken.has(id)) { out[r] = id; taken.add(id); } }
-    const order = t.matchups ? want : [...want].sort((a, b) => KIND_ORDER.indexOf(ROLE_KIND[a] ?? WING) - KIND_ORDER.indexOf(ROLE_KIND[b] ?? WING));
+    const order = t.matchups ? want : [...want].sort((a, b) => KIND_ORDER.indexOf(a in ROLE_KIND ? ROLE_KIND[a] : WING) - KIND_ORDER.indexOf(b in ROLE_KIND ? ROLE_KIND[b] : WING));
     for (const r of order) if (!out[r]) { const id = [...guessOrder(r, ids, theirs), ...ids].find((p) => p && !taken.has(p)); if (id) { out[r] = id; taken.add(id); } }
     return out;
   }
@@ -844,7 +844,7 @@
   // What the tactic already decides at this end of the floor (t: the play or the defense, r: the roles): a call about
   // the same thing would fight it, so the lists leave it out.
   function controlsOf(t, r) {
-    const players = {}, mark = (pid, lever) => { if (pid) (players[pid] ||= new Set()).add(lever); };
+    const players = {}, mark = (pid, lever) => { if (pid) (players[pid] = players[pid] || new Set()).add(lever); };
     const focus = t.focus ? r[t.focus] : null;
     for (const role of Object.keys(t.prefer || {})) mark(r[role], "shot_preference");
     for (const role of t.pressers || []) mark(r[role], "pressure");
@@ -865,7 +865,119 @@
     return list;
   }
 
-  return { playerById, last, rebuild, plans: () => plans, controlsOf, callList,
+  // ---------- the game clock ----------
+  const PERIOD = 720, OT = 300;   // seconds in a quarter, in an overtime
+  const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m}:${String(r).padStart(2, "0")}`; };
+  const periodOf = (t) => t < 4 * PERIOD ? Math.min(4, Math.floor(t / PERIOD) + 1) : 5 + Math.min(G.periods - 5, Math.floor((t - 4 * PERIOD) / OT));
+  const periodStart = (p) => p <= 4 ? (p - 1) * PERIOD : 4 * PERIOD + (p - 5) * OT;
+  const periodLabel = (p) => p <= 4 ? ["1ST", "2ND", "3RD", "4TH"][p - 1] + " QTR" : (p === 5 ? "OT" : `${p - 4}OT`);
+
+  // ---------- the coach's tactic: the play or the defense, every player's role, what the engine hears ----------
+  const tacticFor = (phase) => (phase === "offense" ? PLAYS[tactic.play] : SCHEMES[tactic.scheme]);
+  const roleList = (t, theirs) => (t.matchups ? roles(theirs).map((id) => [`on:${id}`, `On ${last(playerById[id].name)}`]) : t.roles);
+  function fillRoles(ids, theirs) {   // every player on the floor in a role at each end; true when someone's role changed
+    const key = (r) => JSON.stringify(Object.entries(r).sort());
+    const given = withPicks({}, tactic.picked, ids);   // the coach's own picks; every other role goes to the best fit for this tactic
+    const out = Object.assign({}, completeRoles(PLAYS[tactic.play], given, ids, theirs), completeRoles(SCHEMES[tactic.scheme], given, ids, theirs));
+    const moved = key(out) !== key(tactic.roles);
+    tactic.roles = out;
+    return moved;
+  }
+  function setTactic(phase, key) {   // the coach picks a play (offense) or a defense; false: not one for this end
+    if (!(phase === "offense" ? PLAYS : SCHEMES)[key]) return false;
+    if (phase === "offense") tactic.play = key; else tactic.scheme = key;
+    return true;
+  }
+  function pickRole(phase, id, want, theirs) {   // the coach puts him in a role; whoever had it takes his old one
+    const list = roleList(tacticFor(phase), theirs);
+    if (!list.some(([r]) => r === want)) return false;
+    const had = list.find(([r]) => tactic.roles[r] === id), holder = tactic.roles[want];
+    tactic.roles[want] = id;
+    if (had && had[0] !== want) { if (holder && holder !== id) tactic.roles[had[0]] = holder; else delete tactic.roles[had[0]]; }
+    const swapped = had && had[0] !== want && holder && holder !== id ? [had[0], holder] : null;
+    for (const [r, p] of Object.entries(tactic.picked)) if (r === want || p === id || (swapped && (r === swapped[0] || p === swapped[1]))) delete tactic.picked[r];
+    tactic.picked[want] = id;   // his, whenever he's on the floor
+    if (swapped) tactic.picked[swapped[0]] = swapped[1];
+    pickLog.push({ events: G.events.length, picked: Object.assign({}, tactic.picked) });
+    return true;
+  }
+  // A tactic changed in a timeout during a possession: from this moment the coach's five play it (they run into it once
+  // play resumes; the other team only reacts). True when the court changed (the engine plays it from the next possession).
+  function restartAt(t) {
+    const at = planAt(t);
+    if (!(at && t > at.t0 && t < at.t1 - 1)) return false;
+    const same = restarts.find((x) => x.s === at.s && x.at === t), snap = JSON.parse(JSON.stringify(tactic));
+    if (same) same.tactic = snap; else restarts.push({ s: at.s, at: t, tactic: snap, events: G.events.length });
+    rebuild();
+    return true;
+  }
+  function tacticWords() {   // the tactic and its key roles, in words
+    const name = (id) => (id ? last(playerById[id].name) : "?");
+    const part = (t) => {
+      const key = t.roles ? t.roles.filter(([r]) => t.main.includes(r)) : [];
+      return `${t.name}${key.length ? ` (${key.map(([r, label]) => `${name(tactic.roles[r])}: ${label.toLowerCase()}`).join(", ")})` : ""}`;
+    };
+    return `${part(PLAYS[tactic.play])} · ${part(SCHEMES[tactic.scheme])}`;
+  }
+  // The tactic as the engine hears it (POST /api/tactics): the play's and the defense's levers, the roles, who the play
+  // runs through, who it wants shooting from where, who presses. stopDouble: man to man, and no double team either.
+  function tacticRaw(stopDouble) {
+    const r = tactic.roles, play = PLAYS[tactic.play], scheme = SCHEMES[tactic.scheme];
+    const raw = { team: Object.assign({}, play.team || {}, scheme.team || {}), players: [], roles: r, unmapped: [] };
+    if (tactic.play !== "free") raw.play = tactic.play;
+    if (tactic.scheme !== "man") raw.scheme = tactic.scheme;
+    if (stopDouble) raw.stop = ["double_team"];
+    if (play.focus) raw.focus = r[play.focus];
+    for (const [role, [zone, value]] of Object.entries(play.prefer || {})) raw.players.push({ person_id: r[role], shot_preference: { zone, value } });
+    for (const role of scheme.pressers || []) raw.players.push({ person_id: r[role], pressure: 0.7 });   // the chasers hound their men
+    if (tactic.play === "motion") raw.unmapped.push("motion offense");
+    if (tactic.scheme === "switch") raw.unmapped.push("switch everything");
+    raw.players = raw.players.filter((p) => p.person_id);
+    return raw;
+  }
+
+  // ---------- the calls in force, in words (the strip over the court) ----------
+  const CALL_TEXT = { pace: ["push the pace", "slow it down"], three_point_rate: ["more threes", "fewer threes"], attack_rim: ["attack the rim", "stay outside"],
+    ball_security: ["protect the ball", "take chances"], crash_glass: ["crash the glass", "get back"], pressure: ["pressure the ball", "sit back"],
+    protect_paint: ["pack the paint", "run them off the line"], foul_caution: ["no fouls", "get physical"] };
+  function callsText(plan) {   // [[who, what]]: "90S offense", "isolation · Jordan aggressive"
+    const o = plan.tac.off || {}, d = plan.tac.def || {};
+    const words = (obj) => Object.entries(obj).filter(([k, v]) => CALL_TEXT[k] && Math.abs(v) >= 0.2).map(([k, v]) => CALL_TEXT[k][v > 0 ? 0 : 1]);
+    const offCalls = words(o), defCalls = words(d);
+    if (o.focus && playerById[o.focus]) offCalls.push(`through ${last(playerById[o.focus].name)}`);
+    for (const [pid, lv] of Object.entries(o.players || {})) {
+      const n = last(playerById[pid].name);
+      if ((lv.aggression || 0) > 0.2) offCalls.push(`${n} aggressive`);
+      if ((lv.aggression || 0) < -0.2) offCalls.push(`${n} moving it`);
+      if (lv.shot_preference) offCalls.push(`${n} looking for ${{ rim: "the rim", mid: "midrange", three: "threes" }[lv.shot_preference.zone]}`);
+    }
+    if (o.play) offCalls.unshift(plan.pnr ? `${o.play === "pnr" ? "pick-and-roll" : "pick-and-pop"} ${last(playerById[plan.pnr.handler].name)}–${last(playerById[plan.pnr.screener].name)}`
+      : PLAYS[o.play] ? PLAYS[o.play].name.toLowerCase() : o.play);
+    if (d.scheme) defCalls.unshift(plan.box && plan.chasers && plan.chasers.length
+      ? `${SCHEMES[d.scheme].name.toLowerCase()}, ${plan.chasers.map(([c, m]) => `${last(playerById[c].name)} chasing ${last(playerById[m].name)}`).join(", ")}`
+      : SCHEMES[d.scheme] ? SCHEMES[d.scheme].name.toLowerCase() : d.scheme);
+    if (d.double_team && playerById[d.double_team]) defCalls.push(`doubling ${last(playerById[d.double_team].name)}`);
+    const parts = [];
+    if (offCalls.length) parts.push([`${G[plan.offKey].tricode} offense`, offCalls.join(" · ")]);
+    if (defCalls.length) parts.push([`${G[plan.defKey].tricode} defense`, defCalls.join(" · ")]);
+    return parts;
+  }
+
+  // Trash talk's target: the opponent he's matched with at time t (his man, the man on him), else the nearest.
+  // theirs: their five on the floor; at(id): where a player is drawn now.
+  function counterpart(id, t, theirs, at) {
+    const plan = planAt(t);
+    if (plan && !plan.zone && !plan.box) {
+      const i = plan.def.indexOf(id), j = plan.def.findIndex((d, k) => markOf(plan, k) === id);
+      if (i >= 0 && theirs.includes(markOf(plan, i))) return markOf(plan, i);
+      if (j >= 0 && theirs.includes(plan.def[j])) return plan.def[j];
+    }
+    const me = at(id), far = (o) => { const p = at(o); return Math.hypot(p.x - me.x, p.y - me.y); };
+    return theirs.reduce((a, b) => (far(b) < far(a) ? b : a));
+  }
+
+  return { playerById, last, rebuild, plans: () => plans, controlsOf, callList, PERIOD, OT, fmt, periodOf, periodStart, periodLabel,
+    tacticFor, roleList, fillRoles, setTactic, pickRole, restartAt, tacticWords, tacticRaw, CALL_TEXT, callsText, counterpart,
     attacksRight, toCourt, basketOf, SPOTS, STYLE, styleOf, HANDLE, WING, SHOOT, BIG, SCORE, fitScore, offBall, LAYOUT, MAN_SPOTS, restarts, pickLog, picksFor, withPicks, withShape, playSpots, spotOf, pressing, zoned, boxed, chasersOf, zoneSpots, defenseRoles, LANE, seeded, roles, shotSpot, ease, lerp, clampCourt, track, RESOLVE, VMAX, benchSpot, TIP, planSegment, buildPlans, zoneSlide, markOf, PRESS_RELEASE, pressAt, defenderAt, settledAt, planIndex, planAt, planShown, positionsAt, holderAt, positionsIn, ballAt, freeThrowFormation, SPACING, PLAYS, SCHEMES, tactic, guessOrder, ROLE_KIND, KIND_ORDER, completeRoles, V, STEP, TEAM_CALLS, PLAYER_CALLS, fights };
   }
 

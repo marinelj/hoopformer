@@ -388,8 +388,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 <script>
 (() => {
   const G = JSON.parse(document.getElementById("game-data").textContent);
+  const rules = HoopformerCourt.createCourt(G);   // the court's rules (clients/core/court.js), shared with the WeChat client
+  const { PERIOD, OT, fmt, periodOf, periodStart, periodLabel, callsText, tacticWords } = rules;
   const $ = (id) => document.getElementById(id);
-  const PERIOD = 720, OT = 300;
   // Live mode (hoopformer serve): events arrive one possession at a time from the server, and the coach's
   // words go to the server. Replay mode: every event is in the page from the start.
   const LIVE = G.live === true;
@@ -406,10 +407,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   for (const key of ["home", "away"]) for (const p of sides[key].players) { playerTeam[p.id] = key; playerById[p.id] = p; }
   const last = (name) => { const parts = name.split(" "); return parts.length > 1 && /^(Jr\.|Sr\.|II|III|IV)$/.test(parts.at(-1)) ? parts.at(-2) : parts.at(-1); };
   const initials = (name) => name.split(" ").filter((w) => !/^(Jr\.|Sr\.|II|III|IV)$/.test(w)).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
-  const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m}:${String(r).padStart(2, "0")}`; };
-  const periodOf = (t) => t < 4 * PERIOD ? Math.min(4, Math.floor(t / PERIOD) + 1) : 5 + Math.min(G.periods - 5, Math.floor((t - 4 * PERIOD) / OT));
-  const periodStart = (p) => p <= 4 ? (p - 1) * PERIOD : 4 * PERIOD + (p - 5) * OT;
-  const periodLabel = (p) => p <= 4 ? ["1ST", "2ND", "3RD", "4TH"][p - 1] + " QTR" : (p === 5 ? "OT" : `${p - 4}OT`);
 
   // Production (the default) is the game and the coaching; debug (hoopformer serve --debug, or ?debug=1 on the page)
   // adds the engine's numbers (Your players, Engine monitor) and the explanations
@@ -464,7 +461,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // ---------- the court's rules: clients/core/court.js, shared with the WeChat client ----------
   // Where every player is at every moment of a possession (a function of game time), the tactics and the roles in
   // them, how each archetype moves, the calls. This page draws the court and talks to the server.
-  const rules = HoopformerCourt.createCourt(G);
   const { attacksRight, toCourt, basketOf, SPOTS, STYLE, styleOf, HANDLE, WING, SHOOT, BIG, SCORE, fitScore, offBall, LAYOUT, MAN_SPOTS, restarts, pickLog, picksFor, withPicks, withShape, playSpots, spotOf, pressing, zoned, boxed, chasersOf, zoneSpots, defenseRoles, LANE, seeded, roles, shotSpot, ease, lerp, clampCourt, track, RESOLVE, VMAX, benchSpot, TIP, planSegment, buildPlans, zoneSlide, markOf, PRESS_RELEASE, pressAt, defenderAt, settledAt, planIndex, planAt, positionsAt, holderAt, positionsIn, ballAt, freeThrowFormation, SPACING, PLAYS, SCHEMES, tactic, guessOrder, ROLE_KIND, KIND_ORDER, completeRoles, V, STEP, TEAM_CALLS, PLAYER_CALLS, fights } = rules;
   const planShown = (t) => rules.planShown(t, S.applied);
 
@@ -912,31 +908,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   let lastFeedLen = -1;
   // The calls in force for the possession on the floor, in words.
-  const CALL_TEXT = { pace: ["push the pace", "slow it down"], three_point_rate: ["more threes", "fewer threes"], attack_rim: ["attack the rim", "stay outside"],
-    ball_security: ["protect the ball", "take chances"], crash_glass: ["crash the glass", "get back"], pressure: ["pressure the ball", "sit back"],
-    protect_paint: ["pack the paint", "run them off the line"], foul_caution: ["no fouls", "get physical"] };
-  function callsText(plan) {
-    const o = plan.tac.off || {}, d = plan.tac.def || {};
-    const words = (obj) => Object.entries(obj).filter(([k, v]) => CALL_TEXT[k] && Math.abs(v) >= 0.2).map(([k, v]) => CALL_TEXT[k][v > 0 ? 0 : 1]);
-    const offCalls = words(o), defCalls = words(d);
-    if (o.focus) offCalls.push(`through ${last(playerById[o.focus].name)}`);
-    for (const [pid, lv] of Object.entries(o.players || {})) {
-      const n = last(playerById[pid].name);
-      if ((lv.aggression || 0) > 0.2) offCalls.push(`${n} aggressive`);
-      if ((lv.aggression || 0) < -0.2) offCalls.push(`${n} moving it`);
-      if (lv.shot_preference) offCalls.push(`${n} looking for ${{ rim: "the rim", mid: "midrange", three: "threes" }[lv.shot_preference.zone]}`);
-    }
-    if (o.play) offCalls.unshift(plan.pnr ? `${o.play === "pnr" ? "pick-and-roll" : "pick-and-pop"} ${last(playerById[plan.pnr.handler].name)}–${last(playerById[plan.pnr.screener].name)}`
-      : PLAYS[o.play] ? PLAYS[o.play].name.toLowerCase() : o.play);
-    if (d.scheme) defCalls.unshift(plan.box && plan.chasers && plan.chasers.length
-      ? `${SCHEMES[d.scheme].name.toLowerCase()}, ${plan.chasers.map(([c, o]) => `${last(playerById[c].name)} chasing ${last(playerById[o].name)}`).join(", ")}`
-      : SCHEMES[d.scheme] ? SCHEMES[d.scheme].name.toLowerCase() : d.scheme);
-    if (d.double_team) defCalls.push(`doubling ${last(playerById[d.double_team].name)}`);
-    const parts = [];
-    if (offCalls.length) parts.push([`${sides[plan.offKey].tricode} offense`, offCalls.join(" · ")]);
-    if (defCalls.length) parts.push([`${sides[plan.defKey].tricode} defense`, defCalls.join(" · ")]);
-    return parts;
-  }
   let lastCalls = "";
   function renderCalls(plan) {
     const parts = plan && plan.tac ? callsText(plan) : [];
@@ -1438,16 +1409,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // who answers over his head. Live, the engine decides whether it rattles him or fires him up and moves his
   // confidence a little (Game.trash_talk); in the replay he only answers.
   const TRASH_REPLAY = ["Keep talking.", "Whatever, man.", "Watch this.", "Just play."];
-  function counterpart(id) {   // the opponent he's matched with now: his man, the man on him, else the nearest
-    const plan = planAt(T), theirs = awayFloor();
-    if (plan && !plan.zone && !plan.box) {
-      const i = plan.def.indexOf(id), j = plan.def.findIndex((d, k) => markOf(plan, k) === id);
-      if (i >= 0 && theirs.includes(markOf(plan, i))) return markOf(plan, i);
-      if (j >= 0 && theirs.includes(plan.def[j])) return plan.def[j];
-    }
-    const me = shownAt(id), far = (o) => { const p = shownAt(o); return Math.hypot(p.x - me.x, p.y - me.y); };
-    return theirs.reduce((a, b) => (far(b) < far(a) ? b : a));
-  }
+  const counterpart = (id) => rules.counterpart(id, T, awayFloor(), shownAt);   // his man, the man on him, else the nearest
   async function sendTrash(text, row) {
     const from = row.i === 5 ? null : row.id, to = from == null ? null : counterpart(from);
     addHuman({ t: T, speaker: from == null ? "home-team" : from, to: to == null ? "their-team" : to, text, kind: "trash" });
@@ -1479,48 +1441,16 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // spot, or his man in a man-to-man defense. Picking a role swaps it with whoever had it. Both go to the server as
   // levers (no language model), with the play, the scheme and the roles, so the court acts them out. The helper
   // under the rows draws the tactic with your five in their roles. Call a timeout to stop play and set them up.
-  const tacticFor = (phase) => (phase === "offense" ? PLAYS[tactic.play] : SCHEMES[tactic.scheme]);
-  const roleList = (t) => (t.matchups ? roles(awayFloor()).map((id) => [`on:${id}`, `On ${last(playerById[id].name)}`]) : t.roles);
+  const tacticFor = rules.tacticFor, roleList = (t) => rules.roleList(t, awayFloor());
   let rolesMoved = false;   // a lineup change put someone in a role: the engine is told (updateTalk)
-  function fillRoles() {   // every player has one role at each end
-    const ids = homeFloor(), theirs = awayFloor(), key = (r) => JSON.stringify(Object.entries(r).sort());
-    const given = withPicks({}, tactic.picked, ids);   // your own picks; every other role goes to the best fit for this tactic
-    const out = { ...completeRoles(PLAYS[tactic.play], given, ids, theirs), ...completeRoles(SCHEMES[tactic.scheme], given, ids, theirs) };
-    if (key(out) !== key(tactic.roles)) rolesMoved = true;
-    tactic.roles = out;
-  }
-  function tacticWords() {   // the tactic and its key roles, for the chatter and the language log
-    const name = (id) => (id ? last(playerById[id].name) : "?");
-    const part = (t) => {
-      const key = t.roles ? t.roles.filter(([r]) => t.main.includes(r)) : [];
-      return `${t.name}${key.length ? ` (${key.map(([r, label]) => `${name(tactic.roles[r])}: ${label.toLowerCase()}`).join(", ")})` : ""}`;
-    };
-    return `${part(PLAYS[tactic.play])} · ${part(SCHEMES[tactic.scheme])}`;
-  }
+  function fillRoles() { if (rules.fillRoles(homeFloor(), awayFloor())) rolesMoved = true; }   // every player has one role at each end
   // The tactic as engine levers: the play's and the scheme's team levers, and what the roles mean for who gets the ball.
   async function sendTactic(stopDouble = false, now = true, quiet = false) {
     fillRoles();
     // In a timeout during a possession, your five play it from this moment: nobody moves while the timeout lasts,
     // then they run into it, and the other team only reacts on the court. The engine plays it from the next possession.
-    const at = planAt(T);
-    if (now && !playing && at && T > at.t0 && T < at.t1 - 1) {
-      const same = restarts.find((x) => x.s === at.s && x.at === T), snap = JSON.parse(JSON.stringify(tactic));
-      if (same) same.tactic = snap; else restarts.push({ s: at.s, at: T, tactic: snap, events: G.events.length });
-      rules.rebuild(); settleTimes();
-      render(T);
-    }
-    const r = tactic.roles, play = PLAYS[tactic.play], scheme = SCHEMES[tactic.scheme];
-    const raw = { team: { ...(play.team || {}), ...(scheme.team || {}) }, players: [], roles: r, unmapped: [] };
-    if (tactic.play !== "free") raw.play = tactic.play;
-    if (tactic.scheme !== "man") raw.scheme = tactic.scheme;
-    if (stopDouble) raw.stop = ["double_team"];   // man to man: no double team either
-    if (play.focus) raw.focus = r[play.focus];   // the play runs through him
-    for (const [role, [zone, value]] of Object.entries(play.prefer || {})) raw.players.push({ person_id: r[role], shot_preference: { zone, value } });
-    for (const role of scheme.pressers || []) raw.players.push({ person_id: r[role], pressure: 0.7 });   // the chasers hound their men
-    if (tactic.play === "motion") raw.unmapped.push("motion offense");
-    if (tactic.scheme === "switch") raw.unmapped.push("switch everything");
-    raw.players = raw.players.filter((p) => p.person_id);
-    const words = tacticWords();
+    if (now && !playing && rules.restartAt(T)) { settleTimes(); render(T); }
+    const raw = rules.tacticRaw(stopDouble), words = tacticWords();
     renderHelper(); updateTalk();
     if (!quiet) addHuman({ t: T, speaker: "coach", to: "team", text: words, kind: "coach" });
     if (!LIVE) return;   // the replay is already played
@@ -1551,21 +1481,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   function roleChanged(row) {
     const phase = phaseNow();
     if (row.i === 5) {
-      if (!(phase === "offense" ? PLAYS : SCHEMES)[row.role.value]) { buildRole(row, phase); return; }   // not a tactic for this end
-      if (phase === "offense") tactic.play = row.role.value; else tactic.scheme = row.role.value;
+      if (!rules.setTactic(phase, row.role.value)) { buildRole(row, phase); return; }   // not a tactic for this end
       sendTactic(phase === "defense" && tactic.scheme === "man");
       return;
     }
-    const t = tacticFor(phase), list = roleList(t), want = row.role.value;
-    if (!list.some(([r]) => r === want)) { buildRole(row, phase); return; }
-    const had = list.find(([r]) => tactic.roles[r] === row.id), holder = tactic.roles[want];
-    tactic.roles[want] = row.id;   // he takes the role; whoever had it takes his old one
-    if (had && had[0] !== want) { if (holder && holder !== row.id) tactic.roles[had[0]] = holder; else delete tactic.roles[had[0]]; }
-    const swapped = had && had[0] !== want && holder && holder !== row.id ? [had[0], holder] : null;   // whoever had it takes his old one
-    for (const [r, id] of Object.entries(tactic.picked)) if (r === want || id === row.id || (swapped && (r === swapped[0] || id === swapped[1]))) delete tactic.picked[r];
-    tactic.picked[want] = row.id;   // his, whenever he's on the floor
-    if (swapped) tactic.picked[swapped[0]] = swapped[1];
-    pickLog.push({ events: G.events.length, picked: { ...tactic.picked } });
+    if (!rules.pickRole(phase, row.id, row.role.value, awayFloor())) { buildRole(row, phase); return; }   // he takes the role; whoever had it, his old one
     sendTactic();
   }
   // Substitutions: a player's name is a list of the bench; picking someone brings him in for this player.
