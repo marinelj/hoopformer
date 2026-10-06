@@ -10,6 +10,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from hoopformer.game.archetypes import archetypes
 from hoopformer.game.engine import Event, GameResult, Side
 from hoopformer.game.model import ActionModel
 from hoopformer.lineups import period_length, period_start
@@ -34,7 +35,7 @@ def game_seconds(period: int, clock: float) -> float:
     return period_start(period) + period_length(period) - clock
 
 
-def team_data(side: Side, coach: str) -> dict:
+def team_data(side: Side, coach: str, kinds: dict[int, str] | None = None) -> dict:
     primary, secondary = TEAM_COLORS.get(side.tricode, ("#555555", "#DDDDDD"))
     players = []
     for pid, athlete in side.athletes.items():
@@ -42,7 +43,8 @@ def team_data(side: Side, coach: str) -> dict:
         players.append({"id": pid, "name": profile.name, "minutesShare": round(side.share[pid], 3),
                         "handler": round(profile.assist, 4), "big": round(profile.dreb, 4),
                         "steal": round(profile.steal, 4),   # the box-and-one's chaser: our best ball hawk...
-                        "usage": round(sum(profile.events[e] for e in ("rim", "mid", "three", "free_throws")), 4)})   # ...on their main scorer
+                        "usage": round(sum(profile.events[e] for e in ("rim", "mid", "three", "free_throws")), 4),   # ...on their main scorer
+                        "archetype": (kinds or {}).get(pid, "Role Player")})   # how the court moves him (archetypes.py)
     return {"tricode": side.tricode, "name": side.name, "primary": primary, "secondary": secondary,
             "coach": coach, "players": players}
 
@@ -59,12 +61,13 @@ def event_row(event: Event) -> dict:
 def replay_data(result: GameResult, model: ActionModel, home_coach: str = "You", away_coach: str = "AI coach") -> dict:
     """Everything a replay page needs: teams, rosters, colours, and every event with its time and lineups."""
     events = [event_row(event) for event in result.events]
+    kinds = archetypes(model)
     return {
         "season": model.season if "rates" in model.season else f"{model.season} player rates",
         "seed": result.seed,
         "periods": result.periods,
-        "home": team_data(result.home, home_coach),
-        "away": team_data(result.away, away_coach),
+        "home": team_data(result.home, home_coach, kinds),
+        "away": team_data(result.away, away_coach, kinds),
         "final": {"home": result.home.points, "away": result.away.points},
         "events": events,
     }

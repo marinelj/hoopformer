@@ -92,7 +92,7 @@ h1 span { color: var(--led); }
 @keyframes call-glow { 50% { box-shadow: 0 0 0 2px var(--led), 0 0 46px rgba(255, 178, 62, 0.6); } }
 .shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 #shape-area { fill: var(--shape, #fff); fill-opacity: 0.2; stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; stroke-dasharray: 7 5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }   /* widths in screen pixels */
-#shape-chase { stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+#shape-chase, #shape-chase2 { stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 
 /* one monitor card per player on the floor (live) */
 .players-panel { display: grid; gap: 8px; padding: 10px 12px 12px; }
@@ -102,6 +102,7 @@ h1 span { color: var(--led); }
 .pcard .pc-head .sw { width: 9px; height: 9px; border-radius: 3px; flex: none; align-self: center; }
 .pcard .pc-head b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pcard .pc-head .meta { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 10.5px; white-space: nowrap; }
+.pcard .pc-head .kind { flex-basis: 100%; color: var(--led); font-size: 11px; }
 .pcard .pc-res { display: grid; gap: 3px; color: var(--muted); }
 .pcard .pc-res .hot { color: var(--shot); }
 .pcard .pc-res .cool { color: #8fc7ff; }
@@ -168,6 +169,7 @@ tbody tr.on td:first-child { color: var(--led); }
 .hc-roll { stroke-dasharray: 1 0.7; stroke: var(--led); }
 .hc-pass { fill: none; stroke: #ffd97a; stroke-width: 0.35; stroke-dasharray: 0.4 0.6; }
 .hc-chase { stroke: var(--shot); }
+.hc-screen { fill: none; stroke: #8fc7ff; stroke-width: 0.6; }
 .hc-head { fill: #ffffff; }
 .hc-ini { font-family: var(--display); font-weight: 800; font-size: 1.7px; fill: #fff; text-anchor: middle; }
 .hc-name { font-size: 1.55px; fill: rgba(255, 255, 255, 0.85); text-anchor: middle; font-weight: 600; paint-order: stroke; stroke: rgba(0, 0, 0, 0.55); stroke-width: 0.35px; }
@@ -325,7 +327,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         <div class="flash" id="flash"></div>
         <div class="banner" id="banner" hidden>TIMEOUT</div>
         <div class="callout" id="callout" aria-live="polite"><div class="big"></div><div class="small"></div></div>
-        <svg class="shape" id="shape" viewBox="0 0 94 50" preserveAspectRatio="none" aria-hidden="true"><polygon id="shape-area"/><line id="shape-chase"/></svg>
+        <svg class="shape" id="shape" viewBox="0 0 94 50" preserveAspectRatio="none" aria-hidden="true"><polygon id="shape-area"/><line id="shape-chase"/><line id="shape-chase2"/></svg>
         <div class="ball" id="ball"></div>
       </div>
 
@@ -435,7 +437,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const team = sides[playerTeam[id]];
       const el = document.createElement("div");
       el.className = "figure";
-      el.title = playerTeam[id] === "home" ? `Talk to ${playerById[id].name}` : `Mention ${playerById[id].name} to your team`;
+      el.title = `${playerById[id].name} · ${playerById[id].archetype}` + (playerTeam[id] === "home" ? ": talk to him" : ": mention him to your team");
       el.innerHTML = cartoon(team).replace("__INI__", initials(playerById[id].name)) + `<span class="tag">${last(playerById[id].name)}</span><span class="bubble"></span><span class="badges"></span>`;
       el.style.opacity = "0";
       el.addEventListener("click", () => talkTo(id));
@@ -455,6 +457,54 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const toCourt = (right, dx, dy) => ({ x: right ? 88.75 - dx : 5.25 + dx, y: 25 + (right ? -dy : dy) });
   const basketOf = (right) => toCourt(right, 0, 0);
   const SPOTS = [[25, 0], [15, -20], [15, 20], [1.5, -22.5], [4.5, 10]];   // feet from the basket: top, wings, corner, dunker spot
+  // How each archetype (archetypes.py: from his own numbers) plays on the court. fit: how well he suits each kind
+  // of role [handle the ball, play the wing, spot up, play inside, score]; move: what he does off the ball; drive:
+  // he attacks the rim in free play; gap: how far he sags from his man toward the basket (small: tight); crash: he
+  // goes to the glass on a miss. A set play decides where everyone is; the archetype decides how he moves there.
+  const STYLE = {
+    "Two-Way Scoring Dominator":   { fit: [0.6, 1, 0.4, 0.1, 1], move: "cut", drive: true, gap: 0.2 },
+    "High-Volume Isolation Guard": { fit: [0.9, 0.6, 0.4, 0, 1], move: "hold", drive: true, gap: 0.3 },
+    "All-Around Point Forward":    { fit: [1, 0.7, 0.3, 0.4, 0.8], move: "cut", drive: true, gap: 0.28, crash: true },
+    "Floor General":               { fit: [1, 0.4, 0.5, 0, 0.3], move: "hold", gap: 0.22 },
+    "Scoring Playmaker":           { fit: [0.95, 0.6, 0.6, 0, 0.8], move: "hold", drive: true, gap: 0.3 },
+    "Shot-Creating Wing":          { fit: [0.5, 1, 0.5, 0.1, 0.9], move: "relocate", drive: true, gap: 0.3 },
+    "Slashing Wing":               { fit: [0.3, 1, 0.2, 0.2, 0.6], move: "cut", drive: true, gap: 0.28 },
+    "3-and-D Wing":                { fit: [0.1, 0.7, 1, 0.1, 0.3], move: "relocate", gap: 0.18 },
+    "Movement Shooter":            { fit: [0.2, 0.8, 1, 0, 0.6], move: "curl", gap: 0.3 },
+    "Gravity Shooter":             { fit: [0.8, 0.7, 1, 0, 0.9], move: "relocate", gap: 0.3 },
+    "Stretch Big":                 { fit: [0.1, 0.3, 0.6, 0.8, 0.7], move: "pop", gap: 0.35 },
+    "Pick-and-Roll Post Bruiser":  { fit: [0.1, 0.1, 0, 1, 0.8], move: "screen", gap: 0.35, crash: true },
+    "Dominant Post Scorer":        { fit: [0, 0, 0, 1, 0.9], move: "seal", gap: 0.5, crash: true },
+    "Two-Way Post Anchor":         { fit: [0.1, 0.1, 0, 1, 0.6], move: "seal", gap: 0.5, crash: true },
+    "Rim-Running Anchor":          { fit: [0, 0, 0, 1, 0.2], move: "dive", gap: 0.55, crash: true },
+    "Rebounding Specialist":       { fit: [0, 0.1, 0, 0.9, 0], move: "crash", gap: 0.35, crash: true },
+    "Energy Big":                  { fit: [0, 0.1, 0, 0.8, 0.2], move: "seal", gap: 0.4, crash: true },
+    "Role Player":                 { fit: [0.3, 0.6, 0.6, 0.3, 0.3], move: "relocate", gap: 0.3 },
+  };
+  const styleOf = (id) => STYLE[(playerById[id] || {}).archetype] || STYLE["Role Player"];
+  const [HANDLE, WING, SHOOT, BIG, SCORE] = [0, 1, 2, 3, 4];
+  function fitScore(id, kind) {   // how well he suits a kind of role: his archetype first, then his numbers
+    const p = playerById[id];
+    return styleOf(id).fit[kind] * 10 + (kind === HANDLE ? p.handler * 2 : kind === BIG ? p.big * 3 : kind === SCORE ? p.usage * 3 : 0);
+  }
+  // Off the ball, between the set play's moves: where he goes next from his spot (and back, every other time).
+  // Shooters slide along the arc, movement shooters curl toward the top, slashers cut, rim-runners dive, post
+  // players seal, stretch bigs pop out, bruisers come up to screen for the ball, handlers dribble around the top.
+  function offBall(how, spot, right, r, out) {
+    const feet = { dx: right ? 88.75 - spot.x : spot.x - 5.25, dy: right ? 25 - spot.y : spot.y - 25 };
+    const d = Math.hypot(feet.dx, feet.dy), a = Math.atan2(feet.dy, feet.dx), basket = basketOf(right);
+    const at = (dist, angle) => clampCourt(toCourt(right, Math.max(1, dist * Math.cos(angle)), dist * Math.sin(Math.max(-1.52, Math.min(1.52, angle)))));
+    const near = (n) => clampCourt({ x: spot.x + (r() - 0.5) * n, y: spot.y + (r() - 0.5) * n });
+    if (!out) return near(how === "hold" ? 4 : 2.5);
+    if (how === "cut" || how === "motion") return clampCourt(lerp(spot, basket, 0.5 + r() * 0.2));
+    if (how === "dive" || how === "crash") return clampCourt(lerp(spot, basket, 0.55 + r() * 0.25));
+    if (how === "relocate") return at(d, a + (r() < 0.5 ? -1 : 1) * (0.12 + r() * 0.15));
+    if (how === "curl") return at(Math.max(15, d * 0.85), a * 0.35);   // around a screen, up toward the top
+    if (how === "pop") return at(Math.max(d, 21.5), a);
+    if (how === "screen") return clampCourt(lerp(spot, toCourt(right, 24, a > 0 ? 3 : -3), 0.75));   // up to screen for the ball
+    if (how === "seal") return clampCourt(lerp(near(3), basket, 0.2));
+    return near(4);
+  }
   // The tactics drawn: where each role sets up (also on the court) and how they move (the helper under the talk rows).
   // Each tactic's roles and where they stand ([feet out from the basket, feet across]): on the court, and in the helper
   // under the talk rows, which also draws the moves ([role, from, to, kind]). Man-to-man defenses have no spots:
@@ -472,10 +522,43 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     five_out: { spots: { point: [25, 0], lwing: [17, -18], rwing: [17, 18], lcorner: [1.5, -22.5], rcorner: [1.5, 22.5] } },
     motion: { spots: { point: [25, 0], lwing: [15, -20], rwing: [15, 20], corner: [1.5, -22.5], dunker: [4.5, 10] },
               moves: [["lwing", [15, -20], [8, -6], "run"], ["rwing", [15, 20], [8, 6], "run"]] },
+    // Scripted set plays: once all five are set, script: [seconds, role, feet out, feet across, kind] is each move (a
+    // run, a screen, a roll) arriving at its time, and passes: [seconds, role] who gets the ball when.
+    elevator: { spots: { shooter: [5, 0], doorl: [18.5, -4.5], doorr: [18.5, 4.5], passer: [22, -17], corner: [1.5, 22.5] },
+                script: [[1.1, "shooter", 14, 0, "run"], [1.8, "doorl", 18.5, -1.3, "screen"], [1.8, "doorr", 18.5, 1.3, "screen"], [2.0, "shooter", 24.5, 0, "run"]],
+                passes: [[-0.8, "passer"], [2.2, "shooter"]] },
+    horns: { spots: { handler: [27, 0], elbowl: [18, -6], elbowr: [18, 6], lcorner: [1.5, -22.5], rcorner: [1.5, 22.5] },
+             script: [[0.9, "elbowl", 24.5, -2.5, "screen"], [1.9, "handler", 15, 9, "run"], [2.3, "elbowr", 21, 12, "run"], [2.6, "elbowl", 5, -1.5, "roll"]],
+             passes: [[-0.8, "handler"], [2.9, "elbowl"]] },
+    spain: { spots: { handler: [27, 0], screener: [7, -9], backscreen: [13, 0], lwing: [16, -20], rcorner: [1.5, 22.5] },
+             script: [[1.0, "screener", 24, -2.5, "screen"], [2.0, "handler", 16, 8, "run"], [2.3, "backscreen", 19.5, -1.5, "screen"], [2.8, "screener", 5, -1, "roll"],
+                      [3.3, "backscreen", 24.5, -5, "run"]],
+             passes: [[-0.8, "handler"], [3.6, "backscreen"]] },
+    floppy: { spots: { shooter: [4, 0], single: [8, -9], stagger1: [8, 9], stagger2: [14, 12], handler: [27, 0] },
+              script: [[0.6, "single", 9, -8, "screen"], [0.6, "stagger1", 9, 8, "screen"], [0.8, "stagger2", 15, 11, "screen"], [1.4, "shooter", 12, 11, "run"],
+                       [2.2, "shooter", 21, 17, "run"]],
+              passes: [[-0.8, "handler"], [2.4, "shooter"]] },
+    hammer: { spots: { driver: [20, 17], shooter: [15, -20], hammer: [8, -11], big: [4, 9], top: [27, 0] },
+              script: [[1.2, "hammer", 9, -17, "screen"], [1.7, "driver", 5, 10, "run"], [1.9, "big", 9, 2, "run"], [2.1, "shooter", 1.5, -22.5, "run"]],
+              passes: [[-0.8, "driver"], [2.5, "shooter"]] },
     zone23: { spots: { topl: [19, -7.5], topr: [19, 7.5], wingl: [6, -13], wingr: [6, 13], middle: [4.5, 0] } },
+    zone131: { spots: { trap: [26, 0], wingl: [17, -17], middle: [14, 0], wingr: [17, 17], rover: [4, 0] } },
     box1: { spots: { chaser: [22, 4], boxtl: [15, -8], boxtr: [15, 8], boxll: [5, -9], boxlr: [5, 9] }, moves: [["chaser", [22, 4], [22, 1], "chase"]] },
+    tri2: { spots: { chaser: [22, 4], chaser2: [22, -4], tritop: [15, 0], tril: [5, -8], trir: [5, 8] },
+            moves: [["chaser", [22, 4], [20, 8], "chase"], ["chaser2", [22, -4], [20, -8], "chase"]] },
     man: {}, switch: {}, drop: {}, blitz: {}, press: {},
   };
+  // A scripted play, drawn: each role's runs, screens and rolls from its spot, and the passes, from the same script the
+  // court plays (planSegment), so the helper never shows something the court doesn't do.
+  for (const lay of Object.values(LAYOUT)) {
+    if (!lay.script) continue;
+    const steps = [...lay.script].sort((a, b) => a[0] - b[0]), at = { ...lay.spots }, moves = [];
+    const where = (role, t) => { let q = lay.spots[role]; for (const [dt, r2, dx, dy] of steps) if (r2 === role && dt <= t) q = [dx, dy]; return q; };
+    for (const [, role, dx, dy, kind] of steps) { moves.push([role, at[role], [dx, dy], kind]); at[role] = [dx, dy]; }
+    let holder = null;
+    for (const [dt, role] of lay.passes || []) { if (holder) moves.push([holder, where(holder, dt), where(role, dt + 0.3), "pass"]); holder = role; }
+    lay.moves = moves;
+  }
   const MAN_SPOTS = [[22, 0], [13, -17], [13, 17], [3, -19], [4, 7]];   // on the offense's point guard, wings, corner and big
   let restarts = [];   // tactics changed in a timeout during a possession: { s: its chance's event index, at: game time, tactic }
   const pickLog = [];   // the coach's own role picks over the game: { events: how many the page had then, picked }
@@ -492,8 +575,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   function withShape(tac, ev, coach = tactic) {   // a chance's calls with the coach's tactic (now, or then) in place of the one it was played with
     const ours = ev.team === G.home.tricode ? "off" : "def", out = { off: { ...((tac && tac.off) || {}) }, def: { ...((tac && tac.def) || {}) } };
     if (ours === "off") {
-      const FOCUS = { iso: "scorer", pnr: "handler", pop: "handler", post: "post" };   // the man a play runs through
-      if (FOCUS[out.off.play] || FOCUS[coach.play]) out.off.focus = FOCUS[coach.play] ? coach.roles[FOCUS[coach.play]] : undefined;
+      const focusOf = (play) => (PLAYS[play] || {}).focus;   // the man a play runs through
+      if (focusOf(out.off.play) || focusOf(coach.play)) out.off.focus = focusOf(coach.play) ? coach.roles[focusOf(coach.play)] : undefined;
       out.off.play = coach.play === "free" ? undefined : coach.play;
       out.off.roles = { ...coach.roles };
     } else {
@@ -520,20 +603,32 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const spotsUp = (i <= 2 && (offT.three_point_rate || 0) > 0.2) || (pref && pref.shot_preference && pref.shot_preference.zone === "three")
       || offT.play === "five_out";   // five-out: even the big stands beyond the arc
     if (spotsUp && !setUp[id]) { const d = Math.hypot(dx, dy) || 1; dx = (dx / d) * 25.5; dy = Math.max(-21, Math.min(21, (dy / d) * 25.5)); }   // spaced beyond the arc
+    if ((!offT.play || offT.play === "motion") && !spotsUp) {   // free play: each sets up where his kind plays
+      const st = styleOf(id), big = st.fit[BIG] >= 0.8, side = dy < 0 ? -1 : 1;
+      if (big && Math.hypot(dx, dy) > 14) [dx, dy] = st.move === "pop" ? [18, 8 * side] : side > 0 ? [17, 6] : [7, -9];   // a big inside: the high post or the block
+      else if (!big && Math.hypot(dx, dy) < 12) [dx, dy] = [1.5, 22.5 * side];   // no big for the dunker spot: a shooter in the corner
+    }
     return [dx, dy];
   }
   // the shape a defense plays: a scheme's own (drop coverage packs the paint but stays man to man; a blitz presses
   // only on screens), else the levers' (the other coach's calls)
   const pressing = (defT) => defT.scheme === "press" || (!defT.scheme && (defT.pressure || 0) > 0.2);
-  const zoned = (defT) => defT.scheme === "zone23" || (!defT.scheme && (defT.protect_paint || 0) > 0.2);
+  const zoned = (defT) => defT.scheme === "zone23" || defT.scheme === "zone131" || (!defT.scheme && (defT.protect_paint || 0) > 0.2);
+  const boxed = (defT) => defT.scheme === "box1" || defT.scheme === "tri2";   // chasers on their scorers, the rest in a zone
+  function chasersOf(defT, def, off) {   // [defender, the man he chases]: their main scorers, by usage
+    const stars = [...off].sort((a, b) => (playerById[b].usage || 0) - (playerById[a].usage || 0)), rl = defT.roles || {};
+    const pairs = defT.scheme === "box1" ? [[rl.chaser ?? defT.chaser, stars[0]]] : defT.scheme === "tri2" ? [[rl.chaser, stars[0]], [rl.chaser2, stars[1]]] : [];
+    return pairs.filter(([d]) => def.includes(d));
+  }
   function zoneSpots(plan) {   // each defender's spot in the zone or the box: his role's, or a free one (null: a man-to-man defense)
-    const shape = plan.box ? "box1" : plan.zone ? "zone23" : null;
-    if (!shape) return null;
-    const spots = LAYOUT[shape].spots, free = Object.keys(spots).filter((r) => r !== "chaser"), out = {};
+    const shape = plan.box ? plan.scheme : plan.zone ? (plan.scheme === "zone131" ? "zone131" : "zone23") : null;
+    if (!shape || !LAYOUT[shape]) return null;
+    const chasing = new Set(plan.chasers.map(([d]) => d)), chaserRoles = ["chaser", "chaser2"];
+    const spots = LAYOUT[shape].spots, free = Object.keys(spots).filter((r) => !chaserRoles.includes(r)), out = {};
     for (const [r, id] of Object.entries(plan.droles)) {
-      if (spots[r] && r !== "chaser" && plan.def.includes(id) && !out[id] && free.includes(r)) { out[id] = spots[r]; free.splice(free.indexOf(r), 1); }
+      if (spots[r] && !chaserRoles.includes(r) && plan.def.includes(id) && !out[id] && !chasing.has(id) && free.includes(r)) { out[id] = spots[r]; free.splice(free.indexOf(r), 1); }
     }
-    for (const id of plan.def) if (!out[id] && id !== plan.chaser) out[id] = spots[free.shift()] || [8, 0];
+    for (const id of plan.def) if (!out[id] && !chasing.has(id)) out[id] = spots[free.shift()] || [8, 0];
     return out;
   }
   function defenseRoles(plan, defT) {   // who leaves his man: the big in drop coverage sags, a blitz sends a second man at the ball
@@ -547,12 +642,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   const LANE = [[11, -7], [11, 7], [7, -7], [7, 7], [16, -9], [16, 9], [24, -3], [24, 3]];
   function seeded(n) { let s = (n * 9301 + 49297) % 233280 || 1; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; }
-  function roles(ids) {
+  function roles(ids) {   // a five in order: the ball handler, three wings (smallest first), the big (by archetype)
     if (ids.length < 5) return [...ids];
-    const handler = ids.reduce((a, b) => (playerById[b].handler > playerById[a].handler ? b : a));
+    const handler = ids.reduce((a, b) => (fitScore(b, HANDLE) > fitScore(a, HANDLE) ? b : a));
     const rest = ids.filter((p) => p !== handler);
-    const big = rest.reduce((a, b) => (playerById[b].big > playerById[a].big ? b : a));
-    const wings = rest.filter((p) => p !== big).sort((a, b) => playerById[a].big - playerById[b].big);   // smallest first
+    const big = rest.reduce((a, b) => (fitScore(b, BIG) > fitScore(a, BIG) ? b : a));
+    const wings = rest.filter((p) => p !== big).sort((a, b) => fitScore(a, BIG) - fitScore(b, BIG));
     return [handler, wings[0], wings[1], wings[2], big];
   }
   // Where a shot comes from, relative to the basket: in its zone, on the side of the floor the shooter is on
@@ -622,7 +717,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     function offense() {   // the offense's runs, its set play, the final action and the ball
       // offense: start where they were, run to their spots on a curved path, then keep moving
       const keys = {};
-      const homeSpot = {};
+      const homeSpot = {}, arrive = {};   // arrive: when he's at his spot
       const setUp = playSpots(offT, off);   // a set play: each player at his role's spot
       off.forEach((id, i) => {
         const [dx, dy] = spotOf(offT, setUp, i, id);
@@ -638,6 +733,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         // (not a fixed share of the possession), within the possession
         const need = (1.5 * Math.hypot(spot.x - start.x, spot.y - start.y)) / VMAX;
         const run = Math.min(Math.max(travel, need), firstChance ? dur * 0.85 : Math.max(travel, dur * 0.6));
+        arrive[id] = t0 + run;
         // one run, no stops at the bends: speeding up to the first, full speed between, slowing into his spot
         const legs = (pts) => {   // times for the bends: a speeding-up or slowing-down leg takes twice as long per foot
           const d = pts.map((q, j) => Math.hypot(q.x - (j ? pts[j - 1] : start).x, q.y - (j ? pts[j - 1] : start).y) * (j === 0 || j === pts.length - 1 ? 2 : 1));
@@ -652,14 +748,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
           const to = lerp(start, spot, Math.min(1, run / need));
           if (run > 1.2) k0.push(...legs([lerp(start, curve, Math.min(1, run / need)), to])); else k0.push([t0 + run, to.x, to.y]);
         }
+        // off the ball he moves as his kind does (motion: everyone keeps cutting to the basket and back out)
+        const how = offT.play === "motion" ? "motion" : styleOf(id).move, every = how === "motion" ? 1.2 : how === "hold" ? 1.0 : 1.6;
         let tt = t0 + run, out = true;
-        const motion = offT.play === "motion";   // motion: everyone keeps cutting to the basket and back out
-        while (tt + (motion ? 1.6 : 2.2) < t1 - 1.6) {
-          tt += motion ? 1.3 + r() * 1.1 : 1.8 + r() * 2.2;
+        while (tt + every + 0.4 < t1 - 1.6) {
+          tt += every + r() * 1.2;
           if (tt > t1 - 1.6) break;
-          const cut = motion && out ? clampCourt(lerp(spot, basket, 0.45 + r() * 0.2)) : clampCourt({ x: spot.x + (r() - 0.5) * (motion ? 4 : 9), y: spot.y + (r() - 0.5) * (motion ? 4 : 9) });
+          const to = offBall(how, spot, right, r, out);
           out = !out;
-          k0.push([tt, cut.x, cut.y]);
+          k0.push([tt, to.x, to.y]);
         }
         keys[id] = k0;
       });
@@ -704,10 +801,37 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
           }
         }
       }
+      // a scripted set play (elevator, horns, Spain, floppy, hammer): once all five are set, each role's runs, screens
+      // and rolls at their times, then he holds there; and the ball goes to whom the play sends it
+      const lay = LAYOUT[offT.play];
+      let scriptAt = null;   // when the script started
+      if (lay && lay.script && firstChance) {
+        const rl = offT.roles || {}, ids = Object.keys(lay.spots).map((role) => rl[role]).filter((id) => off.includes(id) && keys[id]);
+        const ts = Math.max(t0 + travel, ...ids.map((id) => arrive[id])) + 0.4;
+        const end = Math.max(...lay.script.map((m) => m[0]), ...(lay.passes || []).map((m) => m[0]));
+        const pace = Math.min(1, (t1 - 2.0 - ts) / end);   // a short possession runs the play quicker (not under 55% of its time)
+        if (pace >= 0.55) {
+          for (const role of Object.keys(lay.spots)) {
+            const id = rl[role];
+            if (!off.includes(id) || !keys[id]) continue;
+            const ks = keys[id].filter((k, j) => j === 0 || k[0] < ts - 0.05);
+            ks.push([ts, homeSpot[id].x, homeSpot[id].y]);
+            let at = homeSpot[id], tt = ts;
+            for (const [dt, , dx, dy] of lay.script.filter((m) => m[1] === role).sort((a, b) => a[0] - b[0])) {
+              at = clampCourt(toCourt(right, dx, dy)); tt = ts + dt * pace; ks.push([tt, at.x, at.y]);
+            }
+            while (tt + 2 < t1 - 1.6) { tt += 1.6 + r() * 1.2; const q = clampCourt({ x: at.x + (r() - 0.5) * 3, y: at.y + (r() - 0.5) * 3 }); ks.push([tt, q.x, q.y]); }
+            keys[id] = ks;
+          }
+          for (const [dt, role] of lay.passes || []) if (off.includes(rl[role])) fixedPasses.push([rl[role], ts + dt * (dt > 0 ? pace : 1)]);
+          scriptAt = { ts, pace };
+        }
+      }
       // the player told to attack (or the one the offense runs through) drives at the rim mid-possession
       const told = offT.players || {};
       const driver = [offT.focus, ...Object.keys(told).map(Number).filter((p) => (told[p].aggression || 0) > 0.2 || (told[p].shot_preference && told[p].shot_preference.zone === "rim"))]
-        .find((p) => p && off.includes(p)) || ((offT.attack_rim || 0) > 0.2 ? off[0] : null);
+        .find((p) => p && off.includes(p)) || ((offT.attack_rim || 0) > 0.2 ? off[0] : null)
+        || (!offT.play && r() < 0.7 ? off.filter((p) => styleOf(p).drive).sort((a, b) => playerById[b].usage - playerById[a].usage)[0] || null : null);   // free play: his kind attacks
       if (driver && keys[driver] && !pnr && (!fixedPasses.length || driver === iso)) {
         const td = t0 + travel + Math.max(iso ? 1.4 : 0.3, (t1 - t0 - travel) * 0.3);
         if (td + 1.6 < t1 - 1.6) {
@@ -745,6 +869,12 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
           const to = crash > 0 ? clampCourt(toCourt(right, 3 + r() * 5, (r() - 0.5) * 14)) : clampCourt(toCourt(right, 36 + r() * 8, (r() - 0.5) * 24));
           keys[id] = [...keys[id].filter((k) => k[0] < t1 - 0.9), [t1, to.x, to.y]];
         }
+      } else if (final.kind === "shot" && !final.made) {   // no call: the ones whose kind crashes the glass go
+        for (const id of off) {
+          if (id === final.shooter || !styleOf(id).crash) continue;
+          const to = clampCourt(toCourt(right, 3 + r() * 5, (r() - 0.5) * 14));
+          keys[id] = [...keys[id].filter((k) => k[0] < t1 - 0.9), [t1, to.x, to.y]];
+        }
       }
 
       // the ball: who holds it when, passes in between, and the last touch the engine recorded
@@ -761,6 +891,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const passes = Math.max(0, Math.min(4, Math.round((dur - travel - 2.5) / 4)));
       if (pnr) fixedPasses.push([pnr.handler, pnr.ts - 1.0]);   // he has it for the screen
       const quiet = fixedPasses.length ? [Math.min(...fixedPasses.map((f) => f[1])) - 0.9, iso ? t1 : Math.max(...fixedPasses.map((f) => f[1])) + (pnr ? 3.4 : 1.2)] : null;
+      fixedPasses.sort((a, b) => a[1] - b[1]);
       let fi = 0;
       for (let i = 0; i < passes; i++) {
         const when = t0 + travel + (dur - travel - 2.8) * ((i + 0.5 + (r() - 0.5) * 0.4) / passes);
@@ -805,19 +936,19 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       } else {
         ball.push({ hold: holder, from: tb, to: t1 });
       }
-      return { keys, homeSpot, pnr, driver, final, ball };
+      return { keys, homeSpot, pnr, driver, final, ball, scriptAt };
     }
-    const { keys, homeSpot, pnr, driver, final, ball } = keep || offense();
+    const { keys, homeSpot, pnr, driver, final, ball, scriptAt } = keep || offense();
 
     // a double team: the defender whose man stands nearest the doubled player leaves him to help
     const doubled = off.includes(ev.other) && (!resumed || defT.double_team) ? ev.other : null;   // called off in a timeout: no more
     const near = (id) => Math.hypot(homeSpot[id].x - homeSpot[doubled].x, homeSpot[id].y - homeSpot[doubled].y);
     const helper = doubled ? off.map((id, i) => [id, i]).filter(([id]) => id !== doubled).sort((a, b) => near(a[0]) - near(b[0]))[0][1] : -1;
     const plan = { k, s, next, t0, t1, offKey, defKey, right, basket, off, def, keys, ball, final, shootingFoul, doubled, helper, tac, driver, pnr, homeSpot,
-      roles: offKey === "home" ? offT.roles : defT.roles, play: offT.play || "free", scheme: defT.scheme || "man",
+      roles: offKey === "home" ? offT.roles : defT.roles, play: offT.play || "free", scheme: defT.scheme || "man", script: scriptAt,
       rebound, ftShooter,
       zone: zoned(defT), hug: (defT.protect_paint || 0) < -0.2,
-      box: defT.scheme === "box1", chaser: def.includes(defT.chaser) ? defT.chaser : null, droles: defT.roles || {},
+      box: boxed(defT), chasers: chasersOf(defT, def, off), droles: defT.roles || {},
       star: off.reduce((a, b) => ((playerById[b].usage || 0) > (playerById[a].usage || 0) ? b : a)),   // their main scorer
       dropper: null,   // drop coverage: whoever guards their biggest (set below, once the plan exists)
       pressUntil: pressing(defT) && !resumed ? t0 + Math.max(travel, dur * 0.45) : null };
@@ -922,9 +1053,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     return p;
   }
   function settledAt(plan, i, t) {   // the half-court defense: a zone, a box-and-one, or man to man
-    if (plan.box) {   // box-and-one: the chaser on their star wherever he goes, the other four in a box around the paint
-      if (plan.def[i] === plan.chaser && plan.keys[plan.star]) {
-        const o = track(plan.keys[plan.star], t - 0.25), b = plan.basket;
+    if (plan.box) {   // box-and-one, triangle-and-two: the chasers on their scorers wherever they go, the others in their zone
+      const chase = plan.chasers.find(([d]) => d === plan.def[i]);
+      if (chase && plan.keys[chase[1]]) {
+        const o = track(plan.keys[chase[1]], t - 0.25), b = plan.basket;
         return clampCourt({ x: o.x + (b.x - o.x) * 0.08, y: o.y + (b.y - o.y) * 0.08 + 0.8 });
       }
       const z = (plan.zoneSpot || {})[plan.def[i]] || [8, 0], spot = toCourt(plan.right, z[0], z[1]);
@@ -937,7 +1069,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const mark = markOf(plan, i);
     if (!mark || !plan.keys[mark]) return plan.basket;
     const o = track(plan.keys[mark], t - 0.45);
-    const b = plan.basket, gap = plan.dropper === plan.def[i] ? 0.62 : plan.hug ? 0.12 : 0.3;   // drop coverage: the big sags to the rim
+    const b = plan.basket, gap = plan.dropper === plan.def[i] ? 0.62 : plan.hug ? 0.12 : styleOf(plan.def[i]).gap;   // drop: the big sags; else as his kind does
     return clampCourt({ x: o.x + (b.x - o.x) * gap, y: o.y + (b.y - o.y) * gap + 1.2 });
   }
   let plans = [], startOf = [];   // built once the tactics below exist (at the end), and again with every possession
@@ -1244,7 +1376,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
     if (Object.keys(d).length && S.callKey[`${opp}d`] !== dkey) {
       S.callKey[`${opp}d`] = dkey;
-      const shout = { box1: "Box-and-one! Box up!", drop: "Drop! Bigs stay home!", blitz: "Blitz the screens! Two on the ball!", switch: "Switch everything!" }[d.scheme];
+      const shout = { box1: "Box-and-one! Box up!", drop: "Drop! Bigs stay home!", blitz: "Blitz the screens! Two on the ball!", switch: "Switch everything!",
+                      zone131: "One-three-one! Trap it!", tri2: "Triangle-and-two! Stay on their scorers!" }[d.scheme];
       if (shout) say(anyMate(opp), shout, "call");
       else if (zoned(d)) say(anyMate(opp), "Two-three! Zone, zone!", "call");
       else if ((d.protect_paint || 0) < -0.2) say(anyMate(opp), "Stay on the shooters! No threes!", "call");
@@ -1472,8 +1605,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
     if (o.play) offCalls.unshift(plan.pnr ? `${o.play === "pnr" ? "pick-and-roll" : "pick-and-pop"} ${last(playerById[plan.pnr.handler].name)}–${last(playerById[plan.pnr.screener].name)}`
       : PLAYS[o.play] ? PLAYS[o.play].name.toLowerCase() : o.play);
-    if (d.scheme) defCalls.unshift(d.scheme === "box1" && d.chaser ? `box-and-one, ${last(playerById[d.chaser].name)} chasing ${last(playerById[plan.star].name)}`
-      : SCHEMES[d.scheme].name.toLowerCase());
+    if (d.scheme) defCalls.unshift(plan.box && plan.chasers && plan.chasers.length
+      ? `${SCHEMES[d.scheme].name.toLowerCase()}, ${plan.chasers.map(([c, o]) => `${last(playerById[c].name)} chasing ${last(playerById[o].name)}`).join(", ")}`
+      : SCHEMES[d.scheme] ? SCHEMES[d.scheme].name.toLowerCase() : d.scheme);
     if (d.double_team) defCalls.push(`doubling ${last(playerById[d.double_team].name)}`);
     const parts = [];
     if (offCalls.length) parts.push([`${sides[plan.offKey].tricode} offense`, offCalls.join(" · ")]);
@@ -1554,9 +1688,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     area.setAttribute("points", ids.map((id) => `${pos[id].x.toFixed(2)},${pos[id].y.toFixed(2)}`).join(" "));
     const color = sides[plan.defKey].primary === "#1A1A1A" ? "#ffffff" : sides[plan.defKey].primary;
     $("shape").style.setProperty("--shape", color);
-    const ch = plan.box && plan.chaser && pos[plan.chaser] && pos[plan.star];
-    chase.setAttribute("x1", ch ? pos[plan.chaser].x : 0); chase.setAttribute("y1", ch ? pos[plan.chaser].y : 0);
-    chase.setAttribute("x2", ch ? pos[plan.star].x : 0); chase.setAttribute("y2", ch ? pos[plan.star].y : 0);
+    ["shape-chase", "shape-chase2"].forEach((name, n) => {   // each chaser: a dashed line to his man
+      const line = $(name), [d, o] = (plan.box && plan.chasers[n]) || [], on = d && pos[d] && pos[o];
+      line.setAttribute("x1", on ? pos[d].x : 0); line.setAttribute("y1", on ? pos[d].y : 0);
+      line.setAttribute("x2", on ? pos[o].x : 0); line.setAttribute("y2", on ? pos[o].y : 0);
+    });
   }
   function renderBox(t) {
     const mins = minutesUpTo(t);
@@ -1734,6 +1870,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       sw.style.background = G.home.primary === "#1A1A1A" ? "#ffffff" : G.home.primary;
       head.append(sw, mk("b", "", last(p.name)), mk("span", "meta", `${b.PTS || 0} pts · ${b.PF || 0} pf · ${Math.floor((mins[p.id] || 0) / 60)} min`));
       head.title = p.name;
+      const kind = (playerById[p.id] || {}).archetype;
+      if (kind) head.append(mk("span", "kind", kind));
       const res = mk("div", "pc-res"), energy = mk("div"), bar = mk("span", "bar"), fill = mk("i");
       fill.style.width = `${Math.round(p.energy * 100)}%`; bar.append(fill);
       energy.append("energy ", bar, ` ${Math.round(p.energy * 100)}%`);
@@ -2023,21 +2161,36 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     free: { name: "Free offense", say: "No set play: the five space the floor and read the defense.", roles: SPACING, main: [] },
     pnr: { name: "Pick-and-roll", say: "{handler} brings it up; {screener} comes up to screen for him, then rolls to the rim. The other three space the floor.",
            roles: [["handler", "Ball handler"], ["screener", "Screener"], ["lwing", "Left wing"], ["rwing", "Right wing"], ["corner", "Corner"]],
-           main: ["handler", "screener"], team: { attack_rim: 0.4 } },
+           main: ["handler", "screener"], team: { attack_rim: 0.4 }, focus: "handler", prefer: { screener: ["rim", 0.5] } },
     pop: { name: "Pick-and-pop", say: "{handler} comes off {screener}'s screen; {screener} pops out to the three-point line for the shot.",
            roles: [["handler", "Ball handler"], ["screener", "Screener"], ["lwing", "Left wing"], ["rwing", "Right wing"], ["corner", "Corner"]],
-           main: ["handler", "screener"], team: { three_point_rate: 0.3 } },
+           main: ["handler", "screener"], team: { three_point_rate: 0.3 }, focus: "handler", prefer: { screener: ["three", 0.5] } },
     iso: { name: "Isolation", say: "{scorer} takes his man one-on-one on the wing; the other four clear out to the far side.",
-           roles: [["scorer", "Scorer"], ["top", "Top"], ["lwing", "Far wing"], ["corner", "Far corner"], ["dunker", "Dunker spot"]], main: ["scorer"] },
+           roles: [["scorer", "Scorer"], ["top", "Top"], ["lwing", "Far wing"], ["corner", "Far corner"], ["dunker", "Dunker spot"]], main: ["scorer"], focus: "scorer" },
     post: { name: "Post-up", say: "{entry} feeds {post} on the block; the others space out on the far side.",
             roles: [["post", "Post player"], ["entry", "Entry passer"], ["top", "Top"], ["lwing", "Far wing"], ["corner", "Far corner"]],
-            main: ["post", "entry"], team: { attack_rim: 0.5, pace: -0.3 } },
+            main: ["post", "entry"], team: { attack_rim: 0.5, pace: -0.3 }, focus: "post", prefer: { post: ["rim", 0.5] } },
     triangle: { name: "Triangle", say: "{post} on the block, {wing} on the wing and {corner} in the corner make the triangle on one side; {point} sits at the top and {weak} cuts from the weak side.",
                 roles: [["post", "Post"], ["wing", "Wing"], ["corner", "Corner"], ["point", "Point"], ["weak", "Weak side"]],
-                main: ["post", "wing", "corner", "point", "weak"], team: { attack_rim: 0.2, pace: -0.2 } },
+                main: ["post", "wing", "corner", "point", "weak"], team: { attack_rim: 0.2, pace: -0.2 }, prefer: { post: ["rim", 0.3] } },
     five_out: { name: "Five-out", say: "All five outside the arc: drive and kick.", main: [], team: { three_point_rate: 0.6 },
                 roles: [["point", "Top"], ["lwing", "Left wing"], ["rwing", "Right wing"], ["lcorner", "Left corner"], ["rcorner", "Right corner"]] },
     motion: { name: "Motion", say: "Keep cutting and passing until someone is open.", roles: SPACING, main: [] },
+    elevator: { name: "Elevator screen", say: "{shooter} runs up the lane between {doorl} and {doorr}; the doors shut behind him and he catches at the top for a three.",
+                roles: [["shooter", "Shooter"], ["doorl", "Left door"], ["doorr", "Right door"], ["passer", "Passer"], ["corner", "Corner"]],
+                main: ["shooter", "doorl", "doorr", "passer"], team: { three_point_rate: 0.3 }, focus: "shooter", prefer: { shooter: ["three", 0.6] } },
+    horns: { name: "Horns", say: "Two bigs at the elbows: {elbowl} comes up to screen for {handler} and rolls; {elbowr} pops out for a jumper.",
+             roles: [["handler", "Ball handler"], ["elbowl", "Left elbow (screens, rolls)"], ["elbowr", "Right elbow (pops)"], ["lcorner", "Left corner"], ["rcorner", "Right corner"]],
+             main: ["handler", "elbowl", "elbowr"], team: { attack_rim: 0.3 }, focus: "handler", prefer: { elbowl: ["rim", 0.4] } },
+    spain: { name: "Spain pick-and-roll", say: "{screener} screens for {handler} and rolls; {backscreen} back-screens the roller's man, then pops to the top for three.",
+             roles: [["handler", "Ball handler"], ["screener", "Screener (rolls)"], ["backscreen", "Back-screener (pops)"], ["lwing", "Left wing"], ["rcorner", "Right corner"]],
+             main: ["handler", "screener", "backscreen"], team: { attack_rim: 0.3 }, focus: "handler", prefer: { screener: ["rim", 0.4], backscreen: ["three", 0.5] } },
+    floppy: { name: "Floppy", say: "{shooter} starts under the basket and comes off {stagger1} and {stagger2}'s staggered screens to the wing; {single} screens the other side.",
+              roles: [["shooter", "Shooter"], ["single", "Single screen"], ["stagger1", "Low stagger"], ["stagger2", "High stagger"], ["handler", "Ball handler"]],
+              main: ["shooter", "stagger1", "stagger2", "single"], team: { three_point_rate: 0.3 }, focus: "shooter", prefer: { shooter: ["three", 0.5] } },
+    hammer: { name: "Hammer", say: "{driver} drives the baseline; {hammer} screens {shooter}'s man, {big} clears the lane and {shooter} drifts to the corner for the kick-out three.",
+              roles: [["driver", "Baseline driver"], ["shooter", "Corner shooter"], ["hammer", "Hammer screener"], ["big", "Big"], ["top", "Top"]],
+              main: ["driver", "shooter", "hammer", "big"], team: { attack_rim: 0.2, three_point_rate: 0.2 }, focus: "driver", prefer: { shooter: ["three", 0.6] } },
   };
   const SCHEMES = {   // matchups: each defender's role is his man
     man: { name: "Man to man", say: "Each defender guards his man. No double teams.", matchups: true, main: [] },
@@ -2049,7 +2202,13 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     press: { name: "Full-court press", say: "Each defender picks up his man the length of the floor.", matchups: true, main: [], team: { pressure: 0.8 } },
     box1: { name: "Box-and-one", say: "{chaser} chases their main scorer everywhere; the other four play a box around the paint.", main: ["chaser"],
             roles: [["chaser", "Chaser"], ["boxtl", "Box top left"], ["boxtr", "Box top right"], ["boxll", "Box low left"], ["boxlr", "Box low right"]],
-            team: { protect_paint: 0.5 } },
+            team: { protect_paint: 0.5 }, pressers: ["chaser"] },
+    zone131: { name: "1-3-1 zone", say: "{trap} traps at the top, {middle} holds the middle between two wings, {rover} covers the whole baseline.",
+               roles: [["trap", "Top (traps)"], ["wingl", "Left wing"], ["middle", "Middle"], ["wingr", "Right wing"], ["rover", "Baseline rover"]],
+               main: ["trap", "middle", "rover"], team: { protect_paint: 0.3, pressure: 0.35 } },
+    tri2: { name: "Triangle-and-two", say: "{chaser} and {chaser2} chase their two main scorers everywhere; the other three play a triangle in the paint.",
+            roles: [["chaser", "Chaser on their 1st scorer"], ["chaser2", "Chaser on their 2nd scorer"], ["tritop", "Triangle top"], ["tril", "Triangle low left"], ["trir", "Triangle low right"]],
+            main: ["chaser", "chaser2"], team: { protect_paint: 0.4 }, pressers: ["chaser", "chaser2"] },
   };
   let tactic = { play: "free", scheme: "man", roles: {}, picked: {} };   // picked: the roles the coach chose himself
   const tacticFor = (phase) => (phase === "offense" ? PLAYS[tactic.play] : SCHEMES[tactic.scheme]);
@@ -2060,25 +2219,30 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const k = roles(theirs).indexOf(Number(role.slice(3)));
       return [roles(ids)[k]];
     }
-    const by = (key) => [...ids].sort((a, b) => playerById[b][key] - playerById[a][key]);
-    return ({ handler: [handler, w1], screener: [big, w3, w2], scorer: [handler, w1, w2], post: [big, w3], entry: [handler, w1, w2],
-              wing: [w1, w2], corner: [w3, w2, w1], point: [handler, w1], weak: [w2, w1, w3], top: [handler, w1, w2],
-              lwing: [w1, w2, w3], rwing: [w2, w1, w3], lcorner: [w3, w2], rcorner: [w2, w3], dunker: [big, w3],
-              chaser: by("steal"), boxtl: [handler, w1], boxtr: [w1, w2], boxll: [w3, big], boxlr: [big, w3],
-              topl: [handler, w1], topr: [w1, w2], wingl: [w2, w3], wingr: [w3, w2], middle: [big] })[role] || ids;
+    if (role === "chaser" || role === "chaser2") return [...ids].sort((a, b) => playerById[b].steal * 10 - styleOf(b).gap - (playerById[a].steal * 10 - styleOf(a).gap));
+    const kind = ROLE_KIND[role] ?? WING;
+    return [...ids].sort((a, b) => fitScore(b, kind) - fitScore(a, kind));   // the best fit for the role, by archetype
   }
+  // the kind of player each role wants: [handle, wing, spot up, inside, score]
+  const ROLE_KIND = { point: HANDLE, handler: HANDLE, top: HANDLE, entry: HANDLE, scorer: SCORE, wing: WING, weak: WING, lwing: WING, rwing: WING,
+    corner: SHOOT, lcorner: SHOOT, rcorner: SHOOT, dunker: BIG, screener: BIG, post: BIG,
+    topl: HANDLE, topr: WING, wingl: WING, wingr: WING, middle: BIG, boxtl: HANDLE, boxtr: WING, boxll: BIG, boxlr: BIG,
+    shooter: SHOOT, doorl: BIG, doorr: BIG, passer: HANDLE, elbowl: BIG, elbowr: BIG, backscreen: SHOOT, single: BIG, stagger1: BIG, stagger2: WING,
+    driver: SCORE, hammer: WING, big: BIG, trap: HANDLE, rover: WING, tritop: WING, tril: BIG, trir: BIG };
+  const KIND_ORDER = [BIG, HANDLE, SCORE, SHOOT, WING];   // filled first: the scarce kinds
   // Every player on the floor has a role in a tactic: the coach's choice while he's on the floor, else the best fit
   // (a substitute takes over the role of the man he replaced). The rows, the helper and the court all use this.
   function completeRoles(t, given, ids, theirs) {
     const want = t.matchups ? roles(theirs).map((id) => `on:${id}`) : t.roles.map(([r]) => r), out = {}, taken = new Set();
     for (const r of want) { const id = given[r]; if (ids.includes(id) && !taken.has(id)) { out[r] = id; taken.add(id); } }
-    for (const r of want) if (!out[r]) { const id = [...guessOrder(r, ids, theirs), ...ids].find((p) => p && !taken.has(p)); if (id) { out[r] = id; taken.add(id); } }
+    const order = t.matchups ? want : [...want].sort((a, b) => KIND_ORDER.indexOf(ROLE_KIND[a] ?? WING) - KIND_ORDER.indexOf(ROLE_KIND[b] ?? WING));
+    for (const r of order) if (!out[r]) { const id = [...guessOrder(r, ids, theirs), ...ids].find((p) => p && !taken.has(p)); if (id) { out[r] = id; taken.add(id); } }
     return out;
   }
   let rolesMoved = false;   // a lineup change put someone in a role: the engine is told (updateTalk)
   function fillRoles() {   // every player has one role at each end
     const ids = homeFloor(), theirs = awayFloor(), key = (r) => JSON.stringify(Object.entries(r).sort());
-    const given = withPicks(tactic.roles, tactic.picked, ids);
+    const given = withPicks({}, tactic.picked, ids);   // your own picks; every other role goes to the best fit for this tactic
     const out = { ...completeRoles(PLAYS[tactic.play], given, ids, theirs), ...completeRoles(SCHEMES[tactic.scheme], given, ids, theirs) };
     if (key(out) !== key(tactic.roles)) rolesMoved = true;
     tactic.roles = out;
@@ -2108,11 +2272,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (tactic.play !== "free") raw.play = tactic.play;
     if (tactic.scheme !== "man") raw.scheme = tactic.scheme;
     if (stopDouble) raw.stop = ["double_team"];   // man to man: no double team either
-    if (tactic.play === "pnr" || tactic.play === "pop") { raw.focus = r.handler; raw.players.push({ person_id: r.screener, shot_preference: { zone: tactic.play === "pnr" ? "rim" : "three", value: 0.5 } }); }
-    if (tactic.play === "iso") raw.focus = r.scorer;
-    if (tactic.play === "post") { raw.focus = r.post; raw.players.push({ person_id: r.post, shot_preference: { zone: "rim", value: 0.5 } }); }
-    if (tactic.play === "triangle") raw.players.push({ person_id: r.post, shot_preference: { zone: "rim", value: 0.3 } });
-    if (tactic.scheme === "box1") raw.players.push({ person_id: r.chaser, pressure: 0.7 });
+    if (play.focus) raw.focus = r[play.focus];   // the play runs through him
+    for (const [role, [zone, value]] of Object.entries(play.prefer || {})) raw.players.push({ person_id: r[role], shot_preference: { zone, value } });
+    for (const role of scheme.pressers || []) raw.players.push({ person_id: r[role], pressure: 0.7 });   // the chasers hound their men
     if (tactic.play === "motion") raw.unmapped.push("motion offense");
     if (tactic.scheme === "switch") raw.unmapped.push("switch everything");
     raw.players = raw.players.filter((p) => p.person_id);
@@ -2157,8 +2319,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const had = list.find(([r]) => tactic.roles[r] === row.id), holder = tactic.roles[want];
     tactic.roles[want] = row.id;   // he takes the role; whoever had it takes his old one
     if (had && had[0] !== want) { if (holder && holder !== row.id) tactic.roles[had[0]] = holder; else delete tactic.roles[had[0]]; }
-    for (const [r, id] of Object.entries(tactic.picked)) if (r === want || id === row.id) delete tactic.picked[r];
+    const swapped = had && had[0] !== want && holder && holder !== row.id ? [had[0], holder] : null;   // whoever had it takes his old one
+    for (const [r, id] of Object.entries(tactic.picked)) if (r === want || id === row.id || (swapped && (r === swapped[0] || id === swapped[1]))) delete tactic.picked[r];
     tactic.picked[want] = row.id;   // his, whenever he's on the floor
+    if (swapped) tactic.picked[swapped[0]] = swapped[1];
     pickLog.push({ events: G.events.length, picked: { ...tactic.picked } });
     sendTactic();
   }
@@ -2167,8 +2331,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (row.i === 5) return;
     const bench = G.home.players.map((p) => p.id).filter((id) => !homeFloor().includes(id) && !((S.box[id] || {}).PF >= 6));
     row.who.replaceChildren(new Option(last(playerById[row.id].name), String(row.id), true, true),
-      ...bench.map((id) => new Option(`⇄ ${last(playerById[id].name)}`, String(id))));
-    row.who.title = `${playerById[row.id].name}: pick a bench player to bring him in`;
+      ...bench.map((id) => new Option(`⇄ ${last(playerById[id].name)} · ${playerById[id].archetype}`, String(id))));
+    row.who.title = `${playerById[row.id].name}, ${playerById[row.id].archetype}: pick a bench player to bring him in`;
   }
   async function subIn(row) {
     const inn = Number(row.who.value), out = row.id;
@@ -2284,12 +2448,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     fillRoles();
     const t = tacticFor(phase), r = tactic.roles, key = phase === "offense" ? tactic.play : tactic.scheme;
     const players = {}, mark = (pid, lever) => { if (pid) (players[pid] ||= new Set()).add(lever); };
-    let focus = null;
-    if (key === "pnr" || key === "pop") { focus = r.handler; mark(r.screener, "shot_preference"); }
-    if (key === "iso") focus = r.scorer;
-    if (key === "post") { focus = r.post; mark(r.post, "shot_preference"); }
-    if (key === "triangle") mark(r.post, "shot_preference");
-    if (key === "box1") mark(r.chaser, "pressure");
+    const focus = t.focus ? r[t.focus] : null;   // what the tactic already decides (from its definition)
+    for (const role of Object.keys(t.prefer || {})) mark(r[role], "shot_preference");
+    for (const role of t.pressers || []) mark(r[role], "pressure");
     return { team: new Set(Object.keys(t.team || {})), players, focus };
   }
   function fights(raw, c) {
@@ -2671,7 +2832,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       keys[id] = [[0, at[id].x, at[id].y]];
     });
     const plan = { right, basket: basketOf(right), off, def, keys, ball: [], tac, offKey, defKey, droles: defT.roles || {},
-      zone: zoned(defT), hug: (defT.protect_paint || 0) < -0.2, box: defT.scheme === "box1", chaser: def.includes(defT.chaser) ? defT.chaser : null,
+      zone: zoned(defT), hug: (defT.protect_paint || 0) < -0.2, box: boxed(defT), chasers: chasersOf(defT, def, off), scheme: defT.scheme || "man",
       star: off.reduce((a, b) => ((playerById[b].usage || 0) > (playerById[a].usage || 0) ? b : a)), dropper: null, doubled: null, helper: -1, pressUntil: null };
     plan.zoneSpot = zoneSpots(plan);
     defenseRoles(plan, defT);
@@ -2762,7 +2923,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     lines: () => S.chatter.length, seek, rows, fetchNext, events: () => G.events, showCredit, advance,
     trash: (i, text) => sendTrash(text, rows[i]), draw: () => render(T), at: (t) => positionsAt(t).pos,
     ball: (t) => { const { pos, plan } = positionsAt(t); return ballAt(t, plan, pos); },
-    dbg: { plans: () => plans, positionsIn, ballAt, planAt, defenderAt, state: () => ({ dead: S.dead, hold, walk: deadWalk && { key: deadWalk.key, dur: deadWalk.dur, at: deadWalk.at, played: played * 1000 }, applied: S.applied }) },
+    dbg: { layout: LAYOUT, player: (id) => playerById[id], plans: () => plans, positionsIn, ballAt, planAt, defenderAt, state: () => ({ dead: S.dead, hold, walk: deadWalk && { key: deadWalk.key, dur: deadWalk.dur, at: deadWalk.at, played: played * 1000 }, applied: S.applied }) },
     plan: (t) => { const p = planAt(t); return p && { t0: p.t0, t1: p.t1, s: p.s, team: sides[p.offKey].tricode, end: p.final.kind, rebounder: p.rebounder || null, ft: p.ftShooter || null }; },
     state: () => ({ events: G.events.length, done: G.done === true, periods: G.periods, T, bufferEnd: bufferEnd(), plans: plans.length }),
   };

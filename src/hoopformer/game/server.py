@@ -38,8 +38,9 @@ from hoopformer.game.replay import event_row, replay_data, replay_html
 from hoopformer.game.translator import RULE_REPLIES, translate
 
 CALL_REPLIES = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
-SET_PLAYS = ("pnr", "pop", "iso", "post", "five_out", "motion", "triangle")  # set plays the court acts out
-SCHEMES = ("drop", "blitz", "zone23", "press", "box1", "switch")                   # defensive schemes (man to man is none)
+SET_PLAYS = ("pnr", "pop", "iso", "post", "five_out", "motion", "triangle",  # set plays the court acts out
+             "elevator", "horns", "spain", "floppy", "hammer")
+SCHEMES = ("drop", "blitz", "zone23", "press", "box1", "switch", "zone131", "tri2")  # defensive schemes (man to man is none)
 STOPPABLE = ("double_team",)  # calls that one pick ends at once (they don't fade)
 PLAYER_REPLIES = {  # one defender's calls, (+, -)
     "pressure": ("I'll pick him up full court.", "Giving him a little space."),

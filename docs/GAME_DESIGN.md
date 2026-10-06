@@ -463,6 +463,42 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - **Your own picks come back:** the roles you picked yourself are remembered (`tactic.picked`, `pickLog`), and a picked player takes his role back whenever he is on the floor. Before, the stand-in kept it (6 of 25 isolations ran for Payton with Jordan back on the floor); now 53 of 53.
   - **Second chances:** a tactic changed in a timeout also plays on in the possession's later chances (an offensive rebound's second chance), which the engine had already played with the old tactic.
 
+**Eighteenth follow-up (Oct 6): player archetypes; five more set plays and two more defenses, played exactly as drawn.**
+- **Archetypes come from the players' own numbers** (`game/archetypes.py`). Each player is placed among the league's rotation players (20+ minutes, 20+ games; today's and the classic teams together) on a dozen per-chance rates:
+  - usage, and where his shots come from;
+  - free throws, passing, rebounding at both ends, steals and blocks;
+  - three-point accuracy.
+
+  Ordered rules name 18 archetypes. The labels fans give come out of the data, tested:
+  - Jordan: Two-Way Scoring Dominator; Iverson: High-Volume Isolation Guard;
+  - the 2008-09 LeBron: All-Around Point Forward; Malone: Pick-and-Roll Post Bruiser;
+  - Klay Thompson (2025-26): 3-and-D Wing.
+
+  The rest fit too: Shaq, Dominant Post Scorer; Stockton, Nash, Kidd and Payton, Floor Generals; Rodman, Rebounding Specialist; Miller, Movement Shooter; Dirk, Stretch Big; Olajuwon, Robinson, Ewing, Duncan and Garnett, Two-Way Post Anchors. The engine already plays everyone by his real rates; the archetype is how the court moves him.
+- **How each archetype moves** (`STYLE` in the page):
+  - **Where he sets up in free play:** handlers at the top, shooters on the arc, bigs at the block or the high post.
+  - **Off the ball:** shooters slide along the arc, movement shooters curl up toward the top, slashers cut, rim-runners dive, post players seal, stretch bigs pop out, bruisers come up to screen for the ball, handlers dribble around the top.
+  - **Drives in free play:** the kinds that attack the rim do.
+  - **Defense:** how tight he guards; rim protectors sag.
+  - **Misses:** bigs and rebounders crash the glass.
+
+  Measured over a game, on offense the floor generals and the iso guard average 26 ft from the basket, the movement shooter 23.5, the post anchors 13.6 and Shaq 11.5. On defense the rim protectors play 8–10 ft from the basket and the guards 18–20.
+- **Who plays each role** is picked by archetype (`fitScore`; bigs and handlers first). Your own picks stay; every other role is re-picked for each new tactic, so switching to the Elevator makes Jordan the shooter rather than leaving him in the corner role he had in the free offense.
+- **Five new set plays,** each a script (`LAYOUT[play].script`: [seconds, role, spot, run/screen/roll] and `passes`). The court plays it once all five are set, and the helper draws its arrows from the same script, so they can't disagree. A short possession runs the play quicker (down to 55% of its time); a shorter one, or a second chance, plays on without it.
+  - **Elevator screen:** the shooter runs up the lane between two bigs, who shut the doors behind him; he catches at the top.
+  - **Horns:** two bigs at the elbows; one screens for the handler and rolls, the other pops.
+  - **Spain pick-and-roll:** a pick-and-roll plus a back screen on the roller's man by a shooter, who pops to the top.
+  - **Floppy:** the shooter starts under the basket and comes off a staggered double to the wing.
+  - **Hammer:** a baseline drive, with a screen on the weak-side shooter's man as he drifts to the corner for the kick-out.
+
+  Checked live: every scripted move arrived at its spot at its time (0.00 ft off), and every pass reached the man the play sends it to. Horns ran its script on 15 of 18 first chances; the other three ended in a quick shot.
+- **Two new defenses:**
+  - **1-3-1 zone:** a trapper at the top, two wings, the middle and a baseline rover.
+  - **Triangle-and-two:** two chasers on their two main scorers, three in a triangle in the paint.
+
+  Both are drawn and outlined on the floor; the strip names each chaser's man.
+- **The tactics' numbers come from their definitions** (`focus`, `prefer`, `pressers` in `PLAYS`/`SCHEMES`): who the play runs through, who it wants shooting from where, who presses. The engine hears them, and the call lists leave out what they already decide.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).
