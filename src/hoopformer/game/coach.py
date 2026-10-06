@@ -133,7 +133,7 @@ def rotate(game: Game, side: Side, stopped: bool) -> None:
 
 def urgent_timeout(game: Game, side: Side, scored_by: Side | None) -> str | None:
     """A timeout this coach calls on their own: to draw up a late play, or to stop a run."""
-    if side.timeouts <= 0:
+    if side.timeouts <= 0 or side.human:
         return None
     other = game.other(side)
     behind = other.points - side.points
@@ -154,7 +154,7 @@ def breather_due(game: Game) -> Side | None:
     keep = KEEP_FOR_THE_END if game.period == 4 else 0
     trailing = game.home if game.home.points <= game.away.points else game.away
     for side in (trailing, game.other(trailing)):
-        if side.timeouts > keep:
+        if side.timeouts > keep and not side.human:
             return side
     return None
 

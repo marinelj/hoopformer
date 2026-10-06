@@ -428,6 +428,15 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - It has its own random numbers, so talking never changes the rest of the game's dice. What is said doesn't matter yet; who says it to whom does. Route: `POST /api/trash`.
 - **The language choice (English / 中文) is gone:** voice is English.
 
+**Fifteenth follow-up (Oct 6): timeouts instead of Play and the break.**
+- **The big button is the timeout.** It reads "▶ Tip-off" before the game, "⏱ Timeout · 15 left" while it plays, and "▶ Resume" during a timeout.
+  - Calling one blows a whistle (a short blast, then a long one), stops play, shows "TIMEOUT · 90S" over the court and lights up the talk panel.
+  - A tactic picked during a timeout shows on the court at once (fourteenth follow-up).
+  - With none left, the button reads "No timeouts left" and play can't be stopped. In the replay page, the timeout pauses without a count.
+- **15 timeouts for the coach** (`server.COACH_TIMEOUTS`; the NBA gives 7). They are real engine timeouts (`POST /api/timeout`, `Game.call_timeout`): everyone on the floor gets a 30-second breather. The engine is a possession ahead, so like every call it shows from the next possession. In a test, the five players' energy went from about 0.84 to 0.93.
+- **The scripted coach never spends them.** A side coached by a person (`Side.human`) is skipped when the scripted coach looks for a timeout to stop a run, draw up a late play or take a TV-style breather. Over 5 games it called 32 timeouts for the other team and none for the human's.
+- **No more stop after every possession:** the checkbox, the break bar and "▶ Next possession" are gone, and the game plays straight through. The walk into the next possession's shape went with the break: each possession starts with the run up the floor again.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

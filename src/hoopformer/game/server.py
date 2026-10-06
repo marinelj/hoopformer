@@ -13,7 +13,9 @@ Routes:
 - GET  /api/next    play the next possession; returns its events
 - POST /api/say     {"text", "to"}: translate the words and apply them
 - POST /api/tactics {"raw", "words"}: the coach's tactic: a set play or a defensive scheme, its levers and who
-  plays which role (no language model needed). The coach has no timeouts: the game stops after every possession.
+  plays which role (no language model needed)
+- POST /api/timeout  the coach's timeout (COACH_TIMEOUTS a game): the page stops at once; in the engine everyone on
+  the floor gets a breather before the next possession
 - POST /api/call    {"raw", "words", "to"}: a call picked from a talk row's list (one step on each lever it names)
 - POST /api/trash   {"text", "from", "to"}: one of our players (or the whole team, from null) talks trash to his man
   (or their whole team, to null); they answer, rattled or fired up, and their confidence moves a little
@@ -28,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from hoopformer.game.engine import Game
+from hoopformer.game.engine import TIMEOUTS, Game
 from hoopformer.game import levers
 from hoopformer.game.levers import validate
 from hoopformer.game.model import ActionModel
@@ -51,6 +53,7 @@ BACKING_OFF = {  # the same levers called the other way
 }
 
 TACTICS = "Tactics: "  # how the tactics panel's directives are marked, so a new plan replaces the old one
+COACH_TIMEOUTS = 15    # the human coach's timeouts a game (the scripted coaches keep the NBA's 7 and never spend these)
 TRASH_BACK = {  # an opponent's answer to trash talk: (rattled, fired up)
     True: ["Man, just play.", "Whatever.", "Get out of my face.", "You talk too much.", "Not now.", "Shut up and guard me."],
     False: ["Keep talking. Watch this.", "You just woke me up.", "Bad idea.", "Say that again after this bucket.",
@@ -95,6 +98,7 @@ class LiveGame:
         # game mode: calls are felt, and wear off unless repeated
         self.game = Game(model, home, away, seed=seed, limits=limits, boost=boost, half_life=half_life,
                          min_first_seconds=levers.MIN_FIRST_SECONDS if boost != 1 else 0.0)
+        self.game.home.human, self.game.home.timeouts = True, COACH_TIMEOUTS
         self.lock = threading.Lock()
         self.game.step()  # the tip-off and first possession, so the page opens with players on the floor
 
@@ -105,7 +109,8 @@ class LiveGame:
         with self.lock:
             data = replay_data(self.game.result(), self.model)
             monitor = self.game.monitor(self.game.home)
-        return replay_html({**data, "live": True, "done": self.game.done, "monitor": monitor})
+        timeouts = {"home": COACH_TIMEOUTS, "away": TIMEOUTS}   # each team's timeouts at tip-off
+        return replay_html({**data, "live": True, "done": self.game.done, "monitor": monitor, "timeouts": timeouts})
 
     def status(self, events: list) -> dict:
         game = self.game
@@ -184,6 +189,17 @@ class LiveGame:
                 described += f" · energy use x{tired_before:.2f} → x{tiring():.2f}"
             return {**self.status(events), "levers": described, "reply": instruction.reply, "impact": changes,
                     "replier": instruction.replier, "unmapped": instruction.unmapped}
+
+    def timeout(self) -> dict:
+        """The coach's timeout. The page has already stopped; the engine, a possession ahead, gives everyone on the
+        floor a breather (Game.call_timeout), so it shows from the next possession, like every call."""
+        game = self.game
+        with self.lock:
+            if game.done or game.home.timeouts <= 0:
+                return {**self.status([]), "called": False, "left": game.home.timeouts, "impact": []}
+            start = len(game.events)
+            events, changes = self.measured(lambda: game.events[start:] if game.call_timeout(game.home, "coach") else [])
+            return {**self.status(events), "called": bool(events), "left": game.home.timeouts, "impact": changes}
 
     def trash(self, text: str, talker: int | None, target: int | None) -> dict:
         """Trash talk from one of our players to his man, or from the whole team to theirs (no language model:
@@ -300,6 +316,8 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
                 self.answer(lambda: live.call(body.get("raw") or {}, str(body.get("words", ""))[:200], body.get("to")))
             elif url.path == "/api/tactics":
                 self.answer(lambda: live.tactics(body.get("raw") or {}, str(body.get("words", ""))[:300]))
+            elif url.path == "/api/timeout":
+                self.answer(live.timeout)
             elif url.path == "/api/trash":
                 self.answer(lambda: live.trash(str(body.get("text", "")).strip()[:300], body.get("from"), body.get("to")))
             else:

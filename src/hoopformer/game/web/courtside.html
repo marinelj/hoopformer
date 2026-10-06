@@ -88,17 +88,11 @@ h1 span { color: var(--led); }
 .tally .b { color: var(--shot); }
 
 /* between possessions (live): the game stops for your calls */
-.talk-panel.breaking { border-color: var(--led); box-shadow: 0 0 0 2px var(--led), 0 0 28px rgba(255, 178, 62, 0.35); animation: call-glow 1.6s ease-in-out infinite; }
+.talk-panel.in-timeout { border-color: var(--led); box-shadow: 0 0 0 2px var(--led), 0 0 28px rgba(255, 178, 62, 0.35); animation: call-glow 1.6s ease-in-out infinite; }
 @keyframes call-glow { 50% { box-shadow: 0 0 0 2px var(--led), 0 0 46px rgba(255, 178, 62, 0.6); } }
 .shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 #shape-area { fill: var(--shape, #fff); fill-opacity: 0.2; stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; stroke-dasharray: 7 5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }   /* widths in screen pixels */
 #shape-chase { stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
-.break-bar { display: grid; gap: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 178, 62, 0.08); border: 1px solid rgba(255, 178, 62, 0.45); }
-.break-bar[hidden] { display: none; }
-.break-bar b { font-family: var(--display); font-size: 20px; color: var(--led); letter-spacing: 0.03em; }
-.break-bar span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
-.break-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
-.controls-row .auto { font-size: 12px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
 
 /* one monitor card per player on the floor (live) */
 .players-panel { display: grid; gap: 8px; padding: 10px 12px 12px; }
@@ -122,6 +116,7 @@ h1 span { color: var(--led); }
 .controls-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 button { font: inherit; color: inherit; cursor: pointer; }
 .play { background: var(--led); color: #15120c; border: 0; border-radius: 6px; padding: 7px 16px; font-weight: 600; min-width: 92px; }
+.play:disabled { opacity: 0.5; cursor: default; }
 .elapsed { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
 .timeline { display: grid; gap: 2px; }
 input[type="range"] { width: 100%; accent-color: var(--led); }
@@ -262,7 +257,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 .chatter li.note .said { color: var(--muted); }
 .chatter li.call .said { color: #c3cad6; }
 .chatter .at { color: var(--led); font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .talk-panel.breaking { animation: none; } .figure, .flash, .callout { transition: none; } .figure.pulse svg { animation: none; } .talk-pick.fresh, .talk-menu .grp.switched, .talk-row .mic.rec, .talk-row .trash.rec { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .talk-panel.in-timeout { animation: none; } .figure, .flash, .callout { transition: none; } .figure.pulse svg { animation: none; } .talk-pick.fresh, .talk-menu .grp.switched, .talk-row .mic.rec, .talk-row .trash.rec { animation: none; } }
 </style>
 
 <div class="wrap">
@@ -335,8 +330,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
 
       <div class="controls">
         <div class="controls-row">
-          <button class="play" id="play" type="button">▶ Play</button>
-          <label class="auto" id="auto-break-wrap" hidden><input type="checkbox" id="auto-break-bar"> Stop after every possession</label>
+          <button class="play" id="play" type="button">▶ Tip-off</button>
           <div class="elapsed" id="elapsed"></div>
         </div>
         <div class="timeline">
@@ -354,11 +348,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     <aside class="side">
       <div class="panel talk-panel">
         <div class="talk-head"><h2>Talk to your players</h2><span class="phase" id="talk-phase"></span><span class="note">Pick a tactic, roles and calls. Hold 🎙 to talk to a player, 🗯 to talk trash to his man.</span></div>
-        <div class="break-bar" id="break" hidden aria-live="polite">
-          <div><b id="break-title"></b><span id="break-last"></span></div>
-          <div class="break-foot"><label><input type="checkbox" id="auto-break"> Stop after every possession</label>
-            <button class="play" id="break-go" type="button">▶ Next possession</button></div>
-        </div>
         <div class="talk-box" id="talk-box"><div class="talk" id="talk"></div><div class="helper" id="helper"></div></div>
         <div class="note" id="chat-note"></div>
       </div>
@@ -488,9 +477,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   };
   const MAN_SPOTS = [[22, 0], [13, -17], [13, 17], [3, -19], [4, 7]];   // on the offense's point guard, wings, corner and big
   let shapeFrom = null;   // the coach's last tactic change: { at: game time, events: how many the page had then }
-  const setups = new Map();   // a possession that came after a break: its first chance's event index -> where the ten stood
-  let setup = null;           // the walk into the next possession while the break is open (see startSetup)
-  let lastBall = null;        // the ball as last drawn
   function withShape(tac, ev) {   // a chance's calls with the coach's current tactic in place of the one it was played with
     const ours = ev.team === G.home.tricode ? "off" : "def", out = { off: { ...((tac && tac.off) || {}) }, def: { ...((tac && tac.def) || {}) } };
     if (ours === "off") {
@@ -603,8 +589,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const basket = basketOf(right);
       const off = roles(ev[offKey + "_lineup"]), def = roles(ev[defKey + "_lineup"]);
       for (const id of Object.keys(where).map(Number)) if (!off.includes(id) && !def.includes(id)) delete where[id];   // went to the bench: comes back from it
-      const set = setups.get(s);   // a break before it: they walked into its shape while the clock was stopped
-      if (set) { Object.assign(where, set); carrier = null; inbound = null; }
       let resolve = null, shootingFoul = null, rebound = null, ftShooter = null;
       for (let j = s + 1; j < next; j++) {
         const e = G.events[j];
@@ -627,7 +611,6 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const pace = offT.pace || 0;
       if (firstChance && pace > 0.2) travel *= 1 - 0.4 * pace;                                   // they sprint into the offense
       if (firstChance && pace < -0.2) travel = Math.min(dur * 0.65, travel * (1 + 0.5 * -pace));  // they walk it up
-      if (set) travel = Math.min(travel, 1.2);   // set up during the break: the play starts at once
 
       // offense: start where they were, run to their spots on a curved path, then keep moving
       const keys = {};
@@ -1065,7 +1048,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
         }
         case "rebound": if (e.zone === "offensive" && e.actor) fx.squeak(); break;
         case "chance": if (speed <= 4 && Math.random() < 0.35) fx.squeak(Math.random() * 0.4); break;
-        case "period_start": case "timeout": fx.whistle(0, true); break;
+        case "period_start": fx.whistle(0, true); break;
+        case "timeout": if (e.zone !== "coach") fx.whistle(0, true); break;   // yours blew when you called it
         case "period_end": fx.buzzer(); if (e.period === G.periods && G.done !== false) fx.crowd(1, 0.4); break;
       }
     }
@@ -1079,6 +1063,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       },
       call: () => { if (ready()) [660, 880].forEach((f, i) => tone({ at: i * 0.06, f, peak: 0.07, rel: 0.15 })); },
       whistle: () => { if (ready()) fx.whistle(0, true); },
+      timeout: () => { if (ready()) { fx.whistle(0); fx.whistle(0.3, true); } },   // a short blast, then a long one
     };
   })();
 
@@ -1328,7 +1313,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // ---------- event state (score, feed, box score) ----------
   let S;
   const TIMEOUTS = 7;
-  const timeoutsLeft = (key) => Math.max(0, TIMEOUTS - (S ? S.timeouts[key] : 0));   // the engine's coaches still call them
+  const TIMEOUTS_AT_TIP = G.timeouts || { home: TIMEOUTS, away: TIMEOUTS };   // live: yours are 15
+  const timeoutsLeft = (key) => {   // less those called: the engine's when shown, yours the moment you call them
+    const yours = key === "home" && S ? G.events.slice(S.applied).filter((e) => e.kind === "timeout" && e.zone === "coach" && e.team === G.home.tricode).length : 0;
+    return Math.max(0, TIMEOUTS_AT_TIP[key] - (S ? S.timeouts[key] : 0) - yours);
+  };
   function freshState() {
     return { applied: 0, home: 0, away: 0, offense: null, chanceT: 0, chanceLen: 24, lineups: { home: [], away: [] }, feed: [], box: {}, dead: null,
              chatter: [], run: { team: null, points: 0, told: false }, milestones: {}, leader: null,
@@ -1382,7 +1371,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const key = `${timeoutsLeft("home")}/${timeoutsLeft("away")}`;
     if (key === lastTimeoutKey) return;
     lastTimeoutKey = key;
-    for (const side of ["home", "away"]) $(`${side}-to`).innerHTML = Array.from({ length: TIMEOUTS }, (_, i) => `<i class="${i >= timeoutsLeft(side) ? "used" : ""}"></i>`).join("");
+    for (const side of ["home", "away"]) $(`${side}-to`).innerHTML = Array.from({ length: TIMEOUTS_AT_TIP[side] }, (_, i) => `<i class="${i >= timeoutsLeft(side) ? "used" : ""}"></i>`).join("");
   }
   let lastFeedLen = -1;
   // The calls in force for the possession on the floor, in words.
@@ -1435,13 +1424,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (S.dead && plan) pos = { ...pos, ...freeThrowFormation(plan, S.dead.shooter) };
     const onFloor = new Set([...S.lineups.home, ...S.lineups.away]);
     for (const id of Object.keys(figures)) if (!onFloor.has(Number(id))) figures[id].style.opacity = "0";
-    let ball = S.dead && plan ? { ...toCourt(plan.right, 15, 0), y: toCourt(plan.right, 15, 0).y - 1.4, holder: S.dead.shooter } : ballAt(t, plan, pos);
-    if (setup) {   // the break: they walk into the next possession's shape
-      const walk = setupNow();
-      pos = { ...pos, ...walk.pos }; plan = setup.plan;
-      if (walk.ball) ball = walk.ball;
-    }
-    lastBall = ball;
+    const ball = S.dead && plan ? { ...toCourt(plan.right, 15, 0), y: toCourt(plan.right, 15, 0).y - 1.4, holder: S.dead.shooter } : ballAt(t, plan, pos);
     for (const id of onFloor) {
       const p = pos[id] || benchSpot(id);   // just subbed in, before his first possession
       const el = figureFor(id);
@@ -1450,9 +1433,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       el._at = p;
       place(el, p);
       el.classList.toggle("holder", ball.holder === id);
-      el.classList.toggle("doubled", !!plan && plan.doubled === id && (!S.dead || !!setup));
+      el.classList.toggle("doubled", !!plan && plan.doubled === id && !S.dead);
       const inPnr = plan && plan.pnr && (id === plan.pnr.handler || id === plan.pnr.screener) && t > plan.pnr.ts - 0.5 && t < plan.pnr.ts + 2.6;
-      el.classList.toggle("called", !!plan && (plan.driver === id || inPnr) && (!S.dead || !!setup));
+      el.classList.toggle("called", !!plan && (plan.driver === id || inPnr) && !S.dead);
       const badges = badgesFor(id);
       if (el.dataset.badges !== badges) { el.dataset.badges = badges; el.querySelector(".badges").textContent = badges; }
     }
@@ -1480,7 +1463,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // A zone or a box-and-one, outlined on the floor through its defenders (the chaser: a dashed line to his man).
   function drawShape(plan, pos) {
     const area = $("shape-area"), chase = $("shape-chase");
-    const ids = plan && plan.zoneSpot && (!S.dead || setup) ? Object.keys(plan.zoneSpot).map(Number).filter((id) => pos[id]) : [];
+    const ids = plan && plan.zoneSpot && !S.dead ? Object.keys(plan.zoneSpot).map(Number).filter((id) => pos[id]) : [];
     if (ids.length < 3) { area.setAttribute("points", ""); chase.setAttribute("x1", 0); chase.setAttribute("x2", 0); chase.setAttribute("y1", 0); chase.setAttribute("y2", 0); return; }
     const c = ids.reduce((m, id) => ({ x: m.x + pos[id].x / ids.length, y: m.y + pos[id].y / ids.length }), { x: 0, y: 0 });
     ids.sort((a, b) => Math.atan2(pos[a].y - c.y, pos[a].x - c.x) - Math.atan2(pos[b].y - c.y, pos[b].x - c.x));
@@ -1698,13 +1681,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     return out;
   }
   function ingest(data) {
-    const first = G.events.length;
     if (data.monitor) renderMonitor(data.monitor);
     for (const e of data.events) if (e.kind !== "coach" && e.kind !== "reply") G.events.push(e);
-    if (setup) {   // the next possession is here: it starts where the walk has them
-      const at = G.events.findIndex((e, i) => i >= first && e.kind === "chance");
-      if (at >= 0) { setups.set(at, setupNow().pos); setup = null; }
-    }
     G.periods = Math.max(4, data.periods); G.done = data.done;
     if (data.done) G.final = data.final;
     totalT = 4 * PERIOD + (G.periods - 4) * OT;
@@ -1726,14 +1704,16 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     clearTimeout(el._glide); el._glide = setTimeout(() => el.classList.remove("glide"), 1000);
   }
   function seek(t) {
-    S = freshState(); lastFeedLen = -1; lastChatterKey = ""; lastBubbled = -1; setup = null;
+    S = freshState(); lastFeedLen = -1; lastChatterKey = ""; lastBubbled = -1;
     while (S.applied < G.events.length && G.events[S.applied].t <= t) apply(G.events[S.applied]);
     T = t; instant = true; render(T); instant = false;
     if (typeof rows !== "undefined") { for (const row of rows) row.nextAt = 0; updateTalk(); }   // a jump in time: fresh suggestions
   }
   function setPlaying(on) {
     playing = on;
-    $("play").textContent = playing ? "❚❚ Pause" : (ended() && T >= totalT ? "↺ Replay" : "▶ Play");
+    const left = timeoutsLeft("home"), over = ended() && T >= totalT;
+    $("play").textContent = over ? "↺ Replay" : !playing ? (T < 1 ? "▶ Tip-off" : "▶ Resume") : !LIVE ? "⏱ Timeout" : left > 0 ? `⏱ Timeout · ${left} left` : "No timeouts left";
+    $("play").disabled = playing && LIVE && left <= 0 && !over;
     if (playing) Sound.startBed(); else Sound.stopBed();
     lastFrame = null;
     if (playing) requestAnimationFrame(frame);
@@ -1753,7 +1733,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       const credited = showCredit(next);
       // dead-ball moments (fouls, free throws, rebounds after the buzzer) get a short real-time pause
       hold = next.kind === "chance" ? 0 : credited ? 1.1 : 0.45;   // a credited play: a beat to take it in
-      if (next.kind === "timeout") {   // the engine's coach called it: show it and pause briefly
+      if (next.kind === "timeout" && next.zone !== "coach") {   // the other coach (or your assistant) called it: show it and pause briefly
         hold = 1.4;
         $("banner").textContent = `TIMEOUT · ${next.team}`; $("banner").hidden = false;
         clearTimeout(bannerTimer); bannerTimer = setTimeout(() => { $("banner").hidden = true; }, 1600);
@@ -1763,13 +1743,11 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     if (!S.dead && S.offense && T < totalT) { dribble -= dt; if (dribble <= 0) { Sound.bounce(); dribble = 0.55; } }
     render(T);
     if (LIVE && !G.done && S.applied >= G.events.length) {   // shown everything we have: the next possession
-      if (autoBreak && breakFor !== G.events.length && T > 1) { openBreak(); return false; }   // first, your calls for it
       fetchNext();
     }
     if (ended() && T >= totalT && S.applied >= G.events.length) { setPlaying(false); return false; }
     return true;
   }
-  $("play").addEventListener("click", () => { Sound.unlock(); closeBreak(); if (ended() && T >= totalT) seek(0); setPlaying(!playing); });
   $("scrub").addEventListener("input", (ev) => seek(Number(ev.target.value)));
 
   // tabs
@@ -1941,8 +1919,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   // the calls); each player's first list is his role in it, and every player has one: a spot in the play, a zone
   // spot, or his man in a man-to-man defense. Picking a role swaps it with whoever had it. Both go to the server as
   // levers (no language model), with the play, the scheme and the roles, so the court acts them out. The helper
-  // under the rows draws the tactic with your five in their roles. There are no timeouts: the game stops after
-  // every possession.
+  // under the rows draws the tactic with your five in their roles. Call a timeout to stop play and set them up.
   const SPACING = [["point", "Point"], ["lwing", "Left wing"], ["rwing", "Right wing"], ["corner", "Corner"], ["dunker", "Dunker spot"]];
   const PLAYS = {
     free: { name: "Free offense", say: "No set play: the five space the floor and read the defense.", roles: SPACING, main: [] },
@@ -2014,7 +1991,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     fillRoles();
     shapeFrom = { at: T, events: G.events.length };   // the court shows it from now; the engine from the next possession
     plans = buildPlans(); startOf = plans.map((p) => p.t0); settleTimes();
-    if ($("break").hidden) render(T); else startSetup();   // even paused: they move into it now
+    render(T);   // even in a timeout: they move into it now
     const r = tactic.roles, play = PLAYS[tactic.play], scheme = SCHEMES[tactic.scheme];
     const raw = { team: { ...(play.team || {}), ...(scheme.team || {}) }, players: [], roles: r, unmapped: [] };
     if (tactic.play !== "free") raw.play = tactic.play;
@@ -2094,7 +2071,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       render(T);
       let handedOver = false;
       for (const [r, id] of Object.entries(tactic.roles)) if (id === out) { tactic.roles[r] = inn; handedOver = true; }   // he takes over the role
-      if (handedOver) sendTactic(); else { updateTalk(); renderHelper(); if (!$("break").hidden) startSetup(); }
+      if (handedOver) sendTactic(); else { updateTalk(); renderHelper(); }
     } catch (err) {
       addHuman({ t: T, speaker: "note", text: `Couldn't make the substitution (${err.message}).`, kind: "note" });
     }
@@ -2111,7 +2088,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     const theirs = roles(awayFloor());
     for (const [r, name] of list) { const id = tactic.roles[r]; if (id) label[id] = name; }
     // the shape the court sets up in, in feet from the basket; a press, which happens full court, is sketched far out
-    const shape = key === "press" ? null : shapeFor(phase === "offense" ? "home" : "away", true);
+    const shape = key === "press" ? null : shapeFor(phase === "offense" ? "home" : "away");
     for (const id of ids) {
       const p = shape && shape.at[id], right = shape && shape.plan.right;
       if (p) at[id] = [Math.min(38, right ? 88.75 - p.x : p.x - 5.25), right ? 25 - p.y : p.y - 25];
@@ -2187,10 +2164,7 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     ["any", "Take a breather (3 min)", { rest_minutes: 3 }],
     ["any", "Great job, keep it up!", { confidence: 0.5 }],
   ];
-  const phaseNow = () => {   // at the break, and until the next possession arrives, the end it will be played at
-    const next = breakOffense || (setup && setup.plan && setup.plan.offKey);
-    return next ? (next === "home" ? "offense" : "defense") : S.offense === "away" ? "defense" : "offense";
-  };
+  const phaseNow = () => (S.offense === "away" ? "defense" : "offense");
   // What the tactic already decides at this end of the floor: a call about the same thing would fight it, so it's left out.
   function tacticControls(phase) {
     fillRoles();
@@ -2523,56 +2497,43 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     openMenu(row);
   }
 
-  // ---------- between possessions (live) ----------
-  // The game stops after each possession, before the server plays the next one, so whatever you call here is
-  // in force from the very next play. The talk panel lights up, its lists set for that possession's end of the floor.
-  let autoBreak = LIVE, breakFor = -1, breakOffense = null;
-  try { autoBreak = LIVE && localStorage.getItem("courtside-break") !== "off"; } catch { /* storage blocked: on */ }
-  function setAutoBreak(on) {
-    autoBreak = on; $("auto-break").checked = on; $("auto-break-bar").checked = on;
-    try { localStorage.setItem("courtside-break", on ? "on" : "off"); } catch { /* not saved */ }
-  }
-  $("auto-break-wrap").hidden = !LIVE;
-  $("auto-break").checked = $("auto-break-bar").checked = autoBreak;
-  $("auto-break").addEventListener("change", (ev) => setAutoBreak(ev.target.checked));
-  $("auto-break-bar").addEventListener("change", (ev) => setAutoBreak(ev.target.checked));
-  function nextOffense() {   // who has the ball when the next possession starts
-    for (let i = G.events.length - 1; i >= 0; i--) {
-      const e = G.events[i], team = e.team === G.home.tricode ? "home" : "away", other = team === "home" ? "away" : "home";
-      if (e.kind === "rebound") return team;
-      if ((e.kind === "shot" && e.value) || e.kind === "turnover" || e.kind === "free_throws") return other;
-      if (e.kind === "period_start" || e.kind === "period_end") return null;
-    }
-    return null;
-  }
-  function openBreak() {
-    breakFor = G.events.length; breakOffense = nextOffense();
+  // ---------- timeouts: the coach stops play ----------
+  // The big button calls a timeout while the game plays (a whistle, and one of your timeouts: 15 in the live game),
+  // and resumes play after it. The engine, a possession ahead, gives everyone on the floor a breather before the
+  // next possession, like every call. During a timeout the talk panel lights up, and a tactic picked then shows on
+  // the court at once.
+  async function callTimeout() {
+    if (LIVE && (G.done || timeoutsLeft("home") <= 0)) return;
     setPlaying(false);
-    $("break-title").textContent = breakOffense === "home" ? `${G.home.tricode} ball next: your offense` : breakOffense === "away" ? `${G.away.tricode} ball next: your defense` : "Next possession";
-    const lastPlay = [...G.events].reverse().find((e) => ["shot", "turnover", "free_throws", "rebound"].includes(e.kind) && e.text);
-    $("break-last").textContent = `${lastPlay ? `${lastPlay.text} · ` : ""}${G.away.tricode} ${S.away} – ${S.home} ${G.home.tricode} · make your calls, then go`;
-    $("break").hidden = false;
-    document.querySelector(".talk-panel").classList.add("breaking");   // the talk panel lights up; the court stays in view
+    Sound.timeout();
+    clearTimeout(bannerTimer); $("banner").textContent = `TIMEOUT · ${G.home.tricode}`; $("banner").hidden = false;
+    document.querySelector(".talk-panel").classList.add("in-timeout");
     document.querySelector(".talk-panel").scrollIntoView({ block: "nearest", behavior: "smooth" });
-    $("play").textContent = "▶ Next possession";
-    updateTalk();
-    startSetup();
+    addHuman({ t: T, speaker: "coach", to: "team", text: "Timeout!", kind: "coach" });
+    if (!LIVE) return;
+    try {
+      const data = await api("timeout", {});
+      ingest(data); renderTimeouts(); setPlaying(playing);
+      addHuman({ t: T, speaker: "note", text: data.called ? `⏱ ${data.left} timeouts left · everyone on the floor gets a breather before the next possession` : "No timeouts left.", kind: "note" });
+      if (data.impact && data.impact.length) addHuman({ t: T, speaker: "note", text: `📈 ${data.impact.join(" · ")}`, kind: "note" });
+    } catch (err) {
+      addHuman({ t: T, speaker: "note", text: `Couldn't call the timeout (${err.message}).`, kind: "note" });
+    }
   }
-  function closeBreak() {
-    if ($("break").hidden) return;
-    $("break").hidden = true; breakOffense = null; breakFor = G.events.length;   // a substitution at the break is no new possession
-    document.querySelector(".talk-panel").classList.remove("breaking");
-    closeMenu();
-    updateTalk();
+  function endTimeout() {
+    $("banner").hidden = true;
+    document.querySelector(".talk-panel").classList.remove("in-timeout");
   }
-  $("break-go").addEventListener("click", () => { Sound.unlock(); closeBreak(); setPlaying(true); });
+  $("play").addEventListener("click", () => {
+    Sound.unlock();
+    if (ended() && T >= totalT) { seek(0); setPlaying(true); return; }
+    if (playing) { callTimeout(); return; }
+    endTimeout(); setPlaying(true);
+  });
 
-  // The break: the clock is stopped and the ten on the floor walk from where the last possession ended to where the
-  // next one starts: the offense at its play's spots, the defense in its scheme (a press picks them up in the
-  // backcourt instead). Changing the tactic, a role or a player re-routes them at once. When the next possession
-  // arrives it starts where they stand (setups), so its run up the floor happened during the break.
-  const SETUP_SPEED = 30;   // feet per real second while the clock is stopped: quick, so the shape shows at once
-  let setupLoop = false;
+  // Where the ten stand once a possession with this team on offense is set up, with both coaches' current tactics:
+  // the offense at its play's spots, the defense in its scheme. The helper draws your five from it, so it shows
+  // what the court does.
   const shownAt = (id) => { const el = figures[id]; return el && el._at && el.style.opacity !== "0" ? el._at : benchSpot(id); };
   function callsOf(team, end) {   // a team's latest calls at this end of the floor ("off" or "def")
     for (let i = G.events.length - 1; i >= 0; i--) {
@@ -2581,23 +2542,17 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     }
     return {};
   }
-  function nextShape() {   // where the ten stand once the next possession is set up; null when none comes next
-    return breakOffense && !G.done ? shapeFor(breakOffense, false) : null;
-  }
-  // Where the ten stand once a possession with this team on offense is set up, with both coaches' current tactics:
-  // the offense at its play's spots, the defense in its scheme. Against a press the offense stays back (unless
-  // halfCourt: the helper draws a half court).
-  function shapeFor(offKey, halfCourt) {
+  function shapeFor(offKey) {
     const defKey = offKey === "home" ? "away" : "home";
     const off = roles(S.lineups[offKey]), def = roles(S.lineups[defKey]);
     if (off.length < 5 || def.length < 5) return null;
     fillRoles();
     const tac = withShape({ off: callsOf(sides[offKey].tricode, "off"), def: callsOf(sides[defKey].tricode, "def") }, { team: sides[offKey].tricode });
     const offT = tac.off, defT = tac.def, right = attacksRight(offKey, periodOf(Math.min(T, totalT - 0.01)));
-    const setUp = playSpots(offT, off), press = pressing(defT) && !halfCourt, at = {}, keys = {};
-    off.forEach((id, i) => {   // against a press they stay back to bring it up; otherwise they set up
+    const setUp = playSpots(offT, off), at = {}, keys = {};
+    off.forEach((id, i) => {
       const [dx, dy] = spotOf(offT, setUp, i, id);
-      at[id] = press ? (setup && setup.origin[id]) || shownAt(id) : clampCourt(toCourt(right, dx, dy));
+      at[id] = clampCourt(toCourt(right, dx, dy));
       keys[id] = [[0, at[id].x, at[id].y]];
     });
     const plan = { right, basket: basketOf(right), off, def, keys, ball: [], tac, offKey, defKey, droles: defT.roles || {},
@@ -2605,40 +2560,9 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
       star: off.reduce((a, b) => ((playerById[b].usage || 0) > (playerById[a].usage || 0) ? b : a)), dropper: null, doubled: null, helper: -1, pressUntil: null };
     plan.zoneSpot = zoneSpots(plan);
     defenseRoles(plan, defT);
-    def.forEach((id, i) => { at[id] = (press && pressAt(plan, i, 0)) || defenderAt(plan, i, 0); });
-    return { at, plan, holder: off[0] };
+    def.forEach((id, i) => { at[id] = defenderAt(plan, i, 0); });
+    return { at, plan };
   }
-  function startSetup() {   // (re)start the walk from wherever everyone is now
-    if ($("break").hidden) return;
-    const was = setup ? setupNow() : null, origin = setup ? setup.origin : {};
-    if (!setup) for (const id of [...S.lineups.home, ...S.lineups.away]) origin[id] = shownAt(id);   // where the last possession left them
-    setup = { origin, from: {}, to: {}, dur: {} };
-    const shape = nextShape();
-    if (!shape) { setup = null; render(T); return; }
-    for (const [id, to] of Object.entries(shape.at)) {
-      const from = (was && was.pos[id]) || shownAt(Number(id));
-      setup.from[id] = from;
-      setup.dur[id] = Math.min(2.6, Math.max(0.5, Math.hypot(to.x - from.x, to.y - from.y) / SETUP_SPEED));
-    }
-    Object.assign(setup, { at: performance.now(), to: shape.at, plan: shape.plan, holder: shape.holder, ballFrom: (was && was.ball) || lastBall });
-    if (!setupLoop) { setupLoop = true; requestAnimationFrame(setupFrame); }
-    render(T);
-  }
-  function setupFrame() {
-    if (!setup || performance.now() - setup.at > 2800) { setupLoop = false; if (setup) render(T); return; }
-    render(T);
-    requestAnimationFrame(setupFrame);
-  }
-  function setupNow() {   // where the walk has them now, and the ball on its way to the man bringing it up
-    const now = performance.now(), pos = {};
-    for (const [id, to] of Object.entries(setup.to)) pos[id] = lerp(setup.from[id], to, ease(Math.min(1, (now - setup.at) / 1000 / setup.dur[id])));
-    const h = pos[setup.holder], u = Math.min(1, (now - setup.at) / 700), hand = h && { x: h.x + 0.6, y: h.y - 1.4 };
-    const ball = !hand ? null : u < 1 && setup.ballFrom ? { ...lerp(setup.ballFrom, hand, ease(u)), holder: null } : { ...hand, holder: setup.holder };
-    return { pos, ball };
-  }
-  document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" && !$("break").hidden && !menu.row && document.activeElement === $("break-go")) { ev.preventDefault(); $("break-go").click(); }
-  });
 
   // Hold to talk: press and hold records, release sends the words to the language model. Speech recognition is the
   // browser's own; pages that can't use the microphone (like this hosted replay) say so instead.
@@ -2717,10 +2641,10 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     $("monitor").textContent = "This server was started before the engine monitor existed. Stop it (Ctrl+C) and run uv run hoopformer serve again.";
   }
   updateTalk();
-  addHuman({ t: 0, speaker: "note", text: LIVE ? "Live game. Press Play. Pick a call in a row above: it's sent at once and changes the game from the next possession." : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
+  addHuman({ t: 0, speaker: "note", text: LIVE ? `Live game. Press Tip-off. You have ${TIMEOUTS_AT_TIP.home} timeouts: the same button stops play to talk to your players. A call is sent at once and changes the game from the next possession.` : "Players talk here as the game plays. Pick a call for yours in the rows above; they answer.", kind: "note" });
   window.courtside = {   // for checking the page from the console
     lines: () => S.chatter.length, seek, rows, fetchNext, events: () => G.events, showCredit, advance,
-    trash: (i, text) => sendTrash(text, rows[i]), walking: () => !!setup, draw: () => render(T),
+    trash: (i, text) => sendTrash(text, rows[i]), draw: () => render(T),
     state: () => ({ events: G.events.length, done: G.done === true, periods: G.periods, T, bufferEnd: bufferEnd(), plans: plans.length }),
   };
 })();

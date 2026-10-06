@@ -584,3 +584,20 @@ def test_trash_talk_rattles_cold_players_and_fires_up_hot_ones(fitted, limits):
         rattled[feeling] = count / 400
     print("rattled when cold (0.3):", rattled[0.3], "when hot (0.7):", rattled[0.7])
     assert rattled[0.3] > 0.6 and rattled[0.7] < 0.4
+
+
+def test_the_scripted_coach_never_spends_a_human_coachs_timeouts(fitted, limits):
+    """In the live game the home team is coached by a person, who has his own timeouts; the scripted coach still
+    calls the other team's (and still substitutes for both)."""
+    model, _ = fitted
+    called = {"home": 0, "away": 0}
+    for seed in range(5):
+        game = Game(model, OKC, BOS, seed=seed, limits=limits)
+        game.home.human, game.home.timeouts = True, 15
+        result = game.play()
+        for e in result.events:
+            if e.kind == "timeout":
+                called["home" if e.team == "OKC" else "away"] += 1
+        assert result.home.timeouts == 15
+    print("timeouts called over 5 games:", called)
+    assert called["home"] == 0 and called["away"] > 0

@@ -164,6 +164,26 @@ def test_trash_talk_reaches_his_man_who_answers(server):
     assert len(team["reached"]) == 5 and team["replier"] in team["reached"] and team["effect"][0].startswith("BOS ")
 
 
+
+def test_the_coach_has_fifteen_timeouts_and_each_is_a_breather(server):
+    base, courtside = server
+    get(f"{base}/?home=OKC&away=BOS&seed=12")
+    game = courtside.live.game
+    assert game.home.timeouts == 15 and game.home.human and not game.away.human
+    for _ in range(6):
+        get(f"{base}/api/next")
+    legs = {pid: game.home.athletes[pid].energy for pid in game.home.lineup}
+    first = post(f"{base}/api/timeout", {})
+    print("timeout:", first["called"], first["left"], "left |", [(e["kind"], e["zone"], e["text"]) for e in first["events"]])
+    print("energy:", {pid: f"{legs[pid]:.3f} -> {game.home.athletes[pid].energy:.3f}" for pid in legs})
+    assert first["called"] and first["left"] == 14 and [(e["kind"], e["zone"]) for e in first["events"]] == [("timeout", "coach")]
+    assert all(game.home.athletes[pid].energy >= legs[pid] for pid in legs) and any(game.home.athletes[pid].energy > legs[pid] for pid in legs)
+    game.home.timeouts = 1
+    assert post(f"{base}/api/timeout", {})["left"] == 0
+    out = post(f"{base}/api/timeout", {})
+    assert not out["called"] and out["events"] == [], "none left: nothing happens"
+
+
 def test_bad_requests_are_refused(server):
     base, _ = server
     with pytest.raises(urllib.error.HTTPError) as error:

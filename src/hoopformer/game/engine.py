@@ -114,6 +114,7 @@ class Side:
     possessions: int = 0
     team_turnovers: int = 0
     timeouts: int = TIMEOUTS
+    human: bool = False  # a person coaches this team: the scripted coach never spends their timeouts
     last_change: float = -1e9  # game seconds of the last substitution
     held_out: set[int] = field(default_factory=set)  # players the coach told to sit
     pinned: set[int] = field(default_factory=set)    # players the coach put in; the assistant leaves them be
