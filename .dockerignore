@@ -1,0 +1,16 @@
+.git
+.venv
+data
+.env
+.env.*
+**/__pycache__
+**/*.pyc
+.pytest_cache
+**/.ipynb_checkpoints
+.claude
+notebooks
+tests
+docs
+manifests
+acoustics-tutor
+**/project.private.config.json

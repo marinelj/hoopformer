@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-09-29. v0.1 (data pipeline, RAPM, season simulator, pre-registered 2026-27 predictions) is due before opening night, around Oct 20.
+Updated 2026-10-08. v0.1 (data pipeline, RAPM, season simulator, pre-registered 2026-27 predictions) is due before opening night, around Oct 20.
 
 ## Done
 
@@ -62,6 +62,8 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next
+
+- GitHub cloud deployment profile (ChatGPT, 2026-10-08): branch `codex/wechat-cloud-deployment` is based on current `origin/main` (`facd5b5`) and adds a root Dockerfile, Docker context exclusions, a deployment guide, and two frozen derived models under `deploy/tencent/models/` with SHA-256 provenance. Why: pulling game code alone cannot build the cloud service when Docker configuration is local and runtime models are ignored in `data/`. The committed models are the previously verified 2025-26 + classic-player bundle (606 players, 32 teams, 2,077,038 bytes); no raw NBA responses or credentials are included. Two real-data/deployment tests passed in 1.42 s: hashes/classic players, the Docker COPY inputs isolated from all local raw data, actual CLI startup, Chinese pace +0.35, 204 possession responses / 667 events through a final 129-91, and the assembled web court. Cloud settings: existing environment `prod-d2gq2p7vs296b0a1e`, service `flask-y3ue`, GitHub repository `marinelj/hoopformer`, this deployment branch, root `Dockerfile`, port 8000. No game-engine changes. Local source/data HTTP checks pass; Linux image build, actual cloud deployment and voice transcription remain unverified.
 
 1. RAPM over several seasons (later seasons weigh more).
 2. The 2026-27 schedule from nba_api (current rosters: done, `fetch --rosters`).
