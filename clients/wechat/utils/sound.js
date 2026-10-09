@@ -15,7 +15,7 @@ function dribbleBeat(time, ball, playing, dead) {
 function createSound(onError) {
   const contexts = {}, stats = { played: {}, errors: [] };
   let enabled = false, destroyed = false;
-  // Respect media volume, and provide an explicit in-game mute button.
+  // Respect media volume; the game enables sound on the first play or voice gesture.
   if (wx.setInnerAudioOption) wx.setInnerAudioOption({ obeyMuteSwitch: false, mixWithOther: true });
   for (const kind of ["dribble", "swish", "rim", "whistle", "buzzer"]) {
     const audio = wx.createInnerAudioContext({ useWebAudioImplement: true });
@@ -24,7 +24,7 @@ function createSound(onError) {
     audio.onPlay(() => { stats.played[kind] = (stats.played[kind] || 0) + 1; });
     audio.onError((error) => {
       stats.errors.push({ kind, code: error.errCode });
-      if (!destroyed && onError) onError("音效未能播放，点声音开关重试。");
+      if (!destroyed && onError) onError("音效未能播放，请检查媒体音量或重新打开小程序。");
     });
     audio.src = `/assets/${kind}.wav`;
     contexts[kind] = audio;

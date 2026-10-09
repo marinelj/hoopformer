@@ -227,3 +227,66 @@ def test_packaged_audio_has_audible_pcm_without_clipping():
         rms = math.sqrt(sum(value ** 2 for value in samples) / count) / 32768
         print("Actual audio asset:", name, "seconds", round(count / rate, 3), "peak", peak, "RMS", round(rms, 4))
         assert .08 <= count / rate <= 2 and 500 < peak < 32767 and rms > .008
+
+
+def test_timeout_control_uses_the_vacant_half_without_hiding_players(chinese_game):
+    run_js(chinese_game, r"""
+const draw = require('./clients/wechat/utils/draw.js');
+rules.rebuild(); let frames=0,vacant=0,clear=0,sides=new Set();
+for(const plan of rules.plans()) for(let t=plan.t0;t<plan.t1;t+=.4) {
+ const pos=rules.positionsAt(t,plan).pos;
+ for(const width of [320,366,600]) {
+  const hit=draw.playBounds(width,pos),s=width/94;
+  assert.ok(hit.x>=0 && hit.x+hit.w<=width && hit.y>=0 && hit.y+hit.h<=width*50/94+1);
+  if(hit.vacant) {
+   const pts=Object.values(pos);assert.ok(pts.every(p=>hit.side==='left'?p.x>49.5:p.x<44.5),'count only in a vacant half');
+   assert.equal(hit.clear,true);vacant++;sides.add(hit.side);
+  }
+  if(hit.clear){clear++;for(const p of Object.values(pos))assert.ok(Math.hypot(Math.max(hit.x-p.x*s,0,p.x*s-hit.x-hit.w),Math.max(hit.y-p.y*s,0,p.y*s-hit.y-hit.h))>=Math.max(7,1.9*s)+3);}
+  frames++;
+ }
+}
+const tip=draw.playBounds(366,rules.positionsAt(.1,rules.planAt(.1)).pos);assert.ok(tip.clear,'start remains reachable during tip-off');
+assert.deepEqual([...sides].sort(),['left','right']);assert.ok(vacant>1000);
+console.log('Real court positions / widths:',frames,'; vacant-half frames:',vacant,'; clear control frames:',clear,'; tip-off:',tip);
+""")
+
+
+def test_actual_server_replies_badges_and_credited_plays(fitted):
+    model, _ = fitted
+    model = with_legends(model, Path('data'))
+    codes = {t.tricode: t.team_id for t in model.teams.values()}
+    live = LiveGame(model, lever_limits(Path('data'), '2025-26'), codes['90S'], codes['00S'], seed=7, use='rules', half_life=None)
+    who, other = live.game.home.lineup[0], live.game.away.lineup[0]
+    replies = []
+    for sign in (1, -1):
+        for lever in ('pace', 'three_point_rate', 'attack_rim', 'ball_security', 'crash_glass', 'pressure', 'protect_paint', 'foul_caution'):
+            replies.append(live.call({'team': {lever: sign}}, '测试真实球队指令', None))
+        for lever in ('aggression', 'pressure', 'protect_paint', 'box_out', 'foul_caution', 'confidence'):
+            replies.append(live.call({'players': [{'person_id': who, lever: sign}]}, '测试真实球员指令', who))
+    for raw in ({'focus': who}, {'double_team': other}, {'late_foul': True}, {'stop': ['double_team']},
+                {'players': [{'person_id': who, 'shot_preference': {'zone': 'rim', 'value': 1}}]}, {'team_confidence': 1}):
+        replies.append(live.call(raw, '测试真实指令', who))
+    for _ in range(3):
+        live.call({'team': {'attack_rim': 1, 'pressure': 1, 'crash_glass': 1}, 'players': [{'person_id': who, 'aggression': 1}]}, '冲击篮下，积极逼抢', who)
+    live.game.play()
+    data = live.data()
+    data['checkedReplies'] = replies
+    print('Actual call responses:', len(replies), 'credited game events:', sum(bool(e.get('credit')) for e in data['events']))
+    run_js(data, r"""
+const f=require('./clients/wechat/utils/feedback.js');
+let badges=0,credits=0,kinds=new Set();
+for(const response of G.checkedReplies) {
+ assert.match(f.replyText(response.reply),/[\u3400-\u9fff]/,response.reply);
+ for(const id of ours) {const badge=f.badgesFor(id,response.monitor,by,rules.STEP);if(badge){badges++;assert.match(badge,/[\u3400-\u9fff]/);}}
+}
+for(const event of G.events) {
+ const c=f.creditFeedback(event,G);
+ if(!event.credit || event.credit.team!==G.home.tricode){assert.equal(c,null);continue;}
+ assert.ok(c);assert.equal(c.kind,event.credit.good?'good':'bad');assert.match(c.big,/[\u3400-\u9fff]/);assert.match(c.small,/[\u3400-\u9fff]/);
+ if(event.kind==='turnover' && ours.includes(event.other))assert.equal(c.hero,event.other,'highlight the thief');
+ credits++;kinds.add(c.kind);
+}
+assert.ok(badges>15&&credits>10);assert.deepEqual([...kinds].sort(),['bad','good']);
+console.log('Translated actual replies:',G.checkedReplies.length,'; active player badges:',badges,'; home credit callouts:',credits,[...kinds]);
+""")

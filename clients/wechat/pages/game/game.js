@@ -8,6 +8,7 @@ const { request } = require("../../utils/api.js");
 const { freshState, apply } = require("../../utils/state.js");
 const draw = require("../../utils/draw.js");
 const zh = require("../../utils/chinese.js");
+const feedback = require("../../utils/feedback.js");
 const { createSound, eventSound, dribbleBeat } = require("../../utils/sound.js");
 
 const SPEED = 0.8;   // game seconds per real second, as on the web
@@ -23,7 +24,8 @@ Page({
     ready: false, error: "", landscape: false, courtW: 300, courtH: 160, panelW: 0,
     board: { awayCode: "", homeCode: "", awayPts: 0, homePts: 0, awayColor: "#555", homeColor: "#555" },
     period: "第1节", clock: "12:00", shot: 24, playLabel: "开始比赛", timeoutDisabled: false, inTimeout: false,
-    phaseLabel: "", strip: "", tab: "coach", tactics: [], tacticIndex: 0, locked: false, teamCalls: [], teamCallIndex: 0, rows: [],
+    phaseLabel: "", strip: "", tab: "coach", tactics: [], tacticIndex: 0, locked: false, teamCalls: [], teamCallIndex: -1, teamCallLabel: '临场指令', rows: [], menu: null,
+    playBounds: { x: 0, y: 0, w: 0, h: 0, clear: false },
     helper: { name: "", say: "" }, feed: [], banner: "", notice: "",
     soundMessage: "", requestBusy: false, reconnectNeeded: false, teamDraft: "",
     voiceAvailable: false, voiceHint: "正在准备语音…", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", sending: false,
@@ -42,13 +44,14 @@ Page({
   onUnload() {
     this.running = false; this.unloaded = true; this.cancelGesture();
     if (this.canvas && this.canvas.cancelAnimationFrame) this.canvas.cancelAnimationFrame(this.animationFrame);
-    clearTimeout(this.bannerTimer); clearTimeout(this.calloutTimer); clearTimeout(this.voiceTimer); clearTimeout(this.holdTimer);
+    clearTimeout(this.bannerTimer); clearTimeout(this.calloutTimer); clearTimeout(this.replyTimer); clearTimeout(this.pressTimer); clearTimeout(this.voiceTimer); clearTimeout(this.holdTimer);
     if (this.sound) this.sound.destroy();
   },
   retryStart() {
     if (this.starting) return;
     this.starting = true;
     this.cancelGesture();
+    clearTimeout(this.replyTimer); clearTimeout(this.calloutTimer); clearTimeout(this.bannerTimer);
     wx.hideToast();
     this.running = false;
     if (this.canvas && this.canvas.cancelAnimationFrame) this.canvas.cancelAnimationFrame(this.animationFrame);
@@ -63,12 +66,13 @@ Page({
     this.rules.rebuild();
     this.S = freshState();
     this.T = 0; this.played = 0; this.hold = 0; this.playing = false; this.started = false; this.inTimeout = false;
+    this.selectedCalls = {}; this.reactions = {}; this.bubbles = []; this.monitor = G.monitor; this.flash = null; this.playHit = null; this.playPressed = false;
     this.drafts = {}; this.shown = {}; this.lastBall = null; this.walk = null; this.fetching = false; this.selected = null; this.keys = {}; this.lastBeat = null; this.last = {};
     while (this.S.applied < G.events.length && G.events[this.S.applied].t <= 0.1) apply(this.S, G, G.events[this.S.applied]);
     this.T = 0.1;
     const team = (key) => ({ primary: G[key].primary, secondary: G[key].secondary, ink: ink(G[key].primary) });
     this.colors = { away: G.away.primary, home: G.home.primary, awayTeam: team("away"), homeTeam: team("home") };
-    this.setData({ ready: true, error: "", notice: "", banner: "", requestBusy: false, reconnectNeeded: false, teamDraft: "", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", board: { awayCode: zh.teamName(G.away.tricode), homeCode: zh.teamName(G.home.tricode), awayPts: 0, homePts: 0,
+    this.setData({ ready: true, error: "", notice: "", banner: "", menu: null, callout: { show: false }, requestBusy: false, reconnectNeeded: false, teamDraft: "", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", board: { awayCode: zh.teamName(G.away.tricode), homeCode: zh.teamName(G.home.tricode), awayPts: 0, homePts: 0,
                                          awayColor: G.away.primary, homeColor: G.home.primary } });
     this.layout();
     this.refresh(true);
@@ -124,6 +128,7 @@ Page({
       const cue = eventSound(next);
       if (cue) this.sound.play(cue);
       this.hold = next.kind === "chance" ? 0 : 0.45;   // a beat on every whistle
+      this.reactToPlay(next);
       if (next.kind === "timeout" && next.zone !== "coach") { this.hold = 1.4; this.showBanner(`${zh.teamName(next.team)}暂停`, 1600); }
       const fouled = S.dead && (next.kind === "foul" || next.kind === "free_throws") && this.rules.planAt(this.T - 1e-6);
       if (fouled) {   // the dead ball lasts until they're on the line, and the free throw is up
@@ -162,7 +167,7 @@ Page({
     if (beat !== null && beat !== this.lastBeat) this.sound.play("dribble");
     this.lastBeat = beat;
     const floor = [...S.lineups.home, ...S.lineups.away], by = rules.playerById;
-    const players = floor.map((id) => ({ id, team: S.lineups.home.includes(id) ? "home" : "away", initials: zh.playerName(by[id].name) !== by[id].name ? zh.playerName(by[id].name).slice(0, 2) : initials(by[id].name), name: zh.playerName(by[id].name) }));
+    const players = floor.map((id) => ({ id, team: S.lineups.home.includes(id) ? "home" : "away", initials: zh.playerName(by[id].name) !== by[id].name ? zh.playerName(by[id].name).slice(0, 2) : initials(by[id].name), name: zh.playerName(by[id].name), badges: feedback.badgesFor(id, this.monitor, by, rules.STEP) }));
     let outline = null;   // a zone or a box, once the defenders are in it
     if (plan && plan.zoneSpot && !S.dead && T >= plan.t0 + Math.max(0, ...Object.values(plan.blend || {}))) {
       const ids = Object.keys(plan.zoneSpot).filter((id) => pos[id]);
@@ -171,15 +176,15 @@ Page({
         outline = ids.map((id) => pos[id]).sort((a, b) => Math.atan2(a.y - c.y, a.x - c.x) - Math.atan2(b.y - c.y, b.x - c.x));
       }
     }
-    draw.court(this.ctx, this.cw, { pos, ball, players, colors: this.colors, outline, selected: this.selected, names: this.cw >= 480 });   // names under the figures when there's room (landscape)
-    // Draw the control on the canvas: native canvas layers can hide DOM overlays.
-    const w = this.playing ? 125 : this.cw * 0.6, h = 36;
-    const x = this.playing ? this.cw - w - 7 : this.cw * 0.2, y = this.data.courtH - h - 10;
-    this.playHit = { x, y, w, h };
-    const ctx = this.ctx;
-    ctx.save(); ctx.fillStyle = this.data.requestBusy || this.data.timeoutDisabled || this.data.reconnectNeeded ? "#80988a" : "#6ee5a1";
-    ctx.fillRect(x, y, w, h); ctx.fillStyle = "#102719"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(this.data.requestBusy ? "正在确认…" : this.data.playLabel, x + w / 2, y + h / 2, w - 12); ctx.restore();
+    const now = Date.now();
+    draw.court(this.ctx, this.cw, { pos, ball, players, colors: this.colors, outline, selected: this.selected, names: this.cw >= 480, reactions: this.reactions, now });
+    // Paint controls AND reactions on the canvas; DOM overlays can disappear below native canvas layers.
+    const hit = this.playPressed && this.playHit ? this.playHit : draw.playBounds(this.cw, pos);
+    this.playHit = hit.clear ? hit : null;
+    if (JSON.stringify(this.data.playBounds) !== JSON.stringify(hit)) this.setData({ playBounds: hit });
+    draw.effects(this.ctx, this.cw, { pos, now, hit, callout: this.data.callout, bubbles: this.bubbles, flash: this.flash, banner: this.data.banner });
+    draw.control(this.ctx, hit, { playing: this.playing, started: this.T >= 1, left: this.timeoutsLeft(), pressed: this.playPressed,
+      busy: this.data.requestBusy, over: this.G.done && this.T >= this.totalT(), disabled: this.data.requestBusy || this.data.timeoutDisabled || this.data.reconnectNeeded });
   },
 
   // ---------- the server ----------
@@ -196,6 +201,7 @@ Page({
     } finally { this.fetching = false; }
   },
   ingest(data) {
+    if (data.monitor) this.monitor = data.monitor;
     for (const e of data.events || []) if (e.kind !== "coach" && e.kind !== "reply") this.G.events.push(e);
     if (data.periods) this.G.periods = Math.max(4, data.periods);
     if (data.done !== undefined) this.G.done = data.done;
@@ -226,7 +232,10 @@ Page({
         team: zh.teamName(e.team), color: G[e.team === G.home.tricode ? "home" : "away"].primary, text: zh.eventText(e, rules.playerById) }));
     }
     const coachKey = JSON.stringify([this.phase(), this.homeFloor(), this.awayFloor(), rules.tactic, this.playing]);
-    if (force || coachKey !== this.keys.coach) { this.keys.coach = coachKey; Object.assign(out, this.coaching()); }
+    if (force || coachKey !== this.keys.coach) {
+      this.keys.coach = coachKey; Object.assign(out, this.coaching());
+      if (this.data.menu && this.data.menu.phase !== this.phase()) out.menu = null;
+    }
     const changed = {};
     for (const k in out) if (force || JSON.stringify(out[k]) !== JSON.stringify(this.last && this.last[k])) changed[k] = out[k];
     this.last = Object.assign(this.last || {}, out);
@@ -242,12 +251,15 @@ Page({
     const rows = floor.map((id) => {
       const mine = roleList.findIndex(([r]) => roles[r] === id);
       return { id, draft: this.drafts[String(id)] || "", name: zh.playerName(by[id].name), kind: zh.label(by[id].archetype), roles: roleList.map(([key, label]) => ({ key, label: zh.label(label) })),
-               roleIndex: Math.max(0, mine), roleLabel: mine >= 0 ? zh.label(roleList[mine][1]) : "", callIndex: 0,
-               calls: [{ label: "选择一条指令", raw: null }, ...rules.callList(phase, id, floor, theirs, c).map((call) => ({ ...call, label: zh.label(call.label) }))] };
+               roleIndex: Math.max(0, mine), roleLabel: mine >= 0 ? zh.label(roleList[mine][1]) : "",
+               callLabel: this.selectedCalls[String(id)] || '临场指令',
+               calls: rules.callList(phase, id, floor, theirs, c).map((call) => ({ ...call, label: zh.label(call.label) })) };
     });
+    for (const row of rows) row.callIndex = row.calls.findIndex(call => call.label === row.callLabel);
     const helper = zh.tacticText(current, roles, by);
+    const teamCalls = rules.callList(phase, 'team', floor, theirs, c).map(call => ({ ...call, label: zh.label(call.label) }));
     return { tactics, tacticIndex: Math.max(0, tactics.findIndex((x) => x.key === current)), rows, helper,
-             teamCallIndex: 0, teamCalls: [{ label: "选择一条指令", raw: null }, ...rules.callList(phase, "team", floor, theirs, c).map((call) => ({ ...call, label: zh.label(call.label) }))],
+             teamCallIndex: teamCalls.findIndex(call => call.label === this.selectedCalls.team), teamCalls, teamCallLabel: this.selectedCalls.team || '临场指令',
              phaseLabel: phase === "offense" ? "我们进攻，把机会打出来" : "我们防守，守好这一回合" };
   },
   playLabel() {
@@ -287,11 +299,31 @@ Page({
   },
 
   // ---------- coaching ----------
-  setTab(e) { this.setData({ tab: e.currentTarget.dataset.tab }); },
-  async pickTactic(e) {   // in a timeout (or before the tip-off) only
+  setTab(e) { this.setData({ tab: e.currentTarget.dataset.tab, menu: null }); },
+  openMenu(e) {
+    const { kind, id } = e.currentTarget.dataset;
+    if (this.data.requestBusy || this.data.sending || this.data.reconnectNeeded || (kind !== 'call' && this.playing)) return;
+    if (this.data.menu && this.data.menu.kind === kind && String(this.data.menu.id) === String(id)) { this.closeMenu(); return; }
+    const row = this.data.rows.find(r => String(r.id) === String(id));
+    const options = kind === 'tactic' ? this.data.tactics : kind === 'role' ? row && row.roles : id === 'team' ? this.data.teamCalls : row && row.calls;
+    if (!options) return;
+    const selected = kind === 'tactic' ? this.data.tacticIndex : kind === 'role' ? row.roleIndex : id === 'team' ? this.data.teamCallIndex : row.callIndex;
+    this.setData({ menu: { kind, id, phase: this.phase(), title: kind === 'call' ? '临场指令 · 点选即发送' : kind === 'tactic' ? '选择球队战术' : '安排场上任务',
+      options: options.map((option, index) => ({ index, label: option.label || option.name, selected: index === selected })) } });
+  },
+  closeMenu() { this.setData({ menu: null }); },
+  async chooseMenu(e) {
+    const menu = this.data.menu, index = Number(e.currentTarget.dataset.index);
+    if (!menu || !menu.options[index] || this.data.requestBusy || this.data.sending || menu.phase !== this.phase()) return;
+    this.closeMenu();
+    if (menu.kind === 'tactic') await this.pickTactic(index);
+    else if (menu.kind === 'role') await this.pickRole(Number(menu.id), index);
+    else await this.pickCall(menu.id, index);
+  },
+  async pickTactic(index) {   // in a timeout (or before the tip-off) only
     if (this.playing || this.data.requestBusy) return;
     const before = JSON.parse(JSON.stringify(this.rules.tactic)), restarts = JSON.parse(JSON.stringify(this.rules.restarts));
-    const key = this.data.tactics[Number(e.detail.value)].key, phase = this.phase();
+    const key = this.data.tactics[index].key, phase = this.phase();
     if (!this.rules.setTactic(phase, key)) return;
     if (!(await this.sendTactic(phase === "defense" && key === "man", false))) {
       Object.assign(this.rules.tactic, before);
@@ -299,12 +331,12 @@ Page({
       this.rules.rebuild(); this.refresh(true);
     }
   },
-  async pickRole(e) {
+  async pickRole(id, index) {
     if (this.playing || this.data.requestBusy) return;
-    const row = this.data.rows.find((r) => r.id === Number(e.currentTarget.dataset.id));
-    if (!row || !row.roles[Number(e.detail.value)]) return;
+    const row = this.data.rows.find((r) => r.id === id);
+    if (!row || !row.roles[index]) return;
     const before = JSON.parse(JSON.stringify(this.rules.tactic)), restarts = JSON.parse(JSON.stringify(this.rules.restarts)), picks = JSON.parse(JSON.stringify(this.rules.pickLog));
-    const role = row.roles[Number(e.detail.value)].key;
+    const role = row.roles[index].key;
     if (this.rules.pickRole(this.phase(), row.id, role, this.awayFloor()) && !(await this.sendTactic(false, false))) {
       Object.assign(this.rules.tactic, before);
       this.rules.restarts.splice(0, this.rules.restarts.length, ...restarts);
@@ -328,19 +360,12 @@ Page({
     } catch (err) { this.rolesMoved = true; this.toast(zh.requestError(err)); return false; }
     finally { if (!this.unloaded) this.setData({ requestBusy: false }); }
   },
-  async pickCall(e) {
-    const id = e.currentTarget.dataset.id, row = id === "team" ? null : this.data.rows.find((r) => r.id === Number(id));
-    const index = Number(e.detail.value), call = id === "team" ? this.data.teamCalls[index] : row && row.calls[index];
+  async pickCall(id, index) {
+    const row = id === "team" ? null : this.data.rows.find((r) => r.id === Number(id));
+    const call = id === "team" ? this.data.teamCalls[index] : row && row.calls[index];
     if (!call || !call.raw) return;
     const target = row ? row.id : null;
-    if (row) this.setData({ rows: this.data.rows.map((r) => r.id === target ? { ...r, callIndex: index } : r) });
-    else this.setData({ teamCallIndex: index });
     await this.sendCall(call, target);
-    // Reset after the actual request so choosing the same call again is another nudge.
-    if (!this.unloaded) {
-      if (row) this.setData({ rows: this.data.rows.map((r) => r.id === target ? { ...r, callIndex: 0 } : r) });
-      else this.setData({ teamCallIndex: 0 });
-    }
   },
   async sendCall(call, to) {
     if (this.data.requestBusy) return false;
@@ -348,7 +373,10 @@ Page({
     try {
       const data = await request("/api/call", { raw: call.raw, words: call.label, to });
       this.ingest(data);
-      this.toast(`已执行：${call.label}`);
+      this.selectedCalls[to == null ? 'team' : String(to)] = call.label;
+      this.refresh(true);
+      this.setData({ notice: '' });
+      this.reactToCall(call.label, to, data);
       return true;
     } catch (err) { this.toast(zh.requestError(err)); return false; }
     finally { if (!this.unloaded) this.setData({ requestBusy: false }); }
@@ -526,9 +554,12 @@ Page({
         const to = id == null ? null : this.rules.counterpart(id, this.T, this.awayFloor(), (pid) => this.shown[pid] || { x: 47, y: 25 });
         const data = await request("/api/trash", { text, from: id, to });
         this.ingest(data);
+        clearTimeout(this.replyTimer);
         if (data.replier) {
-          const who = id == null ? zh.teamName(this.G.away.tricode) : zh.playerName(this.rules.playerById[data.replier].name);
-          this.showCallout(data.rattled ? "good" : "bad", `${who}${data.rattled ? "被干扰了 😬" : "更有斗志了 🔥"}`, "这句话影响了对手的信心。");
+          const who = zh.playerName(this.rules.playerById[data.replier].name), reply = feedback.replyText(data.reply), kind = data.rattled ? 'good' : 'bad';
+          this.reactions[data.replier] = { at: Date.now(), ms: 2300, kind };
+          this.bubbles = [{ id: data.replier, text: reply, at: Date.now(), ms: 3000, kind }];
+          this.showCallout(kind, `${who}${data.rattled ? "被干扰了" : "更有斗志了"}`, reply, id == null ? 'team' : id);
         }
       } else {
         const rules = this.rules, phase = this.phase(), floor = this.homeFloor(), theirs = this.awayFloor();
@@ -543,6 +574,7 @@ Page({
         }
         this.ingest(data);
         this.toast(data.unmapped && data.unmapped.length ? "千问已理解，但这项要求暂不能在比赛中执行。" : "教练的话已传达给球员。");
+        this.reactToCall(text, id, data);
       }
       return true;
     } catch (err) { this.toast(zh.requestError(err)); return false; }
@@ -564,6 +596,39 @@ Page({
   },
 
   // ---------- messages ----------
+  pressCourt(e) {
+    const touch = e.touches && e.touches[0], hit = this.playHit;
+    if (!touch || !hit) return;
+    const x = touch.clientX - this.canvasLeft, y = touch.clientY - (this.canvasPageTop - (this.pageScrollTop || 0));
+    if (x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) this.pressControl();
+  },
+  pressControl() { if (!this.data.requestBusy && !this.data.timeoutDisabled) { clearTimeout(this.pressTimer); this.playPressed = true; } },
+  releaseControl() { this.pressTimer = setTimeout(() => { this.playPressed = false; }, 110); },
+  reactToCall(words, to, data) {
+    if (this.unloaded) return;
+    const now = Date.now(), targets = to == null ? this.homeFloor() : [to];
+    for (const id of targets) this.reactions[id] = { at: now, ms: 1700, kind: 'call' };
+    this.bubbles = to == null ? [] : [{ id: to, text: words, kind: 'call', at: now, ms: 1400 }];
+    this.showCallout('call', to == null ? '全队收到指令' : `${zh.playerName(this.rules.playerById[to].name)}收到指令`, words);
+    clearTimeout(this.replyTimer);
+    if (data.reply && this.rules.playerById[data.replier]) this.replyTimer = setTimeout(() => {
+      if (this.unloaded) return;
+      const reply = feedback.replyText(data.reply), who = zh.playerName(this.rules.playerById[data.replier].name), at = Date.now();
+      this.reactions[data.replier] = { at, ms: 2400, kind: 'good' };
+      this.bubbles = [{ id: data.replier, text: reply, kind: 'reply', at, ms: 3000 }];
+      this.showCallout('good', `${who}回应`, reply, to == null ? 'team' : to);
+    }, 650);
+  },
+  reactToPlay(event) {
+    const now = Date.now();
+    if ((event.kind === 'shot' || event.kind === 'free_throws') && event.value) this.flash = { at: now, value: event.value, team: event.team === this.G.home.tricode ? 'home' : 'away' };
+    const c = feedback.creditFeedback(event, this.G);
+    if (c) {
+      this.reactions[c.hero] = { at: now, ms: 2100, kind: c.kind };
+      this.showCallout(c.kind, c.big, c.small);
+      this.hold = Math.max(this.hold, 1.2);
+    }
+  },
   toast(text) {
     const message = /[\u3400-\u9fff]/.test(String(text)) ? zh.label(text) : zh.requestError(new Error(String(text)));
     const expired = /已失效|连接已失效/.test(message);
@@ -572,9 +637,9 @@ Page({
     wx.showToast({ title: message.slice(0, 28), icon: "none", duration: 2200 });
   },
   showBanner(text, ms) { this.setData({ banner: text }); clearTimeout(this.bannerTimer); this.bannerTimer = setTimeout(() => { if (!this.inTimeout) this.setData({ banner: "" }); }, ms); },
-  showCallout(kind, big, small) {
-    this.setData({ callout: { show: true, kind, big, small } });
+  showCallout(kind, big, small, target) {
+    this.setData({ callout: { show: true, kind, big, small, target: target == null ? '' : target, at: Date.now() } });
     clearTimeout(this.calloutTimer);
-    this.calloutTimer = setTimeout(() => this.setData({ "callout.show": false }), 2600);
+    this.calloutTimer = setTimeout(() => { if (!this.unloaded) this.setData({ "callout.show": false }); }, 3200);
   },
 });

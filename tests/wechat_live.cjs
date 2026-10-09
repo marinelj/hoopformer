@@ -7,6 +7,10 @@ const automator = require(process.env.HOOPFORMER_AUTOMATOR);
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let mp, original;
 const evidence = {};
+async function choose(page, selector, index) {
+  const field=await page.$(selector);assert.ok(field, selector);await field.tap();await wait(80);
+  const options=await page.$$('.choice-option');assert.ok(options[index], 'custom option ' + index);await options[index].tap();await settle(page);
+}
 const deadline = setTimeout(() => { console.error('Real WeChat checks timed out'); process.exit(2); }, 120000);
 
 async function settle(page) {
@@ -26,7 +30,7 @@ async function rowsIntact(page) {
   assert.equal((await page.$$('.player-card')).length, 5, 'five actual cards must be rendered');
   for (const row of rows) {
     assert.ok(row.name && row.roleLabel && row.roles.length && row.calls.length);
-    assert.equal(row.callIndex, 0, 'same call can be picked again');
+    assert.ok(row.callLabel, 'selected face must remain explicit');
   }
   return rows;
 }
@@ -46,37 +50,37 @@ async function rowsIntact(page) {
   assert.equal(await page.data('error'), '');
   evidence.initial = (await rowsIntact(page)).map(r => r.name);
 
-  // Reproduce the original array corruption through the actual picker change event.
+  assert.equal((await page.$$('picker')).length, 0, 'no OS pickers');
+  // Send the same actual option again: no change-event reset and no array corruption.
   for (let round = 0; round < 2; round++) for (let i = 0; i < 5; i++) {
-    const pickers = await page.$$('.player-card picker');
-    assert.equal(pickers.length, 10);
-    await pickers[i * 2 + 1].trigger('change', { value: '1' });
-    await settle(page);
-    await rowsIntact(page);
-    assert.match(await page.data('notice'), /已执行/);
+    const fields=await page.$$('.player-card .call-choice');
+    await fields[i].tap();await wait(80);
+    const menu=await page.data('menu'), label=menu.options[0].label;
+    await (await page.$$('.choice-option'))[0].tap();await settle(page);
+    const rows=await rowsIntact(page);
+    assert.equal(rows[i].callLabel,label);assert.equal(rows[i].callIndex,0);
+    assert.equal(await fields[i].text(),label+'⌄');
+    await wait(700);
+    const c=await page.data('callout');assert.match(c.big,/回应/);assert.match(c.small,/[\u3400-\u9fff]/);
+    const reaction=await mp.evaluate(id=>{const p=getCurrentPages().slice(-1)[0];return {pulse:p.reactions[id],bubble:p.bubbles[0]};},rows[i].id);
+    assert.equal(reaction.bubble.id,rows[i].id);assert.equal(reaction.bubble.text,c.small);assert.equal(reaction.pulse.kind,'good');
   }
-  evidence.playerCalls = 10;
-  console.log('PLAYER_CALLS', evidence.playerCalls, 'five cards remain complete');
+  evidence.playerCalls = 10;evidence.actualPlayerReplies=true;
+  console.log('PLAYER_CALLS_AND_REPLIES', evidence.playerCalls, 'selected labels persist; actual replies have callouts and player bubbles');
 
-  // Change every tactic offered for this real possession and swap each player's role.
   const tactics = await page.data('tactics');
   for (let i = 0; i < tactics.length; i++) {
-    const picker = await page.$('.team-card picker');
-    await picker.trigger('change', { value: String(i) });
-    await settle(page);
-    await rowsIntact(page);
-    assert.match(await page.data('notice'), /战术已调整/);
+    await choose(page,'.team-card .tactic-choice',i);await rowsIntact(page);
+    assert.match(await page.data('notice'),/战术已调整/);
   }
   evidence.tactics = tactics.map(t => t.name);
   for (let i = 0; i < 5; i++) {
-    const rows = await rowsIntact(page);
-    const pickers = await page.$$('.player-card picker');
-    await pickers[i * 2].trigger('change', { value: String((rows[i].roleIndex + 1) % rows[i].roles.length) });
-    await settle(page);
-    await rowsIntact(page);
-    assert.match(await page.data('notice'), /战术已调整/);
+    const rows=await rowsIntact(page), fields=await page.$$('.player-card .role-choice');
+    await fields[i].tap();await wait(80);
+    await (await page.$$('.choice-option'))[(rows[i].roleIndex+1)%rows[i].roles.length].tap();await settle(page);await rowsIntact(page);
+    assert.match(await page.data('notice'),/战术已调整/);
   }
-  console.log('TACTICS_AND_ROLES', evidence.tactics);
+  console.log('CUSTOM_TACTICS_AND_ROLES', evidence.tactics);
 
   // The input stays in the card; both sides are native touch controls, with no sheet.
   assert.equal((await page.$$('.shade')).length, 0);
@@ -90,7 +94,7 @@ async function rowsIntact(page) {
   await own.touchstart({touches:[{clientX:40,clientY:400}]});await wait(60);await own.touchend({touches:[]});
   await settle(page);
   assert.equal(await page.data('teamDraft'), '');
-  assert.match(await page.data('notice'), /已执行/); evidence.typed = words;
+  assert.equal(await page.data('teamCallLabel'),words);evidence.typed=words;
   await draft.input('你防不住我们！'); await wait(100);
   const opponent = await page.$('.team-card .send.opponent');
   await opponent.touchstart({touches:[{clientX:300,clientY:400}]});await wait(60);await opponent.touchend({touches:[]});
@@ -112,9 +116,17 @@ async function rowsIntact(page) {
   console.log('INLINE_INPUTS_AND_PAGE_SCROLL',evidence.typed,evidence.inlineTrash);
 
   const play = await page.$('.play');
+  const pressPoint=await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0],h=p.playHit;return {clientX:p.canvasLeft+h.x+h.w/2,clientY:p.canvasPageTop-(p.pageScrollTop||0)+h.y+h.h/2};});
+  const court=await page.$('#court');await court.touchstart({touches:[pressPoint]});await wait(70);
+  assert.equal(await mp.evaluate(()=>getCurrentPages().slice(-1)[0].playPressed),true);
+  await court.touchend({touches:[]});await wait(160);
+  assert.equal(await mp.evaluate(()=>getCurrentPages().slice(-1)[0].playPressed),false);
   await play.tap(); await wait(4500);
   assert.equal(await page.data('locked'), true);
   assert.match(await page.data('playLabel'), /叫暂停/);
+  evidence.control=await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0], h=p.playHit;return {hit:h,pos:p.shown};});
+  assert.ok(evidence.control.hit.vacant,'first possession has a vacant half');
+  assert.ok(Object.values(evidence.control.pos).every(p=>evidence.control.hit.side==='left'?p.x>49.5:p.x<44.5));
   evidence.audio = await mp.evaluate(() => getCurrentPages().slice(-1)[0].sound.stats);
   assert.ok(evidence.audio.played.dribble > 0, 'actual audio onPlay must fire while holding the ball');
   assert.deepEqual(evidence.audio.errors, []);
@@ -187,11 +199,10 @@ async function rowsIntact(page) {
         }));
       }, 300 + batch * 8);
       if (kind === 'tactic') {
-        const picker = await page.$('.team-card picker');
-        await picker.trigger('change', { value: String((tacticIndex + 1) % (await page.data('tactics')).length) });
+        await choose(page,'.team-card .tactic-choice',(tacticIndex+1)%(await page.data('tactics')).length);
       } else {
-        const picker = (await page.$$('.player-card picker'))[0];
-        await picker.trigger('change', { value: String((before[0].roleIndex + 1) % before[0].roles.length) });
+        await (await page.$$('.player-card .role-choice'))[0].tap();await wait(80);
+        await (await page.$$('.choice-option'))[(before[0].roleIndex+1)%before[0].roles.length].tap();
       }
       await settle(page);
       assert.match(await page.data('notice'), /失效/);

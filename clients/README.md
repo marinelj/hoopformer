@@ -27,14 +27,13 @@ the engine's numbers and the explanations, use `--debug` or add `?debug=1` to th
 
 The layout is compact and turns with the phone:
 - **Portrait:** a slim scoreboard, the court the full width of the screen, a strip with the tactic in play, the
-  Timeout button, and two tabs (Coach, Play-by-play).
-- **Landscape:** the court fills the left side under the scoreboard; the Timeout button and the tabs are a column on
-  the right.
+  a court control in the vacant half, and two tabs (Coach, Play-by-play).
+- **Landscape:** the court fills the left side under the scoreboard; the coaching cards and tabs form the right column; the court control stays on the court.
 
 The coaching is the same as on the web:
 - the tactic and each player's role, changed only in a timeout;
 - a call for each player or the whole team;
-- 🎙 to talk to a player, 🗯 to talk trash to his man;
+- inline text input, left/right recipient buttons and hold-to-speak gestures;
 - 15 timeouts, each with a whistle.
 
 Tap a player on the court for his name and archetype.
@@ -79,4 +78,18 @@ HOOPFORMER_AUTOMATOR=/path/to/miniprogram-automator node tests/wechat_live.cjs h
 
 预设指令直接调用比赛引擎。其他自由语言明确请求千问；未配置密钥、格式错误或调用失败会给出原因，不再把规则兜底当作千问成功。旧后端返回 rules 时客户端也会提示重新发布后端。
 
-本地服务启动会读取根目录 Git 忽略的 `.env` 中的 `DASHSCOPE_API_KEY`。小程序不读取这个文件，Docker 构建也不打包它：云端须在 flask-y3ue 环境变量中配置有效密钥，并发布新版部署分支。当前本地值含非 ASCII 字符，尚未验证成功模型调用；只需在本地文件中替换为控制台完整 API Key，不要把值写进代码或提交。
+本地服务启动会读取根目录 Git 忽略的 `.env` 中的 `DASHSCOPE_API_KEY`。小程序不读取这个文件，Docker 构建也不打包它：云端须在 flask-y3ue 环境变量中配置有效密钥，并发布新版部署分支。当前本地密钥已替换，并实际验证 qwen3.8-max 成功调用；用户配置云端后，真实微信云调用和小程序输入框发送也已通过。不要把密钥值写进代码或提交。
+
+## 球场反馈与自定义选单（2026-10-09）
+
+暂停／继续按钮自动避开球员，带圆角、阴影、图标和按压反馈。暂停次数只在完全空闲的半场显示；开球或双方正在跨半场时，按钮不显示次数，且不会遮住球员。
+
+战术、任务和临场指令都使用卡片内的深色选单，点选即应用，没有系统滚轮和 OK／Cancel。选中指令只在服务器成功处理后更新名称；重复点同一条仍会增加一步指令强度。整页自然滚动，当前阶段变化时关闭过期选单。
+
+服务器真实返回的球员回应出现在球场 callout 和球员气泡里；向下滚动时，相关卡片也会显示回应。补上 Web 的指令闪动、有效指令与状态标记、得分飘字，以及战术奏效／付出代价的高亮提示。所有球场反馈由 canvas 绘制，避免原生图层遮挡；暂停时按真实时间播放并消失。
+
+云端界面回归（使用真实比赛接口，不模拟 wx API）：
+```sh
+HOOPFORMER_AUTOMATOR=/path/to/miniprogram-automator node tests/wechat_reactions.cjs
+```
+该脚本会创建独立云端比赛，实际发送指令并读取后续回合，快速播放真实事件检查画面；结束后恢复到新比赛。手机录音与扬声器仍需真机核对。

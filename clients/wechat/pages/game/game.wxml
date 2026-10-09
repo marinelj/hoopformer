@@ -1,3 +1,11 @@
+<template name="choiceMenu">
+  <view class="choice-menu">
+    <view class="choice-heading"><text>{{menu.title}}</text><view class="choice-close" aria-role="button" hover-class="pressed" bindtap="closeMenu">收起 ⌃</view></view>
+    <view class="choice-options">
+      <view wx:for="{{menu.options}}" wx:key="index" class="choice-option {{item.selected ? 'selected' : ''}}" data-index="{{item.index}}" aria-role="button" hover-class="pressed" bindtap="chooseMenu"><text>{{item.label}}</text><text class="choice-check">{{item.selected ? '✓' : '›'}}</text></view>
+    </view>
+  </view>
+</template>
 <view class="page {{landscape ? 'landscape' : 'portrait'}}">
   <view wx:if="{{!ready}}" class="loading">
     <text class="loading-title">场边教练</text><text class="loading-copy">{{error || '正在准备比赛…'}}</text>
@@ -10,10 +18,8 @@
       <view class="team home"><text class="code">{{board.homeCode}}</text><text class="pts">{{board.homePts}}</text></view>
     </view>
     <view class="court-box" style="height:{{courtH}}px">
-      <canvas type="2d" id="court" class="court" style="width:{{courtW}}px;height:{{courtH}}px" bindtap="tapCourt"></canvas>
-      <cover-view class="play {{locked ? 'live' : 'resume'}}" style="opacity:0" aria-role="button" bindtap="pressPlay">{{requestBusy ? '正在确认…' : playLabel}}</cover-view>
-      <view wx:if="{{banner}}" class="banner">{{banner}}</view>
-      <view class="callout {{callout.show ? 'show' : ''}} {{callout.kind}}"><text class="big">{{callout.big}}</text><text class="small">{{callout.small}}</text></view>
+      <canvas type="2d" id="court" class="court" style="width:{{courtW}}px;height:{{courtH}}px" bindtap="tapCourt" bindtouchstart="pressCourt" bindtouchend="releaseControl" bindtouchcancel="releaseControl" aria-label="{{callout.show ? callout.big + '，' + callout.small : '比赛球场'}}"></canvas>
+      <cover-view wx:if="{{playBounds.clear}}" class="play" style="opacity:0;left:{{playBounds.x}}px;top:{{playBounds.y}}px;width:{{playBounds.w}}px;height:{{playBounds.h}}px" aria-role="button" bindtap="pressPlay" bindtouchstart="pressControl" bindtouchend="releaseControl" bindtouchcancel="releaseControl">{{requestBusy ? '正在确认…' : playLabel}}</cover-view>
     </view>
     <view wx:if="{{strip}}" class="strip"><text>{{strip}}</text></view>
   </view>
@@ -27,9 +33,11 @@
       <view class="card team-card">
         <view class="card-heading"><text class="nm">全队</text><text class="kind">{{helper.say}}</text></view>
         <view class="fields">
-          <picker class="field" range="{{tactics}}" range-key="name" value="{{tacticIndex}}" disabled="{{locked || requestBusy}}" bindchange="pickTactic"><view class="pick-face"><text>{{tactics[tacticIndex].name}}</text><text>⌄</text></view></picker>
-          <picker class="field" range="{{teamCalls}}" range-key="label" value="{{teamCallIndex}}" disabled="{{requestBusy}}" data-id="team" bindchange="pickCall"><view class="pick-face"><text>临场指令</text><text>⌄</text></view></picker>
+          <view class="field pick-face tactic-choice {{locked ? 'disabled' : ''}}" data-kind="tactic" data-id="team" aria-role="button" hover-class="pressed" bindtap="openMenu"><text>{{tactics[tacticIndex].name}}</text><text>⌄</text></view>
+          <view class="field pick-face call-choice {{teamCallIndex >= 0 ? 'has-call' : ''}}" data-kind="call" data-id="team" aria-role="button" hover-class="pressed" bindtap="openMenu"><text>{{teamCallLabel}}</text><text>⌄</text></view>
         </view>
+        <template wx:if="{{menu && menu.id === 'team'}}" is="choiceMenu" data="{{menu}}" />
+        <view wx:if="{{callout.show && callout.target === 'team'}}" class="row-reply {{callout.kind}}"><text>{{callout.big}}</text><text>{{callout.small}}</text></view>
         <view class="command-row">
           <button class="send own" size="mini" style="flex:0 0 57px;width:57px;min-width:0;max-width:57px;height:38px;line-height:38px;font-size:11px;padding:0;white-space:nowrap" disabled="{{sending || requestBusy}}" data-kind="say" data-id="team" bindtouchstart="gestureStart" catchtouchmove="voiceMove" bindtouchend="gestureEnd" bindtouchcancel="cancelGesture">队员 ←</button>
           <input class="command-input" data-id="team" value="{{teamDraft}}" bindinput="editDraft" placeholder="输入指令 · 长按两侧说话" maxlength="500" confirm-type="done" disabled="{{sending || (voiceStatus !== 'idle' && voiceTarget === 'team')}}"></input>
@@ -40,9 +48,11 @@
       <view class="card player-card" wx:for="{{rows}}" wx:key="id">
         <view class="card-heading"><text class="nm">{{item.name}}</text><text class="kind">{{item.kind}}</text></view>
         <view class="fields">
-          <picker class="field" range="{{item.roles}}" range-key="label" value="{{item.roleIndex}}" disabled="{{locked || requestBusy}}" data-id="{{item.id}}" bindchange="pickRole"><view class="pick-face"><text>{{item.roleLabel}}</text><text>⌄</text></view></picker>
-          <picker class="field" range="{{item.calls}}" range-key="label" value="{{item.callIndex}}" disabled="{{requestBusy}}" data-id="{{item.id}}" bindchange="pickCall"><view class="pick-face"><text>临场指令</text><text>⌄</text></view></picker>
+          <view class="field pick-face role-choice {{locked ? 'disabled' : ''}}" data-kind="role" data-id="{{item.id}}" aria-role="button" hover-class="pressed" bindtap="openMenu"><text>{{item.roleLabel}}</text><text>⌄</text></view>
+          <view class="field pick-face call-choice {{item.callIndex >= 0 ? 'has-call' : ''}}" data-kind="call" data-id="{{item.id}}" aria-role="button" hover-class="pressed" bindtap="openMenu"><text>{{item.callLabel}}</text><text>⌄</text></view>
         </view>
+        <template wx:if="{{menu && menu.id == item.id}}" is="choiceMenu" data="{{menu}}" />
+        <view wx:if="{{callout.show && callout.target == item.id}}" class="row-reply {{callout.kind}}"><text>{{callout.big}}</text><text>{{callout.small}}</text></view>
         <view class="command-row">
           <button class="send own" size="mini" style="flex:0 0 57px;width:57px;min-width:0;max-width:57px;height:38px;line-height:38px;font-size:11px;padding:0;white-space:nowrap" disabled="{{sending || requestBusy}}" data-kind="say" data-id="{{item.id}}" bindtouchstart="gestureStart" catchtouchmove="voiceMove" bindtouchend="gestureEnd" bindtouchcancel="cancelGesture">队员 ←</button>
           <input class="command-input" data-id="{{item.id}}" value="{{item.draft}}" bindinput="editDraft" placeholder="输入指令 · 长按两侧说话" maxlength="500" confirm-type="done" disabled="{{sending || (voiceStatus !== 'idle' && voiceTarget === item.id)}}"></input>
