@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import time
+import tomllib
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -18,6 +19,16 @@ from hoopformer.game.model import ActionModel
 
 REPO = Path(__file__).resolve().parents[1]
 MODELS = REPO / "deploy/tencent/models"
+
+
+def test_cloud_package_profile_keeps_the_cli_without_training_dependencies():
+    runtime = tomllib.loads((REPO / "deploy/tencent/pyproject.toml").read_text())["project"]
+    research = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
+    assert runtime["name"] == research["name"] and runtime["version"] == research["version"]
+    assert runtime["scripts"] == research["scripts"]
+    assert any(dependency.startswith("torch") for dependency in research["dependencies"])
+    assert not any(dependency.startswith(("torch", "nvidia-", "cuda-", "triton")) for dependency in runtime["dependencies"])
+    print("Cloud runtime dependencies:", runtime["dependencies"], "; research still includes PyTorch")
 
 
 def test_github_deployment_models_match_the_verified_real_data_release():
@@ -68,10 +79,27 @@ def test_github_docker_sources_start_and_stream_a_real_classic_game(tmp_path):
     env = os.environ.copy()
     env.pop("DASHSCOPE_API_KEY", None)
     env.pop("OPENAI_API_KEY", None)
-    env["PYTHONPATH"] = str(tmp_path / "src")
-    env["PYTHONUNBUFFERED"] = "1"
+    env.pop("PYTHONPATH", None)
+    for line in docker.splitlines():
+        if line.startswith("ENV "):
+            for setting in shlex.split(line[4:]):
+                name, value = setting.split("=", 1)
+                env[name] = value.replace("/app/", str(tmp_path) + "/") if value.startswith("/app/") else value
+    assert env.get("PYTHONPATH") == str(tmp_path / "src"), "the image must find the court assets relative to /app/src"
+    runtime_python = os.environ.get("HOOPFORMER_RUNTIME_PYTHON") or sys.executable
+    probe = subprocess.run(
+        [runtime_python, "-c", "import hoopformer, importlib.util, json; print(json.dumps({'source': hoopformer.__file__, 'torch': importlib.util.find_spec('torch') is not None}))"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+    )
+    loaded = json.loads(probe.stdout)
+    assert loaded["source"] == str(tmp_path / "src/hoopformer/__init__.py")
+    if os.environ.get("HOOPFORMER_RUNTIME_PYTHON"):
+        assert loaded["torch"] is False
+    print("Actual Docker environment import:", loaded)
+    entry = Path(runtime_python).with_name("hoopformer")
+    assert entry.exists(), "test the installed Docker command entry point"
     process = subprocess.Popen(
-        [sys.executable, "-c", "import hoopformer; print(hoopformer.__file__); from hoopformer.cli import main; raise SystemExit(main())", *command[1:]],
+        [str(entry), *command[1:]],
         cwd=tmp_path, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     base = f"http://127.0.0.1:{port}"
@@ -111,4 +139,3 @@ def test_github_docker_sources_start_and_stream_a_real_classic_game(tmp_path):
         process.terminate()
         output, _ = process.communicate(timeout=10)
         print("Isolated server output:\n", output)
-    assert str(tmp_path / "src/hoopformer/__init__.py") in output
