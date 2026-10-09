@@ -39,23 +39,36 @@ The coaching is the same as on the web:
 
 Tap a player on the court for his name and archetype.
 
-1. Start the server: `uv run hoopformer serve --port 8000`.
-2. Install WeChat DevTools and import the folder `clients/wechat`. The project uses the test AppID (`touristappid`);
-   use your own Mini Program's AppID to preview on a phone.
-3. In DevTools the game connects to `http://127.0.0.1:8000` (`config.js`). The domain check is off in
-   `project.config.json`.
-4. On a phone (preview or real-device debugging):
+1. 当前使用微信云托管：`config.js` 的环境是 `prod-d2gq2p7vs296b0a1e`，服务名是 `flask-y3ue`，通过 `wx.cloud.callContainer` 连接。须在该服务发布 Hoopformer 后端，Dockerfile 为 `Dockerfile.cloudbase`，监听端口为 `8000`。2026-10-09 已实际验证云端比赛接口；后续后端修复仍须重新发布部署分支。
+2. Install WeChat DevTools and import the folder `clients/wechat`. The project AppID is `wxc261b766e2ee99f3`.
+3. 本地调试时清空 `CLOUD_ENV` 和 `CLOUD_SERVICE`，启动 `uv run hoopformer serve --port 8000`，然后 `SERVER` 才会生效。`http://127.0.0.1:8000` 适用于同一电脑的开发者工具。
+4. 使用本地服务进行真机调试时：
    - start the server with `uv run hoopformer serve --port 8000 --host 0.0.0.0`;
    - set `SERVER` in `config.js` to this computer's address on your local network (for example `http://192.168.1.20:8000`);
    - keep the phone on the same network.
 
-   A released Mini Program can only call an HTTPS domain registered in its admin console, so the server must then run
-   behind one.
-5. **Voice:**
-   - Without the speech plugin (the default), 🎙 and 🗯 open a text box.
-   - To speak instead, add the WechatSI plugin to `app.json`:
-     `"plugins": { "WechatSI": { "version": "0.3.5", "provider": "wx069ba97219f66d99" } }`. Then add the plugin to your
-     Mini Program in its admin console and set `VOICE: true` in `config.js`.
+   云托管内部调用无需配置公网域名；若改用普通 `wx.request`，发布版需要注册 HTTPS 合法域名。
+5. **中文界面和语音：**
+   - 记分牌、战术、球员任务、指令和比赛解说使用简单中文。比赛前或暂停时能改战术；临场指令、打字和喊话一直可用。
+   - “打字”打开确认框。语音接入后，按住“按住说话”说普通话，松开后检查文字，再点“确认并发送”；上滑或点取消不会发送。可以对全队、某名球员或对手说话。
+   - 语音使用微信同声传译 WechatSI。`config.js` 默认尝试启用；插件不可用时，会明确显示“语音尚未接入”，保留文字输入，不把打字当成录音。
+   - **当前部署目标：**`project.config.json` 已配置 `wxc261b766e2ee99f3`，`app.json` 已加入 WechatSI。开发者工具须登录有该小程序权限的微信账号，并在该小程序后台的“设置 → 第三方服务 → 插件管理”添加微信同声传译。`app.voice.example.json` 保留完整的语音配置供核对。测试号 `touristappid` 不能代替正式账号上传或接入插件。
+   - 首次录音需要麦克风权限。拒绝权限、没听清、识别失败或超时都会显示中文提示；也可以直接打字。语音会交给微信同声传译服务识别，确认后才把文字发送给比赛服务。录音最长 30 秒。
+   - 常用中文说法（如“打快一点”“加快节奏”“多传球”）会优先匹配当前可用的现有指令；其他话交给比赛服务的语言模型。使用 `--use rules` 时，未匹配的话可能没有对应动作，界面会说明。
+
+上传前确认 `config.js` 的云环境/服务名及后端已运行；使用本地连接时再检查 `SERVER`。语音插件加载和上传都依赖有效的开发者登录，`INVALID_LOGIN, access_token expired` 表示应重新扫码登录。
 
 After changing `core/court.js`, run `uv run hoopformer clients` to update the Mini Program's copy (a Mini Program can
 only load its own files). `tests/test_clients.py` fails until the copy matches.
+
+## 真机问题回归（2026-10-09）
+
+临场指令按球员 id 发送，选择后五张卡片仍保留。比赛失效时可点“重新开赛”；战术或任务发送失败会回到原选择。声音开关控制运球、进球、打铁、哨声和节末蜂鸣；跟随真实持球/比赛事件，暂停和传球时停止运球声。使用手机媒体音量。
+
+每个客户端保留自己的 game_id，电脑开赛不会替换手机的比赛。当前会话保存在单实例内存中，最多 32 局、空闲两小时后失效；重启会丢失，仍不支持多实例路由。
+
+真实开发者工具检查（不模拟 wx API）：
+```sh
+HOOPFORMER_AUTOMATOR=/path/to/miniprogram-automator node tests/wechat_live.cjs http://127.0.0.1:8128
+```
+先在 8128 启动实际服务器。脚本只临时改变模拟器内存中的地址，结束后恢复配置；不改配置文件。会实际打开新比赛、改变战术、发送指令和测试过期恢复。麦克风识别和手机扬声器听感须在手机实测。

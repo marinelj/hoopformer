@@ -1,58 +1,67 @@
 <view class="page {{landscape ? 'landscape' : 'portrait'}}">
-  <view wx:if="{{error}}" class="error">{{error}}</view>
-
-  <!-- the court and the score -->
-  <view class="stage" style="width: {{courtW}}px">
+  <view wx:if="{{!ready}}" class="loading">
+    <text class="loading-title">场边教练</text>
+    <text class="loading-copy">{{error || '正在准备比赛…'}}</text>
+    <button wx:if="{{error}}" class="primary" bindtap="retryStart">重新连接</button>
+  </view>
+  <view wx:if="{{ready}}" class="stage" style="width: {{courtW}}px">
+    <view class="eyebrow"><text>场边教练</text><text>你来指挥，球员来打</text></view>
     <view class="board">
-      <view class="team"><view class="stripe" style="background: {{board.awayColor}}"></view><text class="code">{{board.awayCode}}</text><text class="pts">{{board.awayPts}}</text></view>
-      <view class="clocks"><text class="period">{{period}}</text><text class="clock">{{clock}}</text><text class="shot">{{shot}}</text></view>
-      <view class="team home"><text class="pts">{{board.homePts}}</text><text class="code">{{board.homeCode}}</text><view class="stripe" style="background: {{board.homeColor}}"></view></view>
+      <view class="team"><text class="team-tag">对手</text><text class="code">{{board.awayCode}}</text><text class="pts">{{board.awayPts}}</text></view>
+      <view class="clocks"><text class="period">{{period}}</text><text class="clock">{{clock}}</text><text class="shot">进攻剩 {{shot}} 秒</text></view>
+      <view class="team home"><text class="team-tag">我的球队</text><text class="code">{{board.homeCode}}</text><text class="pts">{{board.homePts}}</text></view>
     </view>
     <view class="court-box" style="height: {{courtH}}px">
       <canvas type="2d" id="court" class="court" style="width: {{courtW}}px; height: {{courtH}}px" bindtap="tapCourt"></canvas>
       <view wx:if="{{banner}}" class="banner">{{banner}}</view>
       <view class="callout {{callout.show ? 'show' : ''}} {{callout.kind}}"><text class="big">{{callout.big}}</text><text class="small">{{callout.small}}</text></view>
     </view>
-    <view class="strip"><text>{{strip}}</text></view>
+    <view class="strip"><text>{{strip || '点球员看特点。比赛前和暂停时可以调整战术。'}}</text></view>
   </view>
-
-  <!-- the coaching: the Timeout button, then the rows or the play-by-play -->
-  <view class="panel" style="{{landscape ? 'width: ' + panelW + 'px' : ''}}">
+  <view wx:if="{{ready}}" class="panel" style="{{landscape ? 'width: ' + panelW + 'px' : ''}}">
     <view class="controls">
-      <view class="play {{inTimeout ? 'resume' : ''}} {{timeoutDisabled ? 'off' : ''}}" bindtap="pressPlay">{{playLabel}}</view>
-      <view class="tabs">
-        <view class="tab {{tab === 'coach' ? 'on' : ''}}" data-tab="coach" bindtap="setTab">Coach</view>
-        <view class="tab {{tab === 'plays' ? 'on' : ''}}" data-tab="plays" bindtap="setTab">Play-by-play</view>
-      </view>
+      <button class="play {{inTimeout ? 'resume' : ''}}" disabled="{{timeoutDisabled || requestBusy}}" bindtap="pressPlay">{{requestBusy ? '正在确认…' : playLabel}}</button>
+      <view class="tabs"><button class="tab {{tab === 'coach' ? 'on' : ''}}" data-tab="coach" bindtap="setTab">指挥</button><button class="tab {{tab === 'plays' ? 'on' : ''}}" data-tab="plays" bindtap="setTab">比赛解说</button></view>
     </view>
-
-    <scroll-view wx:if="{{tab === 'coach'}}" scroll-y class="body {{inTimeout ? 'lit' : ''}}">
-      <view class="phase">{{phaseLabel}}<text wx:if="{{locked}}" class="lock"> · tactics in a timeout</text></view>
-      <view class="row team-row">
-        <view class="who"><text class="nm">All team</text><text class="kind">tactic</text></view>
-        <picker class="pick" range="{{tactics}}" range-key="name" value="{{tacticIndex}}" disabled="{{locked}}" bindchange="pickTactic">
-          <view class="pick-face {{locked ? 'locked' : 'tactic'}}">{{tactics[tacticIndex].name}}</view>
-        </picker>
-        <picker class="pick" range="{{teamCalls}}" range-key="label" data-i="team" bindchange="pickCall"><view class="pick-face">Call…</view></picker>
-        <view class="icon" data-kind="say" data-i="team" bindtouchstart="voiceStart" bindtouchend="voiceEnd">🎙</view>
-        <view class="icon" data-kind="trash" data-i="team" bindtouchstart="voiceStart" bindtouchend="voiceEnd">🗯</view>
+    <view class="audio-control"><button bindtap="toggleSound">{{soundEnabled ? '声音开启' : '声音关闭'}}</button><text>{{soundMessage}}</text></view>
+    <view wx:if="{{notice}}" class="notice">{{notice}}</view>
+    <button wx:if="{{reconnectNeeded}}" class="reconnect" bindtap="retryStart">重新开赛</button>
+    <scroll-view wx:if="{{tab === 'coach'}}" scroll-y class="body">
+      <view class="phase"><text>{{phaseLabel}}</text><text class="lock">{{locked ? '叫暂停后可改战术和任务' : '现在可以调整战术和任务'}}</text></view>
+      <view class="card team-card">
+        <view class="card-heading"><text class="nm">全队</text><text class="badge">{{locked ? '战术已锁定' : '战术可调整'}}</text></view>
+        <view class="fields">
+          <view class="field"><text class="field-label">球队战术</text><picker range="{{tactics}}" range-key="name" value="{{tacticIndex}}" disabled="{{locked || requestBusy}}" bindchange="pickTactic"><view class="pick-face tactic {{locked ? 'locked' : ''}}"><text>{{tactics[tacticIndex].name}}</text><text>⌄</text></view></picker></view>
+          <view class="field"><text class="field-label">临场指令</text><picker range="{{teamCalls}}" range-key="label" value="{{teamCallIndex}}" disabled="{{requestBusy}}" data-id="team" bindchange="pickCall"><view class="pick-face"><text>给全队指令</text><text>⌄</text></view></picker></view>
+        </view>
+        <view class="actions"><button class="speak" disabled="{{!voiceAvailable}}" data-kind="say" data-id="team" bindtouchstart="voiceStart" bindtouchmove="voiceMove" bindtouchend="voiceEnd" bindtouchcancel="cancelVoice">按住说话</button><button data-kind="say" data-id="team" bindtap="openComposer">打字</button><button data-kind="trash" data-id="team" bindtap="openComposer">向对手喊话</button></view>
       </view>
-      <view class="row" wx:for="{{rows}}" wx:key="id">
-        <view class="who"><text class="nm">{{item.name}}</text><text class="kind">{{item.kind}}</text></view>
-        <picker class="pick" range="{{item.roles}}" range-key="label" value="{{item.roleIndex}}" disabled="{{locked}}" data-i="{{index}}" bindchange="pickRole">
-          <view class="pick-face {{locked ? 'locked' : ''}}">{{item.roleLabel}}</view>
-        </picker>
-        <picker class="pick" range="{{item.calls}}" range-key="label" data-i="{{index}}" bindchange="pickCall"><view class="pick-face">Call…</view></picker>
-        <view class="icon" data-kind="say" data-i="{{index}}" bindtouchstart="voiceStart" bindtouchend="voiceEnd">🎙</view>
-        <view class="icon" data-kind="trash" data-i="{{index}}" bindtouchstart="voiceStart" bindtouchend="voiceEnd">🗯</view>
+      <view class="helper"><text class="helper-name">{{helper.name}}怎么打</text><text class="helper-say">{{helper.say}}</text></view>
+      <view class="section-label">场上五人 · 给每个人安排任务</view>
+      <view class="card player-card" wx:for="{{rows}}" wx:key="id">
+        <view class="card-heading"><text class="nm">{{item.name}}</text><text class="kind">{{item.kind}}</text></view>
+        <view class="fields">
+          <view class="field"><text class="field-label">场上任务</text><picker range="{{item.roles}}" range-key="label" value="{{item.roleIndex}}" disabled="{{locked || requestBusy}}" data-id="{{item.id}}" bindchange="pickRole"><view class="pick-face {{locked ? 'locked' : ''}}"><text>{{item.roleLabel}}</text><text>⌄</text></view></picker></view>
+          <view class="field"><text class="field-label">临场指令</text><picker range="{{item.calls}}" range-key="label" value="{{item.callIndex}}" disabled="{{requestBusy}}" data-id="{{item.id}}" bindchange="pickCall"><view class="pick-face"><text>给他指令</text><text>⌄</text></view></picker></view>
+        </view>
+        <view class="actions"><button class="speak" disabled="{{!voiceAvailable}}" data-kind="say" data-id="{{item.id}}" bindtouchstart="voiceStart" bindtouchmove="voiceMove" bindtouchend="voiceEnd" bindtouchcancel="cancelVoice">按住说话</button><button data-kind="say" data-id="{{item.id}}" bindtap="openComposer">打字</button><button data-kind="trash" data-id="{{item.id}}" bindtap="openComposer">向对手喊话</button></view>
       </view>
-      <view class="helper"><text class="helper-name">{{helper.name}}</text><text class="helper-say">{{helper.say}}</text></view>
+      <view class="voice-hint">{{voiceHint}}</view>
     </scroll-view>
-
     <scroll-view wx:if="{{tab === 'plays'}}" scroll-y class="body">
-      <view class="feed" wx:for="{{feed}}" wx:key="key">
-        <text class="fclk">{{item.clock}}</text><text class="ftm" style="color: {{item.color}}">{{item.team}}</text><text class="ftx">{{item.text}}</text>
-      </view>
+      <view class="feed-empty" wx:if="{{!feed.length}}">比赛开始后，这里会记录每一次投篮、篮板和换人。</view>
+      <view class="feed" wx:for="{{feed}}" wx:key="key"><view class="feed-meta"><text>{{item.clock}}</text><text>{{item.team}}</text></view><text class="ftx">{{item.text}}</text></view>
     </scroll-view>
+  </view>
+  <view wx:if="{{composerOpen}}" class="shade">
+    <view class="composer">
+      <view class="composer-heading"><text>{{composerTitle}}</text><button disabled="{{sending}}" bindtap="closeComposer">取消</button></view>
+      <text class="voice-message">{{voiceMessage}}</text>
+      <textarea class="draft" value="{{draft}}" bindinput="editDraft" maxlength="500" placeholder="例如：打快一点、多传球、注意犯规" disabled="{{sending || voiceStatus === 'recording' || voiceStatus === 'processing' || voiceStatus === 'starting' || voiceStatus === 'permission'}}"></textarea>
+      <button wx:if="{{voiceAvailable}}" class="record {{voiceStatus === 'recording' ? 'listening' : ''}}" disabled="{{sending || voiceStatus === 'processing'}}" bindtouchstart="voiceStart" bindtouchmove="voiceMove" bindtouchend="voiceEnd" bindtouchcancel="cancelVoice">{{voiceStatus === 'recording' ? '正在听 · 松开结束，上滑取消' : '按住说普通话'}}</button>
+      <text wx:else class="voice-hint">{{voiceHint}}</text>
+      <button class="primary" disabled="{{!draft || sending || voiceStatus === 'recording' || voiceStatus === 'processing' || voiceStatus === 'starting' || voiceStatus === 'permission'}}" bindtap="sendDraft">{{sending ? '正在发送…' : '确认并发送'}}</button>
+      <text class="privacy-note">只有点“确认并发送”，球队才会收到这句话。</text>
+    </view>
   </view>
 </view>

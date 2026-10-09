@@ -27,6 +27,9 @@ from __future__ import annotations
 import json
 import random
 import threading
+import time
+import uuid
+from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -97,6 +100,7 @@ class LiveGame:
     def __init__(self, model: ActionModel, limits: dict, home: int, away: int, seed: int, use: str = "auto",
                  unmapped_log: Path | None = None, boost: float = levers.BOOST, half_life: float | None = levers.CALL_HALF_LIFE):
         self.model, self.use, self.unmapped_log = model, use, unmapped_log
+        self.game_id = uuid.uuid4().hex
         # game mode: calls are felt, and wear off unless repeated
         self.game = Game(model, home, away, seed=seed, limits=limits, boost=boost, half_life=half_life,
                          min_first_seconds=levers.MIN_FIRST_SECONDS if boost != 1 else 0.0,
@@ -115,7 +119,7 @@ class LiveGame:
             data = replay_data(self.game.result(), self.model)
             monitor = self.game.monitor(self.game.home)
         timeouts = {"home": COACH_TIMEOUTS, "away": TIMEOUTS}   # each team's timeouts at tip-off
-        return {**data, "live": True, "done": self.game.done, "monitor": monitor, "timeouts": timeouts, "debug": debug}
+        return {**data, "game_id": self.game_id, "live": True, "done": self.game.done, "monitor": monitor, "timeouts": timeouts, "debug": debug}
 
     def page(self, debug: bool = False) -> str:
         return replay_html(self.data(debug))
@@ -266,15 +270,38 @@ class Courtside:
         self.by_code = {team.tricode: team.team_id for team in model.teams.values()}
         self.home, self.away = home, away
         self.live: LiveGame | None = None
+        self.games = OrderedDict()
+        self.games_lock = threading.Lock()
 
     def new_game(self, home: str | None = None, away: str | None = None, seed: int | None = None) -> LiveGame:
         home, away = (home or self.home).upper(), (away or self.away).upper()
         if home not in self.by_code or away not in self.by_code or home == away:
             raise ValueError(f"unknown or identical teams {home} and {away}")
         seed = random.randrange(1 << 30) if seed is None else seed
-        self.live = LiveGame(self.model, self.limits, self.by_code[home], self.by_code[away], seed, self.use, self.unmapped_log,
-                             self.boost, self.half_life)
-        return self.live
+        live = LiveGame(self.model, self.limits, self.by_code[home], self.by_code[away], seed, self.use, self.unmapped_log,
+                        self.boost, self.half_life)
+        with self.games_lock:
+            self.live = live  # legacy clients without a game id still use the latest game
+            self.games[live.game_id] = (time.monotonic(), live)
+            while len(self.games) > 32:
+                self.games.popitem(last=False)
+        return live
+
+    def find_game(self, game_id: str | None) -> LiveGame | None:
+        """A browser or phone keeps its own game; unknown ids never fall back to another player."""
+        with self.games_lock:
+            if not game_id:
+                return self.live
+            cached = self.games.get(game_id)
+            if cached is None:
+                return None
+            seen, live = cached
+            if time.monotonic() - seen > 7200:
+                del self.games[game_id]
+                return None
+            self.games[game_id] = (time.monotonic(), live)
+            self.games.move_to_end(game_id)
+            return live
 
 
 def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
@@ -308,8 +335,12 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
                     self.reply(200, live.page(courtside.debug), "text/html")
                 else:
                     self.reply(200, json.dumps(live.data(courtside.debug)))
-            elif url.path == "/api/next" and courtside.live:
-                self.answer(courtside.live.next)
+            elif url.path == "/api/next":
+                live = courtside.find_game(parse_qs(url.query).get("game_id", [None])[0])
+                if live is None:
+                    self.reply(409, json.dumps({"error": "比赛已失效，请重新开始。", "code": "GAME_EXPIRED"}))
+                else:
+                    self.answer(live.next)
             elif url.path == "/favicon.ico":
                 self.send_response(204)
                 self.end_headers()
@@ -318,10 +349,19 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             url = urlparse(self.path)
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-            live = courtside.live
+            try:
+                size = int(self.headers.get("Content-Length") or 0)
+                if size < 0 or size > 65536:
+                    raise ValueError("invalid body size")
+                body = json.loads(self.rfile.read(size) or b"{}")
+                if not isinstance(body, dict) or ("raw" in body and not isinstance(body["raw"], dict)):
+                    raise ValueError("expected a JSON object")
+            except (ValueError, TypeError):
+                self.reply(400, json.dumps({"error": "指令格式不正确，请重新选择。"}))
+                return
+            live = courtside.find_game(parse_qs(url.query).get("game_id", [None])[0])
             if live is None:
-                self.reply(409, json.dumps({"error": "no game: open the page first"}))
+                self.reply(409, json.dumps({"error": "比赛已失效，请重新开始。", "code": "GAME_EXPIRED"}))
             elif url.path == "/api/say":
                 self.answer(lambda: live.say(str(body.get("text", "")).strip()[:500], body.get("to")))
             elif url.path == "/api/call":

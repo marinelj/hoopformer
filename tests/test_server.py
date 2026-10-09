@@ -206,3 +206,56 @@ def test_bad_requests_are_refused(server):
     with pytest.raises(urllib.error.HTTPError) as error:
         get(f"{base}/api/nothing")
     assert error.value.code == 404
+
+
+def test_two_real_clients_keep_their_own_game_and_calls(server):
+    base, courtside = server
+    a = json.loads(get(f"{base}/api/new?seed=101")[1])
+    b = json.loads(get(f"{base}/api/new?seed=102")[1])
+    assert a["game_id"] != b["game_id"]
+    game_a, game_b = courtside.find_game(a["game_id"]), courtside.find_game(b["game_id"])
+    before_b = len(game_b.game.events)
+    call = post(f"{base}/api/call?game_id={a['game_id']}", {"raw": {"team": {"pace": 1}}, "words": "打快一点"})
+    post(f"{base}/api/timeout?game_id={a['game_id']}", {})
+    get(f"{base}/api/next?game_id={a['game_id']}")
+    assert game_a.game.home.tactics["pace"] > 0
+    assert game_a.game.home.timeouts == 14
+    assert game_b.game.home.tactics == {} and game_b.game.home.timeouts == 15
+    assert len(game_b.game.events) == before_b
+    assert courtside.find_game(None) is game_b, "legacy requests retain their original behavior"
+    print("Two real HTTP clients:", game_a.game.seed, game_b.game.seed, call["levers"], "; other client's state unchanged")
+    assert f"encodeURIComponent(G.game_id)" in get(f"{base}/")[1], "web and phone both route to their own game"
+
+
+def test_expired_or_evicted_game_never_uses_someone_elses_game(server):
+    import time
+
+    base, courtside = server
+    first = json.loads(get(f"{base}/api/new?seed=103")[1])
+    for seed in range(104, 138):
+        get(f"{base}/api/new?seed={seed}")
+    assert len(courtside.games) == 32 and courtside.find_game(first["game_id"]) is None
+    for path in ("/api/next", "/api/timeout"):
+        with pytest.raises(urllib.error.HTTPError) as error:
+            if path.endswith("timeout"):
+                post(f"{base}{path}?game_id={first['game_id']}", {})
+            else:
+                get(f"{base}{path}?game_id={first['game_id']}")
+        body = json.loads(error.value.read())
+        assert error.value.code == 409 and body["code"] == "GAME_EXPIRED"
+        print("Evicted real game:", path, error.value.code, body)
+    latest = courtside.live
+    courtside.games[latest.game_id] = (time.monotonic() - 7201, latest)
+    assert courtside.find_game(latest.game_id) is None, "idle sessions expire instead of silently changing games"
+
+
+def test_malformed_instruction_gets_a_clear_error_and_server_keeps_working(server):
+    base, _ = server
+    for data in (b"{", b"[]", b'{"raw": []}'):
+        request = urllib.request.Request(base + "/api/call", data=data, headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        body = json.loads(error.value.read())
+        print("Real malformed HTTP instruction:", data, error.value.code, body)
+        assert error.value.code == 400 and "格式" in body["error"]
+    assert get(base + "/api/new")[0] == 200

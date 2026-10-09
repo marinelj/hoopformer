@@ -396,7 +396,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   const LIVE = G.live === true;
   let totalT = 4 * PERIOD + (Math.max(4, G.periods) - 4) * OT;
   async function api(path, body) {
-    const response = await fetch(`/api/${path}`, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const route = `/api/${path}${G.game_id ? `?game_id=${encodeURIComponent(G.game_id)}` : ""}`;
+    const response = await fetch(route, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
     if (response.status === 404) throw new Error("this game server is older than the page: stop hoopformer serve (Ctrl+C) and start it again");
     if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);

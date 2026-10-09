@@ -1,7 +1,7 @@
 {
-  "description": "Hoopformer Courtside: coach a live game. The WeChat client of the same engine as the web page.",
+  "description": "Hoopformer 场边教练：用中文指挥球员，和网页版共用比赛引擎。",
   "compileType": "miniprogram",
-  "appid": "touristappid",
+  "appid": "wxc261b766e2ee99f3",
   "projectname": "hoopformer-courtside",
   "libVersion": "3.0.0",
   "setting": {
@@ -9,8 +9,31 @@
     "es6": true,
     "enhance": true,
     "postcss": true,
-    "minified": true
+    "minified": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
   },
-  "packOptions": { "ignore": [], "include": [] },
-  "condition": {}
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "editorSetting": {}
 }
