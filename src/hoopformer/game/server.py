@@ -25,6 +25,7 @@ Routes:
 from __future__ import annotations
 
 import json
+import os
 import random
 import threading
 import time
@@ -33,6 +34,8 @@ from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+import requests
 
 from hoopformer.game.engine import TIMEOUTS, Game
 from hoopformer.game import levers
@@ -143,11 +146,11 @@ class LiveGame:
         with self.lock:
             return self.status(self.game.step())
 
-    def say(self, text: str, to: int | None) -> dict:
+    def say(self, text: str, to: int | None, provider: str | None = None) -> dict:
         game = self.game
         addressed = to if to in game.home.athletes else None
         # Outside the lock: the language model takes a few seconds and the game keeps playing meanwhile.
-        instruction = translate(text, game, game.home, addressed, use=self.use, unmapped_log=self.unmapped_log)
+        instruction = translate(text, game, game.home, addressed, use=provider or self.use, unmapped_log=self.unmapped_log)
         if "failed:" in instruction.source:
             print(f"language model call failed, used the keyword rules instead: {instruction.source}", flush=True)
         with self.lock:
@@ -363,7 +366,25 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
             if live is None:
                 self.reply(409, json.dumps({"error": "比赛已失效，请重新开始。", "code": "GAME_EXPIRED"}))
             elif url.path == "/api/say":
-                self.answer(lambda: live.say(str(body.get("text", "")).strip()[:500], body.get("to")))
+                text, to = str(body.get("text", "")).strip()[:500], body.get("to")
+                if body.get("provider") == "qwen":
+                    if not os.environ.get("DASHSCOPE_API_KEY"):
+                        self.reply(503, json.dumps({"error": "云端千问尚未配置，请设置 DASHSCOPE_API_KEY。", "code": "QWEN_NOT_CONFIGURED"}))
+                        return
+                    key = os.environ["DASHSCOPE_API_KEY"]
+                    if not key.isascii() or any(char.isspace() for char in key):
+                        self.reply(503, json.dumps({"error": "千问密钥格式不正确，请重新复制控制台 API Key。", "code": "QWEN_INVALID_KEY"}))
+                        return
+                    try:
+                        self.reply(200, json.dumps(live.say(text, to, provider="qwen")))
+                    except requests.Timeout:
+                        self.reply(503, json.dumps({"error": "千问响应超时，请重试。", "code": "QWEN_TIMEOUT"}))
+                    except requests.ConnectionError:
+                        self.reply(503, json.dumps({"error": "云端连接千问失败，请重试。", "code": "QWEN_UNREACHABLE"}))
+                    except (requests.RequestException, RuntimeError, ValueError, KeyError, TypeError):
+                        self.reply(503, json.dumps({"error": "千问调用失败，请检查云端密钥、模型权限与额度。", "code": "QWEN_CALL_FAILED"}))
+                else:
+                    self.answer(lambda: live.say(text, to))
             elif url.path == "/api/call":
                 self.answer(lambda: live.call(body.get("raw") or {}, str(body.get("words", ""))[:200], body.get("to")))
             elif url.path == "/api/tactics":

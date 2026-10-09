@@ -84,6 +84,11 @@ function eventText(event, players) {
 }
 function requestError(error) {
   const message = String(error && error.message || error || '');
+  if (error && error.code === 'QWEN_NOT_CONFIGURED') return '千问服务尚未连接，这条指令没有发送；请配置云端服务。';
+  if (error && error.code === 'QWEN_INVALID_KEY') return '千问服务的密钥配置有误，指令未发送；文字已保留。';
+  if (error && error.code === 'QWEN_TIMEOUT') return '千问响应超时，请重试；文字已保留。';
+  if (error && error.code === 'QWEN_UNREACHABLE') return '云端连接千问失败，请重试；文字已保留。';
+  if (error && error.code === 'QWEN_CALL_FAILED') return '千问调用失败，请检查云端密钥、模型权限与额度；文字已保留。';
   if ((error && error.code === 'GAME_EXPIRED') || /no game|game expired/i.test(message)) return '比赛连接已失效，请重新打开小程序开始新比赛。';
   if (/timeout|timed out|超时/i.test(message)) return '比赛服务响应超时，请稍后重试。';
   if (error && error.status === 404) return '比赛接口不存在（HTTP 404），请检查云端部署版本。';

@@ -9,9 +9,11 @@ function sendRequest(path, body) {
     const isNew = path.split("?")[0] === "/api/new";
     if (!isNew && gameId && !/[?&]game_id=/.test(path)) path += `${path.includes("?") ? "&" : "?"}game_id=${encodeURIComponent(gameId)}`;
     let finished = false;
-    const timer = setTimeout(() => { finished = true; reject(new Error("比赛服务响应超时，请稍后重试。")); }, 15000);
+    const waitMs = path.split("?")[0] === "/api/say" ? 135000 : 15000;
+    const timer = setTimeout(() => { finished = true; reject(new Error("比赛服务响应超时，请稍后重试。")); }, waitMs);
     const options = {
       method: body === undefined ? "GET" : "POST",
+      timeout: waitMs,
       data: body,
       header: { "content-type": "application/json" },
       success: (res) => {

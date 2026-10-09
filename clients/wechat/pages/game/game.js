@@ -25,8 +25,8 @@ Page({
     period: "第1节", clock: "12:00", shot: 24, playLabel: "开始比赛", timeoutDisabled: false, inTimeout: false,
     phaseLabel: "", strip: "", tab: "coach", tactics: [], tacticIndex: 0, locked: false, teamCalls: [], teamCallIndex: 0, rows: [],
     helper: { name: "", say: "" }, feed: [], banner: "", notice: "",
-    soundEnabled: true, soundMessage: "", requestBusy: false, reconnectNeeded: false,
-    voiceAvailable: false, voiceHint: "正在准备语音…", composerOpen: false, composerTitle: "", draft: "", voiceStatus: "idle", voiceMessage: "", sending: false,
+    soundMessage: "", requestBusy: false, reconnectNeeded: false, teamDraft: "",
+    voiceAvailable: false, voiceHint: "正在准备语音…", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", sending: false,
     callout: { show: false, big: "", small: "", kind: "" },
   },
 
@@ -37,16 +37,18 @@ Page({
     this.retryStart();
   },
   onResize() { if (this.G) this.layout(); },   // the phone turned
-  onHide() { this.cancelVoice(); if (this.G) this.setPlaying(false); this.sound.stop(); this.setData({ composerOpen: false }); },
+  onPageScroll(e) { this.pageScrollTop = e.scrollTop; },
+  onHide() { this.cancelGesture(); if (this.G) this.setPlaying(false); this.sound.stop(); },
   onUnload() {
-    this.running = false; this.unloaded = true; this.cancelVoice();
+    this.running = false; this.unloaded = true; this.cancelGesture();
     if (this.canvas && this.canvas.cancelAnimationFrame) this.canvas.cancelAnimationFrame(this.animationFrame);
-    clearTimeout(this.bannerTimer); clearTimeout(this.calloutTimer); clearTimeout(this.voiceTimer);
+    clearTimeout(this.bannerTimer); clearTimeout(this.calloutTimer); clearTimeout(this.voiceTimer); clearTimeout(this.holdTimer);
     if (this.sound) this.sound.destroy();
   },
   retryStart() {
     if (this.starting) return;
     this.starting = true;
+    this.cancelGesture();
     wx.hideToast();
     this.running = false;
     if (this.canvas && this.canvas.cancelAnimationFrame) this.canvas.cancelAnimationFrame(this.animationFrame);
@@ -61,12 +63,12 @@ Page({
     this.rules.rebuild();
     this.S = freshState();
     this.T = 0; this.played = 0; this.hold = 0; this.playing = false; this.started = false; this.inTimeout = false;
-    this.shown = {}; this.lastBall = null; this.walk = null; this.fetching = false; this.selected = null; this.keys = {}; this.lastBeat = null; this.last = {};
+    this.drafts = {}; this.shown = {}; this.lastBall = null; this.walk = null; this.fetching = false; this.selected = null; this.keys = {}; this.lastBeat = null; this.last = {};
     while (this.S.applied < G.events.length && G.events[this.S.applied].t <= 0.1) apply(this.S, G, G.events[this.S.applied]);
     this.T = 0.1;
     const team = (key) => ({ primary: G[key].primary, secondary: G[key].secondary, ink: ink(G[key].primary) });
     this.colors = { away: G.away.primary, home: G.home.primary, awayTeam: team("away"), homeTeam: team("home") };
-    this.setData({ ready: true, error: "", notice: "", banner: "", requestBusy: false, reconnectNeeded: false, board: { awayCode: zh.teamName(G.away.tricode), homeCode: zh.teamName(G.home.tricode), awayPts: 0, homePts: 0,
+    this.setData({ ready: true, error: "", notice: "", banner: "", requestBusy: false, reconnectNeeded: false, teamDraft: "", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", board: { awayCode: zh.teamName(G.away.tricode), homeCode: zh.teamName(G.home.tricode), awayPts: 0, homePts: 0,
                                          awayColor: G.away.primary, homeColor: G.home.primary } });
     this.layout();
     this.refresh(true);
@@ -79,7 +81,7 @@ Page({
     let courtW, panelW = 0;
     if (landscape) {   // the court on the left under the scoreboard, the coaching column on the right
       const high = win.windowHeight - 92 - 34 - 24;   // less the scoreboard, the strip and the margins
-      courtW = Math.floor(Math.min(win.windowWidth * 0.57, (high * 94) / 50));
+      courtW = Math.floor(Math.min((win.windowWidth - 34) * 0.58, (high * 94) / 50));
       panelW = win.windowWidth - courtW - 36;
     } else {
       courtW = win.windowWidth - 24;
@@ -87,13 +89,14 @@ Page({
     this.setData({ landscape, courtW, courtH: Math.round((courtW * 50) / 94), panelW }, () => this.setupCanvas());
   },
   setupCanvas() {
-    wx.createSelectorQuery().select("#court").fields({ node: true, size: true }).exec((res) => {
+    wx.createSelectorQuery().select("#court").fields({ node: true, size: true, rect: true }).exec((res) => {
       if (!res || !res[0] || !res[0].node) return;
       const canvas = res[0].node, dpr = (wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()).pixelRatio;
       canvas.width = res[0].width * dpr; canvas.height = res[0].height * dpr;
       this.ctx = canvas.getContext("2d");
       this.ctx.scale(dpr, dpr);
       this.canvas = canvas; this.cw = res[0].width;
+      this.canvasLeft = res[0].left || 0; this.canvasPageTop = (res[0].top || 0) + (this.pageScrollTop || 0);
       if (!this.running) { this.running = true; this.lastFrame = null; this.animationFrame = canvas.requestAnimationFrame(this.frame); }
     });
   },
@@ -169,6 +172,14 @@ Page({
       }
     }
     draw.court(this.ctx, this.cw, { pos, ball, players, colors: this.colors, outline, selected: this.selected, names: this.cw >= 480 });   // names under the figures when there's room (landscape)
+    // Draw the control on the canvas: native canvas layers can hide DOM overlays.
+    const w = this.playing ? 125 : this.cw * 0.6, h = 36;
+    const x = this.playing ? this.cw - w - 7 : this.cw * 0.2, y = this.data.courtH - h - 10;
+    this.playHit = { x, y, w, h };
+    const ctx = this.ctx;
+    ctx.save(); ctx.fillStyle = this.data.requestBusy || this.data.timeoutDisabled || this.data.reconnectNeeded ? "#80988a" : "#6ee5a1";
+    ctx.fillRect(x, y, w, h); ctx.fillStyle = "#102719"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(this.data.requestBusy ? "正在确认…" : this.data.playLabel, x + w / 2, y + h / 2, w - 12); ctx.restore();
   },
 
   // ---------- the server ----------
@@ -230,7 +241,7 @@ Page({
     const roleList = rules.roleList(t, theirs);
     const rows = floor.map((id) => {
       const mine = roleList.findIndex(([r]) => roles[r] === id);
-      return { id, name: zh.playerName(by[id].name), kind: zh.label(by[id].archetype), roles: roleList.map(([key, label]) => ({ key, label: zh.label(label) })),
+      return { id, draft: this.drafts[String(id)] || "", name: zh.playerName(by[id].name), kind: zh.label(by[id].archetype), roles: roleList.map(([key, label]) => ({ key, label: zh.label(label) })),
                roleIndex: Math.max(0, mine), roleLabel: mine >= 0 ? zh.label(roleList[mine][1]) : "", callIndex: 0,
                calls: [{ label: "选择一条指令", raw: null }, ...rules.callList(phase, id, floor, theirs, c).map((call) => ({ ...call, label: zh.label(call.label) }))] };
     });
@@ -242,7 +253,7 @@ Page({
   playLabel() {
     const over = this.G.done && this.T >= this.totalT(), left = this.timeoutsLeft();
     if (over) return "比赛结束";
-    if (!this.playing) return this.T < 1 ? "开始比赛" : "继续比赛";
+    if (!this.playing) return `${this.T < 1 ? "开始比赛" : "继续比赛"} · 暂停${left}次`;
     return left > 0 ? `叫暂停 · 剩${left}次` : "暂停已用完";
   },
 
@@ -251,7 +262,7 @@ Page({
   pressPlay() {
     if (this.data.requestBusy || this.data.reconnectNeeded) return;
     if (this.G.done && this.T >= this.totalT()) return;
-    if (!this.playing) { this.sound.enable(this.data.soundEnabled); this.inTimeout = false; this.setData({ banner: "", notice: "" }); this.setPlaying(true); return; }
+    if (!this.playing) { this.sound.enable(true); this.inTimeout = false; this.setData({ banner: "", notice: "" }); this.setPlaying(true); return; }
     this.callTimeout();
   },
   async callTimeout() {
@@ -261,24 +272,18 @@ Page({
     this.inTimeout = true;
     this.setPlaying(false);
     this.whistle();
-    this.setData({ banner: `${zh.teamName(this.G.home.tricode)}暂停中`, tab: "coach" });
+    this.setData({ banner: "", notice: "", tab: "coach" });
     try {
       const data = await request("/api/timeout", {});
       this.ingest(data);
-      this.toast(data.called ? `还剩${data.left}次暂停，场上球员休息一下` : "暂停已用完");
+      this.setData({ notice: "" });
     } catch (err) { this.inTimeout = false; this.setData({ banner: "" }); this.setPlaying(wasPlaying); this.toast(zh.requestError(err)); }
     finally { if (!this.unloaded) this.setData({ requestBusy: false }); }
     this.refresh(true);
   },
   whistle() {
-    this.sound.enable(this.data.soundEnabled); this.sound.play("whistle");
+    this.sound.enable(true); this.sound.play("whistle");
     wx.vibrateShort({ type: "heavy" });
-  },
-  toggleSound() {
-    const enabled = !this.data.soundEnabled;
-    this.sound.enable(enabled);
-    this.setData({ soundEnabled: enabled, soundMessage: "" });
-    if (enabled) this.sound.play("dribble");
   },
 
   // ---------- coaching ----------
@@ -348,14 +353,14 @@ Page({
     } catch (err) { this.toast(zh.requestError(err)); return false; }
     finally { if (!this.unloaded) this.setData({ requestBusy: false }); }
   },
-  // Keep the recipient id from the first touch: a substitution must not redirect the coach's words.
+  // Tap either side to send text. Hold to speak, release to send, slide up to cancel.
   initVoice() {
     try {
-      if (!config.VOICE) throw new Error('disabled');
+      if (!config.VOICE) throw new Error("disabled");
       this.recognizer = requirePlugin("WechatSI").getRecordRecognitionManager();
-      this.setData({ voiceAvailable: true, voiceHint: "按住说普通话，松开后确认发送；上滑取消。" });
+      this.setData({ voiceAvailable: true, voiceHint: "左发队员，右发对手；长按说话，松开发送，上滑取消。" });
     } catch (_) {
-      this.setData({ voiceAvailable: false, voiceHint: "语音尚未接入，可以先点“打字”指挥球队。" });
+      this.setData({ voiceAvailable: false, voiceHint: "语音暂不可用；输入文字后点左右按钮发送。" });
       return;
     }
     this.recognizer.onStart = () => {
@@ -363,100 +368,157 @@ Page({
       if (!session) return;
       session.started = true;
       if (!session.held || session.cancelled) { this.recognizer.stop(); return; }
-      this.setData({ voiceStatus: "recording", voiceMessage: "正在听…松开结束，上滑取消" });
+      this.setData({ voiceStatus: "recording", voiceMessage: "正在听…松开发送，上滑取消" });
     };
     this.recognizer.onRecognize = (res) => {
-      if (this.voiceSession && !this.voiceSession.cancelled && !this.unloaded) this.setData({ draft: res.result || "" });
+      const session = this.voiceSession;
+      if (session && !session.cancelled && !this.unloaded) this.updateDraft(session.id, res.result || "");
     };
     this.recognizer.onStop = (res) => {
       clearTimeout(this.voiceTimer);
       const session = this.voiceSession;
-      this.voiceSession = null;
-      if (!session || session.cancelled || this.unloaded) return;
-      const text = String(res.result || "").trim();
-      this.setData({ draft: text, voiceStatus: "review", voiceMessage: text ? "先看看文字，确认后再发送。" : "没有听清。请再说一次，或直接打字。" });
+      if (!session) return;
+      if (!this.unloaded) this.sound.enable(true);
+      if (session.cancelled || this.unloaded) { this.voiceSession = null; return; }
+      session.finished = true; session.result = String(res.result || "").trim();
+      if (session.held) {
+        this.updateDraft(session.id, session.result || session.previousDraft);
+        this.setData({ voiceStatus: "held", voiceMessage: "录音已结束，松开发送，上滑取消。" });
+      } else this.finishVoice(session);
     };
     this.recognizer.onError = () => {
       clearTimeout(this.voiceTimer);
       const session = this.voiceSession;
       this.voiceSession = null;
+      if (!this.unloaded) this.sound.enable(true);
       if (!session || session.cancelled || this.unloaded) return;
-      this.setData({ voiceStatus: "error", voiceMessage: "语音识别失败，请重试或直接打字。" });
+      this.setData({ voiceStatus: "idle", voiceMessage: "语音识别失败，请重试或直接输入文字。" });
     };
   },
-  openComposer(e) {
-    if ((this.voiceSession && !this.voiceSession.cancelled) || this.data.sending || this.data.requestBusy) return;
+  async finishVoice(session) {
+    if (this.voiceSession !== session || session.cancelled || this.unloaded) return;
+    this.voiceSession = null;
+    this.sound.enable(true);
+    this.updateDraft(session.id, session.result || session.previousDraft);
+    this.setData({ voiceStatus: "idle", voiceMessage: session.result ? "正在发送…" : "没有听清，请重新按住说话。" });
+    if (session.result) {
+      const sent = await this.sendWords(session.kind, session.id, session.result);
+      if (!this.unloaded) this.setData({ voiceMessage: sent ? "已发送" : "发送未完成，文字已保留，可点按钮重试。" });
+    }
+  },
+  gestureStart(e) {
+    if (this.voiceSession || this.data.sending || this.data.requestBusy || this.data.reconnectNeeded) return;
     const data = e.currentTarget.dataset;
     const id = data.id === "team" ? null : Number(data.id);
-    this.composerTarget = { id, kind: data.kind || "say" };
-    const who = id == null ? "全队" : zh.playerName(this.rules.playerById[id].name);
-    this.setData({ composerOpen: true, composerTitle: `${data.kind === "trash" ? "向对手喊话 · " : "指挥 · "}${who}`, draft: "", voiceStatus: "idle", voiceMessage: "写下你的话，确认后发送。" });
+    const touch = e.touches && e.touches[0];
+    const gesture = this.buttonGesture = { id, kind: data.kind, y: touch ? touch.clientY : 0, held: true, cancelled: false, long: false };
+    clearTimeout(this.holdTimer);
+    this.holdTimer = setTimeout(() => {
+      if (this.buttonGesture !== gesture || !gesture.held || gesture.cancelled) return;
+      gesture.long = true;
+      this.voiceStart(gesture);
+    }, 350);
   },
-  voiceStart(e) {
-    if (!this.recognizer || this.voiceSession || this.data.sending) return;
-    if (!this.data.composerOpen) this.openComposer(e);
-    if (!this.composerTarget) return;
-    const session = this.voiceSession = { held: true, cancelled: false, started: false, y: e.touches && e.touches[0] ? e.touches[0].clientY : 0 };
-    this.setData({ composerOpen: true, voiceStatus: "permission", voiceMessage: "正在准备麦克风…", draft: "" });
+  async gestureEnd() {
+    clearTimeout(this.holdTimer);
+    const gesture = this.buttonGesture;
+    this.buttonGesture = null;
+    if (!gesture) return;
+    gesture.held = false;
+    if (gesture.cancelled) return;
+    if (gesture.long) { this.voiceEnd(); return; }
+    const text = String(this.drafts[gesture.id == null ? "team" : String(gesture.id)] || "").trim();
+    if (text) await this.sendWords(gesture.kind, gesture.id, text);
+    else this.setData({ voiceTarget: gesture.id == null ? "team" : gesture.id, voiceMessage: "输入文字后点发送，或长按说话。" });
+  },
+  voiceStart(gesture) {
+    if (!this.recognizer || this.voiceSession) {
+      this.setData({ voiceTarget: gesture.id == null ? "team" : gesture.id, voiceMessage: "语音暂不可用，请直接输入文字。" });
+      return;
+    }
+    const session = this.voiceSession = { ...gesture, started: false, previousDraft: this.drafts[gesture.id == null ? "team" : String(gesture.id)] || "" };
+    this.sound.enable(false);
+    this.setData({ voiceTarget: session.id == null ? "team" : session.id, voiceStatus: "permission", voiceMessage: "正在准备麦克风…" });
     wx.authorize({ scope: "scope.record", success: () => {
-      if (this.voiceSession !== session || !session.held || session.cancelled) {
+      if (this.voiceSession !== session) return;
+      if (!session.held || session.cancelled) {
         this.voiceSession = null;
-        if (!this.unloaded) this.setData({ voiceStatus: "idle", voiceMessage: "已松开，请重新按住说话。" });
+        this.sound.enable(true);
+        if (!this.unloaded) this.setData({ voiceStatus: "idle", voiceMessage: session.cancelled ? "已取消，没有发送。" : "请确认权限后重新按住说话。" });
         return;
       }
       this.setData({ voiceStatus: "starting", voiceMessage: "正在开始录音…" });
       try {
+        session.requested = true;
         this.recognizer.start({ lang: "zh_CN", duration: 30000 });
         this.voiceTimer = setTimeout(() => {
           if (this.voiceSession !== session) return;
-          // Keep this cancelled session until the SDK's terminal callback. A late result must not
-          // become the text of a different recipient's new recording.
           session.cancelled = true;
           try { this.recognizer.stop(); } catch (_) { /* already stopped */ }
-          if (!this.unloaded) this.setData({ voiceAvailable: false, voiceStatus: "error", voiceMessage: "识别超时，请直接打字。重新打开小程序后可以重试语音。", voiceHint: "语音连接超时，请先打字指挥。" });
+          // A missing terminal callback must not block the text buttons forever.
+          this.voiceSession = null; this.recognizer = null;
+          if (!this.unloaded) {
+            this.sound.enable(true); this.updateDraft(session.id, session.previousDraft);
+            this.setData({ voiceAvailable: false, voiceStatus: "idle", voiceMessage: "识别超时，请直接输入文字；重新打开后可重试语音。" });
+          }
         }, 45000);
       } catch (_) {
         this.voiceSession = null;
-        this.setData({ voiceStatus: "error", voiceMessage: "录音没有启动，请重试或直接打字。" });
+        this.sound.enable(true);
+        this.setData({ voiceStatus: "idle", voiceMessage: "录音没有启动，请重试或直接输入文字。" });
       }
     }, fail: () => {
+      if (this.voiceSession !== session) return;
       this.voiceSession = null;
-      if (!this.unloaded) this.setData({ voiceStatus: "error", voiceMessage: "麦克风权限未开启。可在小程序设置中开启，或直接打字。" });
+      this.sound.enable(true);
+      if (!this.unloaded) this.setData({ voiceStatus: "idle", voiceMessage: "麦克风权限未开启，可在小程序设置中开启。" });
     } });
   },
   voiceMove(e) {
-    const session = this.voiceSession;
-    if (session && e.touches && e.touches[0] && session.y - e.touches[0].clientY > 60) this.cancelVoice();
+    const gesture = this.buttonGesture, touch = e.touches && e.touches[0];
+    if (gesture && touch && gesture.y - touch.clientY > 60) this.cancelGesture();
   },
   voiceEnd() {
     const session = this.voiceSession;
     if (!session) return;
     session.held = false;
     if (session.cancelled) return;
-    this.setData({ voiceStatus: "processing", voiceMessage: "正在转成文字…" });
+    if (session.finished) { this.finishVoice(session); return; }
+    this.setData({ voiceStatus: "processing", voiceMessage: "正在识别并发送…" });
     if (session.started) this.recognizer.stop();
   },
-  cancelVoice() {
+  cancelGesture() {
+    clearTimeout(this.holdTimer);
+    if (!this.unloaded) this.sound.enable(true);
+    if (this.buttonGesture) { this.buttonGesture.held = false; this.buttonGesture.cancelled = true; }
+    this.buttonGesture = null;
     const session = this.voiceSession;
     if (session) {
       session.held = false; session.cancelled = true;
+      if (!this.unloaded) this.updateDraft(session.id, session.previousDraft);
       if (session.started) { try { this.recognizer.stop(); } catch (_) { /* already stopped */ } }
+      if (!session.requested || session.finished) this.voiceSession = null;
     }
-    if (!this.unloaded) this.setData({ draft: "", voiceStatus: "idle", voiceMessage: "已取消，这句话没有发送。" });
+    if (!this.unloaded) this.setData({ voiceStatus: "idle", voiceMessage: "已取消，没有发送。" });
   },
-  closeComposer() {
-    if (this.data.sending) return;
-    this.cancelVoice();
-    this.composerTarget = null;
-    this.setData({ composerOpen: false, draft: "" });
+  updateDraft(id, text) {
+    const key = id == null ? "team" : String(id);
+    this.drafts[key] = String(text);
+    if (id == null) this.setData({ teamDraft: String(text) });
+    else this.setData({ rows: this.data.rows.map((row) => row.id === id ? { ...row, draft: String(text) } : row) });
   },
-  editDraft(e) { this.setData({ draft: e.detail.value }); },
-  async sendDraft() {
-    const text = this.data.draft.trim(), target = this.composerTarget;
-    if (!text || !target || (this.voiceSession && !this.voiceSession.cancelled) || this.data.sending) return;
+  editDraft(e) {
+    const id = e.currentTarget.dataset.id === "team" ? null : Number(e.currentTarget.dataset.id);
+    this.updateDraft(id, e.detail.value);
+  },
+  async sendWords(kind, id, text) {
+    if (this.data.sending || this.data.requestBusy || this.data.reconnectNeeded || !text) return false;
     this.setData({ sending: true });
-    const sent = await this.said(target.kind, target.id, text);
-    if (!this.unloaded) this.setData({ sending: false, composerOpen: !sent });
+    try {
+      const sent = await this.said(kind, id, text);
+      if (sent && !this.unloaded) this.updateDraft(id, "");
+      return sent;
+    } finally { if (!this.unloaded) this.setData({ sending: false }); }
   },
   async said(kind, id, text) {
     try {
@@ -473,18 +535,28 @@ Page({
         const calls = rules.callList(phase, id == null ? "team" : id, floor, theirs, rules.controlsOf(rules.tacticFor(phase), rules.tactic.roles)).map((call) => ({ ...call, label: zh.label(call.label) }));
         const matched = zh.matchingCall(text, calls);
         if (matched) return await this.sendCall(matched, id);
-        const data = await request("/api/say", { text, to: id });
+        this.setData({ notice: "千问正在理解你的指令…" });
+        const data = await request("/api/say", { text, to: id, provider: "qwen" });
+        if (!data.source || data.source.startsWith("rules")) {
+          this.toast("云端尚未调用千问，当前返回的是规则处理；请配置千问并发布新版后端。");
+          return false;
+        }
         this.ingest(data);
-        this.toast(data.unmapped && data.unmapped.length ? "有些话没有对应动作，请试试指令列表里的说法。" : "教练的话已传达给球员。");
+        this.toast(data.unmapped && data.unmapped.length ? "千问已理解，但这项要求暂不能在比赛中执行。" : "教练的话已传达给球员。");
       }
       return true;
     } catch (err) { this.toast(zh.requestError(err)); return false; }
   },
   tapCourt(e) {   // a player: his name and his kind
     if (!this.cw) return;
-    const s = this.cw / 94, x = e.detail.x - (e.currentTarget.offsetLeft || 0), y = e.detail.y - (e.currentTarget.offsetTop || 0);
+    const touch = e.changedTouches && e.changedTouches[0];
+    const x = (touch ? touch.clientX : e.detail.x) - this.canvasLeft;
+    const y = (touch ? touch.clientY : e.detail.y) - (this.canvasPageTop - (this.pageScrollTop || 0));
+    const hit = this.playHit;
+    if (hit && x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) { this.pressPlay(); return; }
+    const s = this.cw / 94, courtX = x / s, courtY = y / s;
     let best = null, near = 4;
-    for (const id in this.shown) { const p = this.shown[id], d = Math.hypot(p.x - x / s, p.y - y / s); if (d < near) { near = d; best = Number(id); } }
+    for (const id in this.shown) { const p = this.shown[id], d = Math.hypot(p.x - courtX, p.y - courtY); if (d < near) { near = d; best = Number(id); } }
     if (best == null) return;
     this.selected = best;
     const p = this.rules.playerById[best];

@@ -78,21 +78,40 @@ async function rowsIntact(page) {
   }
   console.log('TACTICS_AND_ROLES', evidence.tactics);
 
-  // Type an actual available Chinese instruction and confirm it using the UI.
-  let buttons = await page.$$('.team-card .actions button');
-  let typing;
-  for (const button of buttons) if ((await button.text()) === '打字') typing = button;
-  await typing.tap(); await wait(200);
-  const calls = await page.data('teamCalls');
-  const words = calls.find(c => c.raw).label;
-  const draft = await page.$('textarea.draft'); await draft.input(words); await wait(150);
-  const send = await page.$('.composer button.primary'); await send.tap();
+  // The input stays in the card; both sides are native touch controls, with no sheet.
+  assert.equal((await page.$$('.shade')).length, 0);
+  assert.equal((await page.$$('scroll-view')).length, 0);
+  assert.equal((await page.$$('.audio-control')).length, 0);
+  assert.equal((await page.$$('input.command-input')).length, 6);
+  const calls = await page.data('teamCalls'), words = calls.find(c => c.raw).label;
+  const draft = await page.$('.team-card input.command-input');
+  await draft.input(words); await wait(150);
+  const own = await page.$('.team-card .send.own');
+  await own.touchstart({touches:[{clientX:40,clientY:400}]});await wait(60);await own.touchend({touches:[]});
   await settle(page);
-  assert.equal(await page.data('composerOpen'), false);
-  assert.match(await page.data('notice'), /已执行/);
-  evidence.typed = words;
+  assert.equal(await page.data('teamDraft'), '');
+  assert.match(await page.data('notice'), /已执行/); evidence.typed = words;
+  await draft.input('你防不住我们！'); await wait(100);
+  const opponent = await page.$('.team-card .send.opponent');
+  await opponent.touchstart({touches:[{clientX:300,clientY:400}]});await wait(60);await opponent.touchend({touches:[]});
+  await settle(page);assert.equal(await page.data('teamDraft'),'');
+  assert.match((await page.data('callout')).big,/被干扰|更有斗志/);evidence.inlineTrash = true;
+  await mp.pageScrollTo(500);await wait(250);assert.ok(Number(await page.scrollTop())>0,'whole page must scroll naturally');
+  await mp.pageScrollTo(200);await wait(250);
+  const courtPoint = await mp.evaluate(() => {
+    const p = getCurrentPages().slice(-1)[0], h = p.playHit;
+    return { x:p.canvasLeft+h.x+h.w/2, y:p.canvasPageTop-p.pageScrollTop+h.y+h.h/2 };
+  });
+  await (await page.$('#court')).trigger('tap', courtPoint);await wait(250);
+  assert.equal(await page.data('locked'),true,'court control must remain clickable after page scroll');
+  await (await page.$('.play')).tap();await settle(page);
+  assert.equal(await page.data('locked'),false);
+  page = await mp.reLaunch('/pages/game/game');
+  for(let n=0;n<100&&!(await page.data('ready'));n++)await wait(100);
+  await mp.pageScrollTo(0);await wait(250);
+  console.log('INLINE_INPUTS_AND_PAGE_SCROLL',evidence.typed,evidence.inlineTrash);
 
-  const play = await page.$('button.play');
+  const play = await page.$('.play');
   await play.tap(); await wait(4500);
   assert.equal(await page.data('locked'), true);
   assert.match(await page.data('playLabel'), /叫暂停/);
@@ -102,13 +121,9 @@ async function rowsIntact(page) {
   await play.tap(); await settle(page);
   assert.equal(await page.data('inTimeout'), true);
   assert.equal(await page.data('locked'), false);
-  assert.match(await page.data('notice'), /还剩/);
-  evidence.timeout = await page.data('notice');
-  const soundButton = await page.$('.audio-control button');
-  await soundButton.tap(); await wait(150);
-  assert.equal(await page.data('soundEnabled'), false);
-  await soundButton.tap(); await wait(250);
-  assert.equal(await page.data('soundEnabled'), true);
+  assert.equal(await page.data('notice'), '');
+  assert.match(await page.data('playLabel'), /继续比赛.*14次/);
+  evidence.timeout = await page.data('playLabel');
   evidence.audioAfterToggle = await mp.evaluate(() => getCurrentPages().slice(-1)[0].sound.stats);
   assert.ok(evidence.audioAfterToggle.played.whistle > 0);
   assert.deepEqual(evidence.audioAfterToggle.errors, []);
@@ -117,6 +132,29 @@ async function rowsIntact(page) {
   assert.equal(await page.data('locked'), true);
   await rowsIntact(page);
   console.log('TIMEOUT_RESUME_AUDIO', JSON.stringify({ timeout: evidence.timeout, audio: evidence.audioAfterToggle }));
+
+  page = await mp.reLaunch('/pages/game/game');
+  for(let n=0;n<100&&!(await page.data('ready'));n++)await wait(100);
+  const cancelWords=(await page.data('teamCalls')).find(c=>c.raw).label;
+  const cancelInput=await page.$('.team-card input.command-input');await cancelInput.input(cancelWords);await wait(100);
+  const cancelButton=await page.$('.team-card .send.own');
+  await cancelButton.touchstart({touches:[{clientX:40,clientY:400}]});
+  await cancelButton.touchmove({touches:[{clientX:40,clientY:320}]});
+  await cancelButton.touchend({touches:[]});await wait(500);
+  assert.equal(await page.data('teamDraft'),cancelWords,'cancel keeps the previous typed draft');
+  const cancelled=await mp.evaluate(async()=>{const data=await require('utils/api.js').request('/api/next');return data.monitor.directives;});
+  assert.deepEqual(cancelled,[],'slide up must not send a coaching instruction');
+  evidence.slideCancelled = true;
+  if(process.argv[2]) {
+    const freeWords='请让控球人多利用挡拆制造错位，其他人及时拉开接应。';
+    await cancelInput.input(freeWords);await wait(100);
+    await cancelButton.touchstart({touches:[{clientX:40,clientY:400}]});await wait(60);await cancelButton.touchend({touches:[]});
+    await settle(page);
+    assert.equal(await page.data('teamDraft'),freeWords,'failed Qwen instruction must remain retryable');
+    assert.match(await page.data('notice'),/千问服务尚未连接/);
+    evidence.requiredQwenMissing=await page.data('notice');
+    console.log('SLIDE_CANCEL_AND_REQUIRED_QWEN',evidence.slideCancelled,evidence.requiredQwenMissing);
+  }
 
   // These errors are produced by the real server, then formatted by the actual compiled client.
   evidence.errors = await mp.evaluate(async () => {
@@ -172,6 +210,10 @@ async function rowsIntact(page) {
   if (process.env.HOOPFORMER_WECHAT_ARTIFACTS) {
     fs.mkdirSync(process.env.HOOPFORMER_WECHAT_ARTIFACTS, { recursive: true });
     fs.writeFileSync(path.join(process.env.HOOPFORMER_WECHAT_ARTIFACTS, 'live-checks.json'), JSON.stringify(evidence, null, 2));
+    // Reflow native canvas layers after DevTools reLaunch/page-scroll checks.
+    await mp.evaluate(() => wx.pageScrollTo({scrollTop:1,duration:0})); await wait(100);
+    await mp.evaluate(() => wx.pageScrollTo({scrollTop:0,duration:0})); await wait(300);
+    await page.callMethod('layout'); await wait(500);
     await mp.screenshot({ path: path.join(process.env.HOOPFORMER_WECHAT_ARTIFACTS, 'fixed-game.png') });
   }
   console.log('REAL_WECHAT_CHECKS_PASSED');

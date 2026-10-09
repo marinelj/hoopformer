@@ -259,3 +259,45 @@ def test_malformed_instruction_gets_a_clear_error_and_server_keeps_working(serve
         print("Real malformed HTTP instruction:", data, error.value.code, body)
         assert error.value.code == 400 and "格式" in body["error"]
     assert get(base + "/api/new")[0] == 200
+
+
+def test_required_qwen_never_silently_falls_back_to_rules(server):
+    import os
+
+    if os.environ.get("DASHSCOPE_API_KEY"):
+        pytest.skip("this check requires a real server process without a Qwen key")
+    base, courtside = server
+    data = json.loads(get(base + "/api/new?seed=151")[1])
+    game = courtside.find_game(data["game_id"]).game
+    before = len(game.events)
+    with pytest.raises(urllib.error.HTTPError) as error:
+        post(base + f"/api/say?game_id={data['game_id']}", {"text": "持球人多用挡拆制造错位，其余人拉开。", "provider": "qwen"})
+    body = json.loads(error.value.read())
+    print("Actual required-Qwen HTTP:", error.value.code, body["code"], "; game unchanged:", len(game.events) == before)
+    assert error.value.code == 503 and body["code"] == "QWEN_NOT_CONFIGURED"
+    assert len(game.events) == before and not game.home.tactics
+
+
+def test_required_qwen_rejects_invalid_configuration_before_changing_game(server):
+    import os
+
+    base, courtside = server
+    data = json.loads(get(base + "/api/new?seed=152")[1])
+    game = courtside.find_game(data["game_id"]).game
+    before = len(game.events)
+    original = os.environ.get("DASHSCOPE_API_KEY")
+    try:
+        # Deliberately malformed configuration input, never a real API key.
+        for value in ("非ASCII配置", "包含 空白"):
+            os.environ["DASHSCOPE_API_KEY"] = value
+            with pytest.raises(urllib.error.HTTPError) as error:
+                post(base + f"/api/say?game_id={data['game_id']}", {"text": "持球人主动突破。", "provider": "qwen"})
+            body = json.loads(error.value.read())
+            print("Actual invalid-Qwen HTTP:", error.value.code, body["code"], "; game unchanged:", len(game.events) == before)
+            assert error.value.code == 503 and body["code"] == "QWEN_INVALID_KEY"
+            assert len(game.events) == before and not game.home.tactics
+    finally:
+        if original is None:
+            os.environ.pop("DASHSCOPE_API_KEY", None)
+        else:
+            os.environ["DASHSCOPE_API_KEY"] = original
