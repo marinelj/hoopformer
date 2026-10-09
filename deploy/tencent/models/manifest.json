@@ -1,0 +1,12 @@
+{
+  "kind": "derived game rates; no raw NBA responses",
+  "season": "2025-26",
+  "players": 606,
+  "teams": 32,
+  "source": "Verified local 2026-10-08 deployment bundle; cached 2025-26 model and classic-player profiles",
+  "source_bundle_sha256": "dc3411cdec511f25298a6f7b0f1daa5ef42ef6427fe1a049983cfd49fd798c01",
+  "files": {
+    "action_model_2025-26.json": "91842fa2c32697cce84a81290b15f3477ed15cb6edf2c0034dfb1e0745097a1a",
+    "lever_limits_2025-26.json": "e9d3025218a5e8a39f70c68f9920486cb53c9d3c539b05b569c0a9cd11d14ea6"
+  }
+}

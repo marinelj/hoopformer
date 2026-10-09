@@ -1,0 +1,21 @@
+# Package profile for the precomputed-rates game server.
+# The root pyproject.toml keeps the full research/training dependencies.
+[project]
+name = "hoopformer"
+version = "0.1.0"
+description = "Hoopformer game server with cached player rates"
+requires-python = ">=3.12"
+dependencies = [
+    "nba-api>=1.11.4",
+    "pandas>=3.0.6",
+    "pyarrow>=25.0.1",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+hoopformer = "hoopformer.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
