@@ -42,30 +42,18 @@ from hoopformer.game import levers
 from hoopformer.game.levers import validate
 from hoopformer.game.model import ActionModel
 from hoopformer.game.replay import event_row, replay_data, replay_html
-from hoopformer.game.translator import RULE_REPLIES, translate
+from hoopformer.game.translator import translate
+from hoopformer.game.dialogue import natural_reply
 
-CALL_REPLIES = {**RULE_REPLIES, "rest_minutes": "Okay, taking a breather.", "team_confidence": "Appreciate it, coach!"}
 SET_PLAYS = ("pnr", "pop", "iso", "post", "five_out", "motion", "triangle",  # set plays the court acts out
              "elevator", "horns", "spain", "floppy", "hammer")
 SCHEMES = ("drop", "blitz", "zone23", "press", "box1", "switch", "zone131", "tri2")  # defensive schemes (man to man is none)
 STOPPABLE = ("double_team",)  # calls that one pick ends at once (they don't fade)
-PLAYER_REPLIES = {  # one defender's calls, (+, -)
-    "pressure": ("I'll pick him up full court.", "Giving him a little space."),
-    "protect_paint": ("Nothing easy at the rim.", "Staying home on my shooter."),
-    "box_out": ("Boxing out, every time.", "I'll leak out for the break."),
-}
-BACKING_OFF = {  # the same levers called the other way
-    "pace": "Slowing it down.", "three_point_rate": "Fewer threes, got it.", "attack_rim": "Staying out of the crowd.",
-    "ball_security": "Taking more chances.", "crash_glass": "Getting back on D.", "pressure": "Sitting back, no gambling.",
-    "protect_paint": "Running them off the line.", "foul_caution": "Getting physical.", "aggression": "Moving it, finding the open man.",
-}
-
 TACTICS = "Tactics: "  # how the tactics panel's directives are marked, so a new plan replaces the old one
 COACH_TIMEOUTS = 15    # the human coach's timeouts a game (the scripted coaches keep the NBA's 7 and never spend these)
 TRASH_BACK = {  # an opponent's answer to trash talk: (rattled, fired up)
-    True: ["Man, just play.", "Whatever.", "Get out of my face.", "You talk too much.", "Not now.", "Shut up and guard me."],
-    False: ["Keep talking. Watch this.", "You just woke me up.", "Bad idea.", "Say that again after this bucket.",
-            "Oh, now I'm locked in.", "Let's go then!"],
+    True: ["别一直喊，我在打球呢。", "行了行了，先把这球打完。", "你这话我听见了，别凑这么近。", "没完了是吧？等会儿再说。", "让我专心打这球，行不行？", "别吵，我知道你在那边。"],
+    False: ["你这么一说，我还真想试试了。", "行，你看看我怎么处理这球。", "别光说，跟上我的脚步再聊。", "哟，还聊上了？那我认真点。", "等这球打完，你再接着说。", "行，我听见了，咱们场上见。"],
 }
 
 
@@ -154,6 +142,8 @@ class LiveGame:
         if "failed:" in instruction.source:
             print(f"language model call failed, used the keyword rules instead: {instruction.source}", flush=True)
         with self.lock:
+            if instruction.source.startswith('rules') or not any('\u3400' <= ch <= '\u9fff' for ch in instruction.reply or ''):
+                instruction.reply, instruction.replier = natural_reply(game, game.home, instruction)
             events, changes = self.measured(lambda: game.instruct(game.home, instruction))
             return {**self.status(events), "levers": instruction.describe(self.names()), "reply": instruction.reply, "impact": changes,
                     "replier": instruction.replier, "source": instruction.source, "unmapped": instruction.unmapped}
@@ -165,19 +155,8 @@ class LiveGame:
         addressed = to if to in side.athletes else None
         with self.lock:
             stop = [k for k in raw.get("stop") or [] if k in STOPPABLE]   # "Man to man" ends the double team
-            named = [*(raw.get("team") or {}).items(), *((k, v) for entry in raw.get("players") or [] for k, v in entry.items() if k != "person_id"),
-                      *((k, raw[k]) for k in ("focus", "double_team", "late_foul", "team_confidence") if raw.get(k))]
-            first, value = named[0] if named else (None, None)
-            value = value["value"] if isinstance(value, dict) else value
-            negative = isinstance(value, (int, float)) and value < 0
-            if stop and first is None:
-                reply = "Man to man. Got it."
-            elif addressed is not None and first in PLAYER_REPLIES:
-                reply = PLAYER_REPLIES[first][negative]
-            else:
-                reply = (BACKING_OFF.get(first) if negative else None) or CALL_REPLIES.get(first, "Got it, coach.")
-            replier = addressed if addressed in side.lineup else (side.lineup[0] if side.lineup else None)
-            instruction = validate({**raw, "reply": reply, "replier": replier}, words, set(side.athletes), set(game.away.athletes), addressed, "call")
+            instruction = validate(raw, words, set(side.athletes), set(game.away.athletes), addressed, "call")
+            instruction.reply, instruction.replier = natural_reply(game, side, instruction, stop)
             def tiring():  # how fast the players this call covers tire, on average (1 = normal)
                 who = [addressed] if addressed in side.lineup else side.lineup
                 return sum(game.effort(side, p) for p in who) / max(1, len(who))

@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-09. v0.1 (data pipeline, RAPM, season simulator, pre-registered 2026-27 predictions) is due before opening night, around Oct 20.
+Updated 2026-10-12. v0.1 (data pipeline, RAPM, season simulator, pre-registered 2026-27 predictions) is due before opening night, around Oct 20.
 
 ## Done
 
@@ -62,6 +62,8 @@ The retry pass ended with `0 failed` for every season. `uv run pytest` reports `
 - v0.1 moves to Oct 6-17, still locked before opening night.
 
 ## Next
+
+- Single Chinese player dialogue and smaller court control (ChatGPT, 2026-10-12): removed duplicate corner acknowledgements; a response now appears only once above its actual player, with a card fallback only when the court is offscreen. Kept credited-play callouts separate. Reduced the play/timeout face to approximately one-third area (89×27 pixels at a 366-pixel court) while retaining a 44-pixel-high touch target. Unknown English from older cloud images no longer appears in the Chinese client. Replaced fixed server call replies with original conversational Chinese variants, avoids immediately repeated phrases/speakers, respects addressed/focused players, remembers recent coach exchanges, and uses actual fouls/energy/late deficits without consuming basketball RNG. Opponent responses are also Chinese. Qwen now receives recent exchanges and confidence, with an explicit Chinese spoken-dialogue prompt; non-Chinese/rules replies use the validated instruction's dialogue. Actual Qwen calls returned qwen3.8-max and two Chinese replies, including a Jordan follow-up. Primary real-data/HTTP/archive tests: 33 passed in 13.21 s; deployment branch: 34 passed in 12.85 s. Actual compiled DevTools regression passed all five players' repeated single replies, nine defenses, roles, direct own/opponent input, scrolled court hits, small-control press/pause/resume/audio, cancellation, missing-Qwen retention and expired-session rollback/recovery. Official new preview: 267,134 bytes; QR under ignored data/derived/wechat-deployment/wxc261b766e2ee99f3/2026-10-12/dialogue/phone-preview.png. Natural dialogue and the Qwen prompt require publishing this new backend; UI preview alone does not establish cloud dialogue deployment. Cloud key configuration is already verified and need not be re-entered. Why: remove repeated speech, reclaim court space, and let simulated teammates answer as people rather than fixed completion messages.
 
 - Court-feedback preview prepared (ChatGPT, 2026-10-09): implementation committed as 15edc4b4e03e0f2b3b708aefa9d57313c22c9249 on codex/wechat-cloud-deployment. Official DevTools preview succeeded for wxc261b766e2ee99f3, 266,697 bytes; the fresh QR is at ignored data/derived/wechat-deployment/wxc261b766e2ee99f3/2026-10-09/reactions/phone-preview.png. Local regression server was stopped and production client configuration retained. GitHub push was not yet confirmed at this record: Desktop AX remained stale after Fetch, coordinate input returned noWindowsAvailable, and the user was asked to foreground the app. Preview success is not a public Mini Program release.
 

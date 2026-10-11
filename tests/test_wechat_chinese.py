@@ -237,6 +237,8 @@ for(const plan of rules.plans()) for(let t=plan.t0;t<plan.t1;t+=.4) {
  const pos=rules.positionsAt(t,plan).pos;
  for(const width of [320,366,600]) {
   const hit=draw.playBounds(width,pos),s=width/94;
+  const former=Math.min(178,width*.42)*Math.min(46,width*50/94*.25), ratio=hit.visual.w*hit.visual.h/former;
+  assert.ok(ratio>.30&&ratio<.37,'visual area shrinks by about two thirds');assert.ok(hit.h>=44,'small face retains a touch target');
   assert.ok(hit.x>=0 && hit.x+hit.w<=width && hit.y>=0 && hit.y+hit.h<=width*50/94+1);
   if(hit.vacant) {
    const pts=Object.values(pos);assert.ok(pts.every(p=>hit.side==='left'?p.x>49.5:p.x<44.5),'count only in a vacant half');
@@ -289,4 +291,5 @@ for(const event of G.events) {
 }
 assert.ok(badges>15&&credits>10);assert.deepEqual([...kinds].sort(),['bad','good']);
 console.log('Translated actual replies:',G.checkedReplies.length,'; active player badges:',badges,'; home credit callouts:',credits,[...kinds]);
+assert.match(f.replyText("Got it, we'll slow it down and I'll attack the rim."),/[\u3400-\u9fff]/,'older Qwen images cannot leak English');
 """)

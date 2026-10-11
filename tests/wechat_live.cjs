@@ -61,9 +61,9 @@ async function rowsIntact(page) {
     assert.equal(rows[i].callLabel,label);assert.equal(rows[i].callIndex,0);
     assert.equal(await fields[i].text(),label+'⌄');
     await wait(700);
-    const c=await page.data('callout');assert.match(c.big,/回应/);assert.match(c.small,/[\u3400-\u9fff]/);
+    const c=await page.data('reply');assert.ok(c.show);assert.match(c.text,/[\u3400-\u9fff]/);assert.equal((await page.data('callout')).show,false,'no duplicate court-corner reply');assert.equal((await page.$$('.row-reply')).length,0,'visible court has only its player bubble');
     const reaction=await mp.evaluate(id=>{const p=getCurrentPages().slice(-1)[0];return {pulse:p.reactions[id],bubble:p.bubbles[0]};},rows[i].id);
-    assert.equal(reaction.bubble.id,rows[i].id);assert.equal(reaction.bubble.text,c.small);assert.equal(reaction.pulse.kind,'good');
+    assert.equal(reaction.bubble.id,rows[i].id);assert.equal(reaction.bubble.text,c.text);assert.equal(reaction.pulse.kind,'good');
   }
   evidence.playerCalls = 10;evidence.actualPlayerReplies=true;
   console.log('PLAYER_CALLS_AND_REPLIES', evidence.playerCalls, 'selected labels persist; actual replies have callouts and player bubbles');
@@ -99,7 +99,7 @@ async function rowsIntact(page) {
   const opponent = await page.$('.team-card .send.opponent');
   await opponent.touchstart({touches:[{clientX:300,clientY:400}]});await wait(60);await opponent.touchend({touches:[]});
   await settle(page);assert.equal(await page.data('teamDraft'),'');
-  assert.match((await page.data('callout')).big,/被干扰|更有斗志/);evidence.inlineTrash = true;
+  assert.match((await page.data('reply')).text,/[\u3400-\u9fff]/);evidence.inlineTrash = true;
   await mp.pageScrollTo(500);await wait(250);assert.ok(Number(await page.scrollTop())>0,'whole page must scroll naturally');
   await mp.pageScrollTo(200);await wait(250);
   const courtPoint = await mp.evaluate(() => {

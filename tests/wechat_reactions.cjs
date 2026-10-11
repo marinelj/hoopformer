@@ -23,8 +23,8 @@ async function capture(page, name) {
   let menu=await page.data('menu'), index=menu.options.findIndex(o=>o.label===label);assert.ok(index>=0);
   await capture(page,'custom-menu');
   await (await page.$$('.choice-option'))[index].tap();await idle(page);await wait(750);
-  let reply=await page.data('callout');assert.match(reply.big,/回应/);assert.match(reply.small,/[\u3400-\u9fff]/);
-  assert.equal(reply.target,'team');assert.ok(await page.$('.team-card .row-reply'));
+  let reply=await page.data('reply');assert.ok(reply.show);assert.match(reply.text,/[\u3400-\u9fff]/);assert.equal((await page.data('callout')).show,false);
+  assert.equal(reply.target,'team');assert.equal((await page.$$('.row-reply')).length,0);await mp.pageScrollTo(500);await wait(100);assert.ok(await page.$('.team-card .row-reply'));await mp.pageScrollTo(0);await wait(100);
   assert.equal(await page.data('teamCallLabel'),label);await capture(page,'player-reply');
   console.log('CLOUD_ACTUAL_PLAYER_REPLY',JSON.stringify(reply));
   const initial=await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0],h=p.playHit;return {clientX:p.canvasLeft+h.x+h.w/2,clientY:p.canvasPageTop-(p.pageScrollTop||0)+h.y+h.h/2};});
@@ -62,7 +62,7 @@ async function capture(page, name) {
   const input=await page.$('.team-card input.command-input');
   await input.input('全队降低进攻节奏，保护好球，多给乔丹创造冲击篮筐的机会。');await wait(100);
   const own=await page.$('.team-card .send.own');await own.touchstart({touches:[{clientX:40,clientY:400}]});await wait(60);await own.touchend({touches:[]});await idle(page);await wait(700);
-  assert.equal(await page.data('teamDraft'),'');const qwenReply=await page.data('callout');assert.match(qwenReply.big,/回应/);assert.ok(qwenReply.small);
+  assert.equal(await page.data('teamDraft'),'');const qwenReply=await page.data('reply');assert.ok(qwenReply.show);assert.match(qwenReply.text,/[\u3400-\u9fff]/);assert.equal((await page.data('callout')).show,false);
   console.log('CLOUD_FREE_LANGUAGE_CALLOUT',JSON.stringify(qwenReply));await capture(page,'qwen-reply');
   console.log('CLOUD_REACTIONS_PASSED',JSON.stringify({credits:actual.length,kinds:evidence.map(e=>e.callout.kind),control:hit,scoreFlash:!!score}));
   if(out)fs.writeFileSync(path.join(out,'cloud-reactions.json'),JSON.stringify({reply,qwenReply,levers,evidence,control:hit},null,2));

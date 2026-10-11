@@ -93,3 +93,9 @@ HOOPFORMER_AUTOMATOR=/path/to/miniprogram-automator node tests/wechat_live.cjs h
 HOOPFORMER_AUTOMATOR=/path/to/miniprogram-automator node tests/wechat_reactions.cjs
 ```
 该脚本会创建独立云端比赛，实际发送指令并读取后续回合，快速播放真实事件检查画面；结束后恢复到新比赛。手机录音与扬声器仍需真机核对。
+
+## 单次球员回应（2026-10-12）
+
+回应只在球员头顶显示一次，取消球场角落的重复回应；球场完全滚出屏幕时，相关卡片才显示同一段文字。继续／暂停按钮的可见面积缩小约三分之二，保留 44px 触控高度。
+
+新后端的预设回复采用多种中文口语，结合重复指令、当前球员、犯规、体力和比分；全队接话不再固定由第一名球员承担。千问获取最近对话和球员状态，并明确使用中文自然对话。新的丰富回复须发布部署分支后生效；旧云镜像的英文被客户端拦截。

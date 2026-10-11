@@ -120,10 +120,10 @@ def test_calls_from_the_list_need_no_language_model_and_stack(server):
     team = post(f"{base}/api/call", {"raw": {"team": {"pace": 1}}, "words": "Push the pace", "to": None})
     again = post(f"{base}/api/call", {"raw": {"team": {"pace": 1}}, "words": "Push the pace", "to": None})
     print(team["levers"], "|", team["reply"], "||", again["levers"])
-    assert game.home.tactics == {"pace": 0.7} and team["reply"] == "Pushing it, coach." and not team["unmapped"]
+    assert game.home.tactics == {"pace": 0.7} and any("\u3400" <= c <= "\u9fff" for c in team["reply"]) and not team["unmapped"]
     slower = post(f"{base}/api/call", {"raw": {"team": {"pace": -1}}, "words": "Slow it down", "to": None})
     print(slower["levers"], "|", slower["reply"])
-    assert game.home.tactics == {"pace": 0.35} and slower["reply"] == "Slowing it down."
+    assert game.home.tactics == {"pace": 0.35} and any("\u3400" <= c <= "\u9fff" for c in slower["reply"])
     player = post(f"{base}/api/call", {"raw": {"players": [{"person_id": SGA, "shot_preference": {"zone": "rim", "value": 1}}]},
                                        "words": "Get to the rim", "to": SGA})
     assert game.home.player_tactics[SGA] == {"shot_preference": {"zone": "rim", "value": 0.35}} and player["replier"] == SGA
@@ -141,7 +141,7 @@ def test_calls_from_the_list_need_no_language_model_and_stack(server):
     assert game.home.double_team == tatum
     straight = post(f"{base}/api/call", {"raw": {"stop": ["double_team"]}, "words": "Man to man", "to": None})
     print(straight["levers"], "|", straight["reply"], "|", straight["impact"])
-    assert game.home.double_team is None and straight["levers"].startswith("double team off") and straight["reply"] == "Man to man. Got it."
+    assert game.home.double_team is None and straight["levers"].startswith("double team off") and any("\u3400" <= c <= "\u9fff" for c in straight["reply"])
     before = game.home.timeouts
     timeout = post(f"{base}/api/call", {"raw": {"timeout": True}, "words": "Timeout!", "to": None})
     assert game.home.timeouts == before - 1 and "timeout" in [e["kind"] for e in timeout["events"]]

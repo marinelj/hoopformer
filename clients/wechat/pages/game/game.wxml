@@ -18,7 +18,7 @@
       <view class="team home"><text class="code">{{board.homeCode}}</text><text class="pts">{{board.homePts}}</text></view>
     </view>
     <view class="court-box" style="height:{{courtH}}px">
-      <canvas type="2d" id="court" class="court" style="width:{{courtW}}px;height:{{courtH}}px" bindtap="tapCourt" bindtouchstart="pressCourt" bindtouchend="releaseControl" bindtouchcancel="releaseControl" aria-label="{{callout.show ? callout.big + '，' + callout.small : '比赛球场'}}"></canvas>
+      <canvas type="2d" id="court" class="court" style="width:{{courtW}}px;height:{{courtH}}px" bindtap="tapCourt" bindtouchstart="pressCourt" bindtouchend="releaseControl" bindtouchcancel="releaseControl" aria-label="{{reply.show ? reply.name + '：' + reply.text : callout.show ? callout.big + '，' + callout.small : '比赛球场'}}"></canvas>
       <cover-view wx:if="{{playBounds.clear}}" class="play" style="opacity:0;left:{{playBounds.x}}px;top:{{playBounds.y}}px;width:{{playBounds.w}}px;height:{{playBounds.h}}px" aria-role="button" bindtap="pressPlay" bindtouchstart="pressControl" bindtouchend="releaseControl" bindtouchcancel="releaseControl">{{requestBusy ? '正在确认…' : playLabel}}</cover-view>
     </view>
     <view wx:if="{{strip}}" class="strip"><text>{{strip}}</text></view>
@@ -37,7 +37,7 @@
           <view class="field pick-face call-choice {{teamCallIndex >= 0 ? 'has-call' : ''}}" data-kind="call" data-id="team" aria-role="button" hover-class="pressed" bindtap="openMenu"><text>{{teamCallLabel}}</text><text>⌄</text></view>
         </view>
         <template wx:if="{{menu && menu.id === 'team'}}" is="choiceMenu" data="{{menu}}" />
-        <view wx:if="{{callout.show && callout.target === 'team'}}" class="row-reply {{callout.kind}}"><text>{{callout.big}}</text><text>{{callout.small}}</text></view>
+        <view wx:if="{{courtOffscreen && reply.show && reply.target === 'team'}}" class="row-reply {{reply.kind}}"><text>{{reply.name}}</text><text>{{reply.text}}</text></view>
         <view class="command-row">
           <button class="send own" size="mini" style="flex:0 0 57px;width:57px;min-width:0;max-width:57px;height:38px;line-height:38px;font-size:11px;padding:0;white-space:nowrap" disabled="{{sending || requestBusy}}" data-kind="say" data-id="team" bindtouchstart="gestureStart" catchtouchmove="voiceMove" bindtouchend="gestureEnd" bindtouchcancel="cancelGesture">队员 ←</button>
           <input class="command-input" data-id="team" value="{{teamDraft}}" bindinput="editDraft" placeholder="输入指令 · 长按两侧说话" maxlength="500" confirm-type="done" disabled="{{sending || (voiceStatus !== 'idle' && voiceTarget === 'team')}}"></input>
@@ -52,7 +52,7 @@
           <view class="field pick-face call-choice {{item.callIndex >= 0 ? 'has-call' : ''}}" data-kind="call" data-id="{{item.id}}" aria-role="button" hover-class="pressed" bindtap="openMenu"><text>{{item.callLabel}}</text><text>⌄</text></view>
         </view>
         <template wx:if="{{menu && menu.id == item.id}}" is="choiceMenu" data="{{menu}}" />
-        <view wx:if="{{callout.show && callout.target == item.id}}" class="row-reply {{callout.kind}}"><text>{{callout.big}}</text><text>{{callout.small}}</text></view>
+        <view wx:if="{{courtOffscreen && reply.show && reply.target == item.id}}" class="row-reply {{reply.kind}}"><text>{{reply.name}}</text><text>{{reply.text}}</text></view>
         <view class="command-row">
           <button class="send own" size="mini" style="flex:0 0 57px;width:57px;min-width:0;max-width:57px;height:38px;line-height:38px;font-size:11px;padding:0;white-space:nowrap" disabled="{{sending || requestBusy}}" data-kind="say" data-id="{{item.id}}" bindtouchstart="gestureStart" catchtouchmove="voiceMove" bindtouchend="gestureEnd" bindtouchcancel="cancelGesture">队员 ←</button>
           <input class="command-input" data-id="{{item.id}}" value="{{item.draft}}" bindinput="editDraft" placeholder="输入指令 · 长按两侧说话" maxlength="500" confirm-type="done" disabled="{{sending || (voiceStatus !== 'idle' && voiceTarget === item.id)}}"></input>

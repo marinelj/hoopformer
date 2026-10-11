@@ -38,7 +38,11 @@ const CREDITS = {
   physical: ['强硬防守付出犯规', '强硬防守'], tired_legs: ['体力跟不上了', '高强度指令'],
 };
 
-function replyText(text) { return REPLIES[text] || String(text || ''); } // Keep Qwen's own words, including Chinese.
+function replyText(text) {
+  const reply = REPLIES[text] || String(text || '');
+  // Older cloud images may still return English; do not leak it into the Chinese court.
+  return /[\u3400-\u9fff]/.test(reply) ? reply : '教练，你说的我记住了，我先找找机会。';
+}
 
 function creditFeedback(event, game) {
   const c = event.credit;

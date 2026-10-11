@@ -29,7 +29,7 @@ Page({
     helper: { name: "", say: "" }, feed: [], banner: "", notice: "",
     soundMessage: "", requestBusy: false, reconnectNeeded: false, teamDraft: "",
     voiceAvailable: false, voiceHint: "正在准备语音…", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", sending: false,
-    callout: { show: false, big: "", small: "", kind: "" },
+    callout: { show: false, big: "", small: "", kind: "" }, reply: { show: false }, courtOffscreen: false,
   },
 
   onLoad() {
@@ -39,19 +39,23 @@ Page({
     this.retryStart();
   },
   onResize() { if (this.G) this.layout(); },   // the phone turned
-  onPageScroll(e) { this.pageScrollTop = e.scrollTop; },
+  onPageScroll(e) {
+    this.pageScrollTop = e.scrollTop;
+    const hidden = (this.canvasPageTop || 0) + this.data.courtH <= e.scrollTop;
+    if (hidden !== this.data.courtOffscreen) this.setData({ courtOffscreen: hidden });
+  },
   onHide() { this.cancelGesture(); if (this.G) this.setPlaying(false); this.sound.stop(); },
   onUnload() {
     this.running = false; this.unloaded = true; this.cancelGesture();
     if (this.canvas && this.canvas.cancelAnimationFrame) this.canvas.cancelAnimationFrame(this.animationFrame);
-    clearTimeout(this.bannerTimer); clearTimeout(this.calloutTimer); clearTimeout(this.replyTimer); clearTimeout(this.pressTimer); clearTimeout(this.voiceTimer); clearTimeout(this.holdTimer);
+    clearTimeout(this.bannerTimer); clearTimeout(this.calloutTimer); clearTimeout(this.replyTimer); clearTimeout(this.replyExpiry); clearTimeout(this.pressTimer); clearTimeout(this.voiceTimer); clearTimeout(this.holdTimer);
     if (this.sound) this.sound.destroy();
   },
   retryStart() {
     if (this.starting) return;
     this.starting = true;
     this.cancelGesture();
-    clearTimeout(this.replyTimer); clearTimeout(this.calloutTimer); clearTimeout(this.bannerTimer);
+    clearTimeout(this.replyTimer); clearTimeout(this.replyExpiry); clearTimeout(this.calloutTimer); clearTimeout(this.bannerTimer);
     wx.hideToast();
     this.running = false;
     if (this.canvas && this.canvas.cancelAnimationFrame) this.canvas.cancelAnimationFrame(this.animationFrame);
@@ -72,7 +76,7 @@ Page({
     this.T = 0.1;
     const team = (key) => ({ primary: G[key].primary, secondary: G[key].secondary, ink: ink(G[key].primary) });
     this.colors = { away: G.away.primary, home: G.home.primary, awayTeam: team("away"), homeTeam: team("home") };
-    this.setData({ ready: true, error: "", notice: "", banner: "", menu: null, callout: { show: false }, requestBusy: false, reconnectNeeded: false, teamDraft: "", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", board: { awayCode: zh.teamName(G.away.tricode), homeCode: zh.teamName(G.home.tricode), awayPts: 0, homePts: 0,
+    this.setData({ ready: true, error: "", notice: "", banner: "", menu: null, callout: { show: false }, reply: { show: false }, courtOffscreen: false, requestBusy: false, reconnectNeeded: false, teamDraft: "", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", board: { awayCode: zh.teamName(G.away.tricode), homeCode: zh.teamName(G.home.tricode), awayPts: 0, homePts: 0,
                                          awayColor: G.away.primary, homeColor: G.home.primary } });
     this.layout();
     this.refresh(true);
@@ -556,10 +560,9 @@ Page({
         this.ingest(data);
         clearTimeout(this.replyTimer);
         if (data.replier) {
-          const who = zh.playerName(this.rules.playerById[data.replier].name), reply = feedback.replyText(data.reply), kind = data.rattled ? 'good' : 'bad';
+          const reply = feedback.replyText(data.reply), kind = data.rattled ? 'good' : 'bad';
           this.reactions[data.replier] = { at: Date.now(), ms: 2300, kind };
-          this.bubbles = [{ id: data.replier, text: reply, at: Date.now(), ms: 3000, kind }];
-          this.showCallout(kind, `${who}${data.rattled ? "被干扰了" : "更有斗志了"}`, reply, id == null ? 'team' : id);
+          this.showReply(data.replier, reply, id == null ? 'team' : id, kind);
         }
       } else {
         const rules = this.rules, phase = this.phase(), floor = this.homeFloor(), theirs = this.awayFloor();
@@ -608,16 +611,22 @@ Page({
     if (this.unloaded) return;
     const now = Date.now(), targets = to == null ? this.homeFloor() : [to];
     for (const id of targets) this.reactions[id] = { at: now, ms: 1700, kind: 'call' };
-    this.bubbles = to == null ? [] : [{ id: to, text: words, kind: 'call', at: now, ms: 1400 }];
-    this.showCallout('call', to == null ? '全队收到指令' : `${zh.playerName(this.rules.playerById[to].name)}收到指令`, words);
+    this.bubbles = [];
+    this.setData({ reply: { show: false } });
     clearTimeout(this.replyTimer);
     if (data.reply && this.rules.playerById[data.replier]) this.replyTimer = setTimeout(() => {
       if (this.unloaded) return;
-      const reply = feedback.replyText(data.reply), who = zh.playerName(this.rules.playerById[data.replier].name), at = Date.now();
+      const reply = feedback.replyText(data.reply), at = Date.now();
       this.reactions[data.replier] = { at, ms: 2400, kind: 'good' };
-      this.bubbles = [{ id: data.replier, text: reply, kind: 'reply', at, ms: 3000 }];
-      this.showCallout('good', `${who}回应`, reply, to == null ? 'team' : to);
+      this.showReply(data.replier, reply, to == null ? 'team' : to, 'good');
     }, 650);
+  },
+  showReply(id, text, target, kind) {
+    const at = Date.now(), ms = Math.min(6500, Math.max(3600, text.length * 100));
+    this.bubbles = [{ id, text, kind: 'reply', at, ms }];
+    this.setData({ reply: { show: true, id, name: zh.playerName(this.rules.playerById[id].name), text, target, kind } });
+    clearTimeout(this.replyExpiry);
+    this.replyExpiry = setTimeout(() => { if (!this.unloaded) this.setData({ 'reply.show': false }); }, ms);
   },
   reactToPlay(event) {
     const now = Date.now();

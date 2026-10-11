@@ -63,8 +63,11 @@ Reply with one JSON object and nothing else, with these keys (leave out what the
 "substitutions": list of {{"in": person_id, "out": person_id}} for the coach's own players
 "team_confidence": -1..1 when the coach praises (+) or criticizes (-) the whole team
 "duration": "game" (default), "quarter", or "possessions" with "possessions": N
-"reply": one short sentence from the player addressed (or a leader on the floor) acknowledging the instruction,
-  in a player's voice. Never promise a result ("we'll win", "I'll score"); only acknowledge what they'll try.
+"reply": one or two short, conversational sentences in SIMPLIFIED CHINESE, even if player names or this prompt are English.
+  Speak as a teammate answering the coach on the sideline, not an assistant reporting completion.
+  Respond to the actual words; use recent conversation, the player's energy, fouls and confidence when relevant.
+  Vary the phrasing and the speaker for team calls. Avoid repeating "收到，教练", slogans, formal summaries or a list of levers.
+  A player may ask a brief question, admit uncertainty, or suggest how to try it. Never invent a play or promise a score or win.
 "replier": person_id of who replies
 "unmapped": list of the coach's phrases that none of these levers can express (quote them), e.g. "box out", "switch everything",
   "make every shot". For an impossible request, map the closest real lever if one fits and still list the phrase.
@@ -104,7 +107,7 @@ def context_for(game: Game, side: Side, addressed: int | None) -> dict:
         for pid, athlete in team.athletes.items():
             row = {"person_id": pid, "name": athlete.profile.name, "on_floor": pid in team.lineup, "points": athlete.stats["PTS"]}
             if own:
-                row.update(fouls=athlete.stats["PF"], energy=round(athlete.energy, 2))
+                row.update(fouls=athlete.stats["PF"], energy=round(athlete.energy, 2), confidence=round(athlete.confidence, 2))
             rows.append(row)
         return rows
 
@@ -114,6 +117,8 @@ def context_for(game: Game, side: Side, addressed: int | None) -> dict:
         "addressed_to": ({"person_id": addressed, "name": side.athletes[addressed].profile.name} if addressed else "the whole team"),
         "your_players": players(side, True), "opponents": players(other, False),
         "in_force": [{"lever": d.lever, "value": d.value, "player": d.player, "words": d.words} for d in side.directives],
+        "recent_conversation": [{"speaker": "coach" if e.kind == "coach" else side.athletes[e.actor].profile.name if e.actor in side.athletes else "teammate",
+                                 "text": e.text} for e in game.events if e.team == side.tricode and e.kind in ("coach", "reply")][-8:],
     }
 
 
