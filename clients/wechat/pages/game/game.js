@@ -25,7 +25,7 @@ Page({
     board: { awayCode: "", homeCode: "", awayPts: 0, homePts: 0, awayColor: "#555", homeColor: "#555" },
     period: "第1节", clock: "12:00", shot: 24, playLabel: "开始比赛", timeoutDisabled: false, inTimeout: false,
     phaseLabel: "", strip: "", tab: "coach", tactics: [], tacticIndex: 0, locked: false, teamCalls: [], teamCallIndex: -1, teamCallLabel: '临场指令', rows: [], menu: null,
-    playBounds: { x: 0, y: 0, w: 0, h: 0, clear: false },
+    playTitle: '▶ 开始比赛', playCount: 15,
     helper: { name: "", say: "" }, feed: [], banner: "", notice: "",
     soundMessage: "", requestBusy: false, reconnectNeeded: false, teamDraft: "",
     voiceAvailable: false, voiceHint: "正在准备语音…", voiceStatus: "idle", voiceMessage: "", voiceTarget: "", sending: false,
@@ -48,7 +48,7 @@ Page({
   onUnload() {
     this.running = false; this.unloaded = true; this.cancelGesture();
     if (this.canvas && this.canvas.cancelAnimationFrame) this.canvas.cancelAnimationFrame(this.animationFrame);
-    clearTimeout(this.bannerTimer); clearTimeout(this.calloutTimer); clearTimeout(this.replyTimer); clearTimeout(this.replyExpiry); clearTimeout(this.pressTimer); clearTimeout(this.voiceTimer); clearTimeout(this.holdTimer);
+    clearTimeout(this.bannerTimer); clearTimeout(this.calloutTimer); clearTimeout(this.replyTimer); clearTimeout(this.replyExpiry); clearTimeout(this.voiceTimer); clearTimeout(this.holdTimer);
     if (this.sound) this.sound.destroy();
   },
   retryStart() {
@@ -70,7 +70,7 @@ Page({
     this.rules.rebuild();
     this.S = freshState();
     this.T = 0; this.played = 0; this.hold = 0; this.playing = false; this.started = false; this.inTimeout = false;
-    this.selectedCalls = {}; this.reactions = {}; this.bubbles = []; this.monitor = G.monitor; this.flash = null; this.playHit = null; this.playPressed = false;
+    this.selectedCalls = {}; this.reactions = {}; this.bubbles = []; this.monitor = G.monitor; this.flash = null;
     this.drafts = {}; this.shown = {}; this.lastBall = null; this.walk = null; this.fetching = false; this.selected = null; this.keys = {}; this.lastBeat = null; this.last = {};
     while (this.S.applied < G.events.length && G.events[this.S.applied].t <= 0.1) apply(this.S, G, G.events[this.S.applied]);
     this.T = 0.1;
@@ -182,13 +182,7 @@ Page({
     }
     const now = Date.now();
     draw.court(this.ctx, this.cw, { pos, ball, players, colors: this.colors, outline, selected: this.selected, names: this.cw >= 480, reactions: this.reactions, now });
-    // Paint controls AND reactions on the canvas; DOM overlays can disappear below native canvas layers.
-    const hit = this.playPressed && this.playHit ? this.playHit : draw.playBounds(this.cw, pos);
-    this.playHit = hit.clear ? hit : null;
-    if (JSON.stringify(this.data.playBounds) !== JSON.stringify(hit)) this.setData({ playBounds: hit });
-    draw.effects(this.ctx, this.cw, { pos, now, hit, callout: this.data.callout, bubbles: this.bubbles, flash: this.flash, banner: this.data.banner });
-    draw.control(this.ctx, hit, { playing: this.playing, started: this.T >= 1, left: this.timeoutsLeft(), pressed: this.playPressed,
-      busy: this.data.requestBusy, over: this.G.done && this.T >= this.totalT(), disabled: this.data.requestBusy || this.data.timeoutDisabled || this.data.reconnectNeeded });
+    draw.effects(this.ctx, this.cw, { pos, now, callout: this.data.callout, bubbles: this.bubbles, flash: this.flash, banner: this.data.banner });
   },
 
   // ---------- the server ----------
@@ -206,6 +200,8 @@ Page({
   },
   ingest(data) {
     if (data.monitor) this.monitor = data.monitor;
+    if (Number.isInteger(data.replace_from)) this.G.events.splice(data.replace_from);
+    if (data.chance && this.G.events[data.chance.index]) this.G.events[data.chance.index].tactics = data.chance.tactics;
     for (const e of data.events || []) if (e.kind !== "coach" && e.kind !== "reply") this.G.events.push(e);
     if (data.periods) this.G.periods = Math.max(4, data.periods);
     if (data.done !== undefined) this.G.done = data.done;
@@ -227,7 +223,8 @@ Page({
     const out = {
       "board.awayPts": S.away, "board.homePts": S.home, period: zh.periodLabel(period), clock: rules.fmt(left),
       shot: Math.max(0, Math.min(S.chanceLen, Math.ceil(S.chanceLen - (T - S.chanceT)))), strip, playLabel: this.playLabel(),
-      timeoutDisabled: this.playing && this.timeoutsLeft() <= 0, inTimeout: this.inTimeout, locked: this.playing,
+      timeoutDisabled: (this.playing && this.timeoutsLeft() <= 0) || (this.G.done && this.T >= this.totalT()), inTimeout: this.inTimeout, locked: this.playing,
+      playTitle: this.data.requestBusy ? '正在确认…' : this.G.done && this.T >= this.totalT() ? '比赛结束' : this.playing ? 'Ⅱ 叫暂停' : this.started ? '▶ 继续比赛' : '▶ 开始比赛', playCount: this.timeoutsLeft(),
     };
     const feedKey = S.feed.length;
     if (force || feedKey !== this.keys.feed) {
@@ -269,7 +266,7 @@ Page({
   playLabel() {
     const over = this.G.done && this.T >= this.totalT(), left = this.timeoutsLeft();
     if (over) return "比赛结束";
-    if (!this.playing) return `${this.T < 1 ? "开始比赛" : "继续比赛"} · 暂停${left}次`;
+    if (!this.playing) return `${this.started ? "继续比赛" : "开始比赛"} · 暂停${left}次`;
     return left > 0 ? `叫暂停 · 剩${left}次` : "暂停已用完";
   },
 
@@ -278,7 +275,7 @@ Page({
   pressPlay() {
     if (this.data.requestBusy || this.data.reconnectNeeded) return;
     if (this.G.done && this.T >= this.totalT()) return;
-    if (!this.playing) { this.sound.enable(true); this.inTimeout = false; this.setData({ banner: "", notice: "" }); this.setPlaying(true); return; }
+    if (!this.playing) { this.started = true; this.sound.enable(true); this.inTimeout = false; this.setData({ banner: "", notice: "" }); this.setPlaying(true); return; }
     this.callTimeout();
   },
   async callTimeout() {
@@ -290,7 +287,8 @@ Page({
     this.whistle();
     this.setData({ banner: "", notice: "", tab: "coach" });
     try {
-      const data = await request("/api/timeout", {});
+      const data = await request("/api/timeout", { at: this.T, shown: this.S.applied });
+      if (data.replace_from !== undefined) this.rules.restartAt(this.T, true);
       this.ingest(data);
       this.setData({ notice: "" });
     } catch (err) { this.inTimeout = false; this.setData({ banner: "" }); this.setPlaying(wasPlaying); this.toast(zh.requestError(err)); }
@@ -348,18 +346,19 @@ Page({
       this.rules.rebuild(); this.refresh(true);
     }
   },
-  async sendTactic(stopDouble, quiet) {   // the engine plays it from the next possession; in a timeout the court from now
+  async sendTactic(stopDouble, quiet) {   // replace the unfinished chance; preserve everything already shown
     if (this.data.requestBusy) return false;
     this.setData({ requestBusy: true });
     const rules = this.rules;
+    if (!quiet && !this.G.immediate_tactics) { this.toast('云端尚未更新即时战术，请先发布新版后端。'); this.setData({ requestBusy: false }); return false; }
     rules.fillRoles(this.homeFloor(), this.awayFloor());
-    if (!quiet && !this.playing) rules.restartAt(this.T);
+    if (!quiet && !this.playing) rules.restartAt(this.T, true);
     const raw = rules.tacticRaw(stopDouble), words = rules.tacticWords();
     this.refresh(true);
     try {
-      const data = await request("/api/tactics", { raw, words });
+      const data = await request("/api/tactics", { raw, words, ...(!quiet ? { at: this.T, shown: this.S.applied } : {}) });
       this.ingest(data);
-      if (!quiet) this.toast("战术已调整，从下一回合开始执行。");
+      if (!quiet) this.toast("战术已生效，继续比赛立即执行。");
       return true;
     } catch (err) { this.rolesMoved = true; this.toast(zh.requestError(err)); return false; }
     finally { if (!this.unloaded) this.setData({ requestBusy: false }); }
@@ -587,8 +586,6 @@ Page({
     const touch = e.changedTouches && e.changedTouches[0];
     const x = (touch ? touch.clientX : e.detail.x) - this.canvasLeft;
     const y = (touch ? touch.clientY : e.detail.y) - (this.canvasPageTop - (this.pageScrollTop || 0));
-    const hit = this.playHit;
-    if (hit && x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) { this.pressPlay(); return; }
     const s = this.cw / 94, courtX = x / s, courtY = y / s;
     let best = null, near = 4;
     for (const id in this.shown) { const p = this.shown[id], d = Math.hypot(p.x - courtX, p.y - courtY); if (d < near) { near = d; best = Number(id); } }
@@ -599,14 +596,6 @@ Page({
   },
 
   // ---------- messages ----------
-  pressCourt(e) {
-    const touch = e.touches && e.touches[0], hit = this.playHit;
-    if (!touch || !hit) return;
-    const x = touch.clientX - this.canvasLeft, y = touch.clientY - (this.canvasPageTop - (this.pageScrollTop || 0));
-    if (x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) this.pressControl();
-  },
-  pressControl() { if (!this.data.requestBusy && !this.data.timeoutDisabled) { clearTimeout(this.pressTimer); this.playPressed = true; } },
-  releaseControl() { this.pressTimer = setTimeout(() => { this.playPressed = false; }, 110); },
   reactToCall(words, to, data) {
     if (this.unloaded) return;
     const now = Date.now(), targets = to == null ? this.homeFloor() : [to];

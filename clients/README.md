@@ -27,8 +27,8 @@ the engine's numbers and the explanations, use `--debug` or add `?debug=1` to th
 
 The layout is compact and turns with the phone:
 - **Portrait:** a slim scoreboard, the court the full width of the screen, a strip with the tactic in play, the
-  a court control in the vacant half, and two tabs (Coach, Play-by-play).
-- **Landscape:** the court fills the left side under the scoreboard; the coaching cards and tabs form the right column; the court control stays on the court.
+  play/timeout control inside the scoreboard, and two tabs (Coach, Play-by-play).
+- **Landscape:** the court fills the left side under the scoreboard; the coaching cards and tabs form the right column; the play/timeout control stays inside the scoreboard.
 
 The coaching is the same as on the web:
 - the tactic and each player's role, changed only in a timeout;
@@ -99,3 +99,11 @@ HOOPFORMER_AUTOMATOR=/path/to/miniprogram-automator node tests/wechat_reactions.
 回应只在球员头顶显示一次，取消球场角落的重复回应；球场完全滚出屏幕时，相关卡片才显示同一段文字。继续／暂停按钮的可见面积缩小约三分之二，保留 44px 触控高度。
 
 新后端的预设回复采用多种中文口语，结合重复指令、当前球员、犯规、体力和比分；全队接话不再固定由第一名球员承担。千问获取最近对话和球员状态，并明确使用中文自然对话。新的丰富回复须发布部署分支后生效；旧云镜像的英文被客户端拦截。
+
+## 即时战术与记分牌按钮（2026-10-12）
+
+继续／暂停放在球场上方的计分和时间面板里，可见按钮仍为约 89×27px，原生触控高度 44px；暂停次数始终显示在按钮内。球场不再绘制或保留隐藏的比赛按钮。
+
+暂停时调整战术或任务，服务器保留已显示的事件和比分，使用新战术重算当前机会尚未发生的部分；恢复后立即执行，不等下个回合。十名球员和篮球保持暂停位置，随后自然进入新阵形。第二次进攻、已完成的投篮和暂停次数不会重复计入；之前的指令、对话及对手士气调整也保留。
+
+两个客户端都发送当前播放时刻和已显示事件数量，并接受只替换未来事件的响应。需要发布此次新的后端；旧云镜像上的手动战术调整会明确提示升级，避免误报即时生效。

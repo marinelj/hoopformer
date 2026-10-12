@@ -3,7 +3,8 @@
 `hoopformer serve` starts it on 127.0.0.1 (nothing outside this Mac can reach it).
 The page is Courtside in live mode. It asks for the next possession only when it
 has shown the last one, so the game is never more than one possession ahead of
-what the coach sees, and whatever the coach says applies from the next possession.
+what the coach sees. During a timeout, a tactic change replaces the unfinished
+chance from the playback time supplied by the client; already displayed results stay final.
 
 The coach's words go to the server, which calls the translator (the language
 model). The API key stays here: the browser never sees it.
@@ -25,12 +26,14 @@ Routes:
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import threading
 import time
 import uuid
 from collections import OrderedDict
+from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -98,7 +101,76 @@ class LiveGame:
                          min_second_seconds=levers.MIN_SECOND_SECONDS if boost != 1 else 0.0)
         self.game.home.human, self.game.home.timeouts = True, COACH_TIMEOUTS
         self.lock = threading.Lock()
-        self.game.step()  # the tip-off and first possession, so the page opens with players on the floor
+        self.pending, self.controls = [], []
+        self.game.step(capture=self._capture_chance)  # retain the unfinished chance for an immediate tactic change
+
+    def _capture_chance(self, first: bool, seconds: float, intentional: bool = False) -> None:
+        game = self.game
+        state = {k: v for k, v in vars(game).items() if k not in ("model", "league", "limits", "events")}
+        self.pending.append({"state": deepcopy(state), "first": first, "seconds": seconds,
+                             "event": len(game.events), "shown": sum(e.kind not in ("coach", "reply") for e in game.events),
+                             "chance": sum(e.kind not in ("coach", "reply") for e in game.events[:1 + max(i for i, e in enumerate(game.events) if e.kind == "chance")]) - 1,
+                             "controls": len(self.controls), "intentional": intentional})
+
+    def _apply_control(self, kind: str, info: dict) -> list:
+        """Replay only human choices when replacing an unseen chance, never its old score or box statistics."""
+        game, start = self.game, len(self.game.events)
+        side = game.home
+        saved = deepcopy(info)
+        if kind == "tactic":
+            raw = info["raw"]
+            side.directives = [d for d in side.directives if not d.words.startswith(TACTICS)]
+            side.play = raw.get("play") if raw.get("play") in SET_PLAYS else None
+            side.scheme = raw.get("scheme") if raw.get("scheme") in SCHEMES else None
+            side.roles = {role: pid for role, pid in (raw.get("roles") or {}).items() if pid in side.athletes}
+        if kind in ("tactic", "call"):
+            stop = info.get("stop") or info.get("raw", {}).get("stop") or []
+            side.directives = [d for d in side.directives if d.lever not in stop or d.player is not None]
+            game._refresh(side)
+        if kind == "call":
+            game.nudge(side, info["instruction"])
+        elif kind in ("instruction", "tactic"):
+            game.instruct(side, info["instruction"])
+        elif kind == "timeout":
+            if not game.call_timeout(side, "coach"):
+                return []
+        elif kind == "morale":
+            for pid, change in info.items():
+                game.away.athletes[pid].feel(change)
+        self.controls.append((kind, saved))
+        return game.events[start:]
+
+    def _rewind_chance(self, at: float | None, shown: int | None):
+        if at is None:
+            return None
+        if (not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(at) or at < 0
+                or not isinstance(shown, int) or isinstance(shown, bool) or shown < 0):
+            raise ValueError("invalid playback position")
+        current = next((p for p in reversed(self.pending) if p["chance"] < shown <= p["shown"]
+                        and p["state"]["game_seconds"] - .1 <= at < p["state"]["game_seconds"] + p["seconds"] - 1e-6), None)
+        if current is None:
+            return None  # the outcome has already been shown: it must remain final
+        game = self.game
+        talk = game.talk_rng.getstate()
+        controls = self.controls[current["controls"]:]
+        game.events = game.events[:current["event"]]
+        vars(game).update(deepcopy(current["state"]))
+        elapsed = max(0.0, at - game.game_seconds)
+        game._run_clock(elapsed)
+        self.controls = []
+        for kind, info in controls:
+            self._apply_control(kind, deepcopy(info))
+        game.talk_rng.setstate(talk)
+        return {**current, "remaining": current["seconds"] - elapsed, "at": at}
+
+    def _finish_chance(self, pending) -> dict:
+        game = self.game
+        chance = next(e for e in reversed(game.events[:pending["event"]]) if e.kind == "chance")
+        chance.tactics = game._calls(game.offense, game.other(game.offense))
+        self.pending, self.controls = [], []
+        game.step(resume=(pending["first"], pending["remaining"], pending["intentional"]), capture=self._capture_chance)
+        return {"replace_from": pending["shown"], "effective_at": pending["at"],
+                "chance": {"index": pending["chance"], "tactics": chance.tactics}}
 
     def names(self) -> dict[int, str]:
         return {pid: a.profile.name for side in (self.game.home, self.game.away) for pid, a in side.athletes.items()}
@@ -110,7 +182,8 @@ class LiveGame:
             data = replay_data(self.game.result(), self.model)
             monitor = self.game.monitor(self.game.home)
         timeouts = {"home": COACH_TIMEOUTS, "away": TIMEOUTS}   # each team's timeouts at tip-off
-        return {**data, "game_id": self.game_id, "live": True, "done": self.game.done, "monitor": monitor, "timeouts": timeouts, "debug": debug}
+        return {**data, "game_id": self.game_id, "live": True, "done": self.game.done, "monitor": monitor, "timeouts": timeouts, "debug": debug,
+                "immediate_tactics": True}
 
     def page(self, debug: bool = False) -> str:
         return replay_html(self.data(debug))
@@ -132,7 +205,8 @@ class LiveGame:
 
     def next(self) -> dict:
         with self.lock:
-            return self.status(self.game.step())
+            self.pending, self.controls = [], []
+            return self.status(self.game.step(capture=self._capture_chance))
 
     def say(self, text: str, to: int | None, provider: str | None = None) -> dict:
         game = self.game
@@ -144,7 +218,7 @@ class LiveGame:
         with self.lock:
             if instruction.source.startswith('rules') or not any('\u3400' <= ch <= '\u9fff' for ch in instruction.reply or ''):
                 instruction.reply, instruction.replier = natural_reply(game, game.home, instruction)
-            events, changes = self.measured(lambda: game.instruct(game.home, instruction))
+            events, changes = self.measured(lambda: self._apply_control("instruction", {"instruction": instruction}))
             return {**self.status(events), "levers": instruction.describe(self.names()), "reply": instruction.reply, "impact": changes,
                     "replier": instruction.replier, "source": instruction.source, "unmapped": instruction.unmapped}
 
@@ -162,10 +236,7 @@ class LiveGame:
                 return sum(game.effort(side, p) for p in who) / max(1, len(who))
 
             def apply():
-                if stop:
-                    side.directives = [d for d in side.directives if not (d.lever in stop and d.player is None)]
-                    game._refresh(side)
-                return game.nudge(side, instruction)
+                return self._apply_control("call", {"instruction": instruction, "stop": stop})
 
             before, tired_before = {(d.lever, d.player): d.value for d in side.directives}, tiring()
             events, changes = self.measured(apply)
@@ -184,16 +255,17 @@ class LiveGame:
             return {**self.status(events), "levers": described, "reply": instruction.reply, "impact": changes,
                     "replier": instruction.replier, "unmapped": instruction.unmapped}
 
-    def timeout(self) -> dict:
-        """The coach's timeout. The page has already stopped; the engine, a possession ahead, gives everyone on the
-        floor a breather (Game.call_timeout), so it shows from the next possession, like every call."""
+    def timeout(self, at: float | None = None, shown: int | None = None) -> dict:
+        """Give a breather at the paused playback time and replace only the unfinished chance."""
         game = self.game
         with self.lock:
-            if game.done or game.home.timeouts <= 0:
-                return {**self.status([]), "called": False, "left": game.home.timeouts, "impact": []}
-            start = len(game.events)
-            events, changes = self.measured(lambda: game.events[start:] if game.call_timeout(game.home, "coach") else [])
-            return {**self.status(events), "called": bool(events), "left": game.home.timeouts, "impact": changes}
+            pending = self._rewind_chance(at, shown)
+            events, changes = self.measured(lambda: self._apply_control("timeout", {}))
+            called = bool(events)
+            replacement = self._finish_chance(pending) if pending else {}
+            if pending:
+                events = game.events[pending["event"]:]
+            return {**self.status(events), **replacement, "called": called, "left": game.home.timeouts, "impact": changes}
 
     def trash(self, text: str, talker: int | None, target: int | None) -> dict:
         """Trash talk from one of our players to his man, or from the whole team to theirs (no language model:
@@ -202,6 +274,7 @@ class LiveGame:
         with self.lock:
             talker = talker if talker in game.home.lineup else None
             done = game.trash_talk(game.home, talker, target)
+            self.controls.append(("morale", {p["id"]: p["confidence"][1] - p["confidence"][0] for p in done["players"]}))
             names = self.names()
 
             def last(pid):
@@ -223,22 +296,21 @@ class LiveGame:
             return {**self.status([]), "reply": reply, "replier": replier, "rattled": done["rattled"], "effect": effect,
                     "reached": [r["id"] for r in reached]}
 
-    def tactics(self, raw: dict, words: str) -> dict:
-        game, side = self.game, self.game.home
+    def tactics(self, raw: dict, words: str, at: float | None = None, shown: int | None = None) -> dict:
+        game = self.game
         with self.lock:
-            # the panel holds the whole plan: drop the previous plan's directives before applying this one
-            side.directives = [d for d in side.directives if not d.words.startswith(TACTICS)]
-            game._refresh(side)
-            side.play = raw.get("play") if raw.get("play") in SET_PLAYS else None   # what the court acts out
-            side.scheme = raw.get("scheme") if raw.get("scheme") in SCHEMES else None
-            side.roles = {role: pid for role, pid in (raw.get("roles") or {}).items() if pid in side.athletes}
-            if raw.get("stop"):   # man to man: no double team either
-                side.directives = [d for d in side.directives if d.lever not in raw["stop"] or d.player is not None]
-                game._refresh(side)
+            side = game.home
             instruction = validate(raw, TACTICS + words, set(side.athletes), set(game.away.athletes), None, "tactic")
+            roles = raw.get("roles") or {}
+            if not isinstance(roles, dict) or any(not isinstance(pid, int) for pid in roles.values()):
+                raise ValueError("invalid tactic roles")
             instruction.fades = False   # the tactic holds until the coach changes it
-            events, changes = self.measured(lambda: game.instruct(side, instruction))
-            return {**self.status(events), "levers": instruction.describe(self.names()), "unmapped": instruction.unmapped, "impact": changes}
+            pending = self._rewind_chance(at, shown)
+            events, changes = self.measured(lambda: self._apply_control("tactic", {"raw": raw, "instruction": instruction}))
+            replacement = self._finish_chance(pending) if pending else {"effective_at": at}
+            if pending:
+                events = game.events[pending["event"]:]
+            return {**self.status(events), **replacement, "levers": instruction.describe(self.names()), "unmapped": instruction.unmapped, "impact": changes}
 
 
 class Courtside:
@@ -367,9 +439,9 @@ def handler_for(courtside: Courtside) -> type[BaseHTTPRequestHandler]:
             elif url.path == "/api/call":
                 self.answer(lambda: live.call(body.get("raw") or {}, str(body.get("words", ""))[:200], body.get("to")))
             elif url.path == "/api/tactics":
-                self.answer(lambda: live.tactics(body.get("raw") or {}, str(body.get("words", ""))[:300]))
+                self.answer(lambda: live.tactics(body.get("raw") or {}, str(body.get("words", ""))[:300], body.get("at"), body.get("shown")))
             elif url.path == "/api/timeout":
-                self.answer(live.timeout)
+                self.answer(lambda: live.timeout(body.get("at"), body.get("shown")))
             elif url.path == "/api/trash":
                 self.answer(lambda: live.trash(str(body.get("text", "")).strip()[:300], body.get("from"), body.get("to")))
             else:

@@ -1199,6 +1199,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   }
   function ingest(data) {
     if (data.monitor) renderMonitor(data.monitor);
+    if (Number.isInteger(data.replace_from)) G.events.splice(data.replace_from);
+    if (data.chance && G.events[data.chance.index]) G.events[data.chance.index].tactics = data.chance.tactics;
     for (const e of data.events) if (e.kind !== "coach" && e.kind !== "reply") G.events.push(e);
     G.periods = Math.max(4, data.periods); G.done = data.done;
     if (data.done) G.final = data.final;
@@ -1449,15 +1451,15 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
   async function sendTactic(stopDouble = false, now = true, quiet = false) {
     fillRoles();
     // In a timeout during a possession, your five play it from this moment: nobody moves while the timeout lasts,
-    // then they run into it, and the other team only reacts on the court. The engine plays it from the next possession.
-    if (now && !playing && rules.restartAt(T)) { settleTimes(); render(T); }
+    // then they run into it. The engine replaces only the unresolved part of this chance.
+    if (now && !playing && rules.restartAt(T, LIVE)) { settleTimes(); render(T); }
     const raw = rules.tacticRaw(stopDouble), words = tacticWords();
     renderHelper(); updateTalk();
     if (!quiet) addHuman({ t: T, speaker: "coach", to: "team", text: words, kind: "coach" });
     if (!LIVE) return;   // the replay is already played
     try {
-      const data = await api("tactics", { raw, words });
-      if (!quiet) addHuman({ t: T, speaker: "note", text: `→ ${data.levers} · from the next possession`, kind: "note" });
+      const data = await api("tactics", { raw, words, ...(now && !playing ? { at: T, shown: S.applied } : {}) });
+      if (!quiet) addHuman({ t: T, speaker: "note", text: `→ ${data.levers} · applies immediately when play resumes`, kind: "note" });
       if (!quiet && data.impact && data.impact.length) addHuman({ t: T, speaker: "note", text: `📈 ${data.impact.join(" · ")}`, kind: "note" });
       ingest(data); updateTalk();
     } catch (err) {
@@ -1892,7 +1894,8 @@ select { background: var(--arena); color: var(--text); border: 1px solid var(--l
     addHuman({ t: T, speaker: "coach", to: "team", text: "Timeout!", kind: "coach" });
     if (!LIVE) return;
     try {
-      const data = await api("timeout", {});
+      const data = await api("timeout", { at: T, shown: S.applied });
+      if (data.replace_from !== undefined) rules.restartAt(T, true);
       ingest(data); renderTimeouts(); setPlaying(playing);
       addHuman({ t: T, speaker: "note", text: data.called ? `⏱ ${data.left} timeouts left · everyone on the floor gets a breather before the next possession` : "No timeouts left.", kind: "note" });
       if (data.impact && data.impact.length) addHuman({ t: T, speaker: "note", text: `📈 ${data.impact.join(" · ")}`, kind: "note" });

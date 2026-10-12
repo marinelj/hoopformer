@@ -74,22 +74,6 @@ function court(ctx, w, v) {
   }
 }
 
-// Prefer a wholly vacant half. During transitions, use the clearest corner and hide the count.
-// All calculations use the actual shared court positions; neither half is permanently designated.
-function playBounds(w, pos) {
-  const height = w * 50 / 94, vw = Math.round(Math.min(178, w * .42) / Math.sqrt(3)), vh = Math.round(Math.min(46, height * .25) / Math.sqrt(3));
-  const pw = Math.max(44, vw), ph = Math.max(44, vh), s = w / 94; // One-third visual area; retain a usable touch target.
-  const points = Object.values(pos), empty = [points.every(p => p.x > 49.5), points.every(p => p.x < 44.5)];
-  let best = null, score = -Infinity;
-  for (let side = 0; side < 2; side++) for (const cy of (empty[side] ? [.76] : [(height - ph / 2 - 5) / height, .5, (ph / 2 + 5) / height])) {
-    const x = Math.round(w * (side ? .75 : .25) - pw / 2), y = Math.round(height * cy - ph / 2);
-    const clearance = points.length ? Math.min(...points.map(p => Math.hypot(Math.max(x - p.x * s, 0, p.x * s - x - pw), Math.max(y - p.y * s, 0, p.y * s - y - ph)))) : w;
-    const rank = clearance + (empty[side] ? w : 0);
-    if (rank > score) { best = { x, y, w: pw, h: ph, visual: { x: x + (pw - vw) / 2, y: y + (ph - vh) / 2, w: vw, h: vh }, side: side ? 'right' : 'left', vacant: empty[side], clear: clearance >= Math.max(7, s * 1.9) + 4 }; score = rank; }
-  }
-  return best;
-}
-
 function box(ctx, x, y, w, h, r) {
   ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
   ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
@@ -104,19 +88,6 @@ function lines(ctx, text, maxWidth, limit = 2) {
   if (row) out.push(row);
   if (out.length > limit) { out.length = limit; out[limit - 1] = out[limit - 1].slice(0, -1) + '…'; }
   return out;
-}
-
-function control(ctx, hit, v) {
-  if (!hit.clear) return; // Never cover a player even when both halves are occupied.
-  const face = hit.visual, pressed = v.pressed, x = face.x + (pressed ? 1 : 0), y = face.y + (pressed ? 2 : 0), w = face.w - (pressed ? 2 : 0), h = face.h;
-  ctx.save(); ctx.shadowColor = '#11261b99'; ctx.shadowBlur = pressed ? 2 : 8; ctx.shadowOffsetY = pressed ? 1 : 4;
-  box(ctx, x, y, w, h, 7); ctx.fillStyle = v.disabled ? '#879a8e' : pressed ? '#4dd68a' : '#93f0b5'; ctx.fill();
-  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.strokeStyle = v.disabled ? '#b2beb5' : '#dbffe9'; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = '#102c1b'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = 'bold 10px sans-serif';
-  const title = v.busy ? '正在确认…' : v.over ? '比赛结束' : v.playing ? (v.left > 0 ? 'Ⅱ  叫暂停' : '暂停已用完') : `▶  ${v.started ? '继续比赛' : '开始比赛'}`;
-  ctx.fillText(title, x + w / 2, y + h * (hit.vacant ? .33 : .5), w - 8);
-  if (hit.vacant) { ctx.font = '8px sans-serif'; ctx.fillStyle = '#286242'; ctx.fillText(`暂停剩 ${v.left} 次`, x + w / 2, y + h * .76, w - 8); }
-  ctx.restore();
 }
 
 function effects(ctx, w, v) {
@@ -141,7 +112,7 @@ function effects(ctx, w, v) {
   }
   const c = v.callout;
   if (c && c.show) {
-    const half = v.hit && (v.hit.vacant ? v.hit.side : v.hit.side === 'left' ? 'right' : 'left');
+    const points = Object.values(v.pos), half = points.every(p => p.x > 49.5) ? 'left' : points.every(p => p.x < 44.5) ? 'right' : null;
     const width = half ? w * .44 : Math.min(350, w * .84), x = half ? w * (half === 'left' ? .25 : .75) - width / 2 : (w - width) / 2;
     ctx.globalAlpha = Math.min(1, (now - c.at) / 150);
     ctx.font = 'bold 12px sans-serif'; const title = lines(ctx, c.big, width - 16, 2);
@@ -155,4 +126,4 @@ function effects(ctx, w, v) {
   ctx.restore();
 }
 
-module.exports = { court, playBounds, control, effects };
+module.exports = { court, effects };

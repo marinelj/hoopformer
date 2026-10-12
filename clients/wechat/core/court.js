@@ -549,13 +549,15 @@
       const carried = restarts.filter((x) => x.s < s && s < x.events && x.at <= ev.t).pop();
       const tac = carried ? withShape(ev.tactics || null, ev, carried.tactic) : ev.tactics || null;
       let plan = planSegment({ k, s, next, ev, start: ev.t, where, carrier, inbound, tac, r: seeded(k + 1), picked: carried ? carried.tactic.picked : picksFor(s) });
+      const changes = restarts.filter((x) => x.s === s && x.at > ev.t && x.at < plan.t1).sort((a, b) => a.at - b.at);
+      if (changes.length && changes[0].before) plan = changes[0].before; // preserve the path already shown, even when the unseen outcome changes
       plans.push(plan);
       // A tactic changed in a timeout during this possession: from that moment the coach's five play it, moving
       // into it at running speed once play resumes; the other team only reacts on the court
-      restarts.filter((x) => x.s === s && x.at > plan.t0 + 0.05 && x.at < plan.t1 - 1).sort((a, b) => a.at - b.at).forEach((x, j) => {
+      changes.forEach((x, j) => {
         const ours = plan.offKey === "home" ? "off" : "def";
-        plan = planSegment({ k, s, next, ev, start: x.at, where: positionsIn(plan, x.at), carrier: holderAt(plan, x.at), inbound: null,
-                             tac: withShape(ev.tactics || null, ev, x.tactic), r: seeded((k + 1) * 97 + j), keep: ours === "def" ? plan : null,
+        plan = planSegment({ k, s, next, ev, start: x.at, where: x.where || positionsIn(plan, x.at), carrier: x.carrier === undefined ? holderAt(plan, x.at) : x.carrier, inbound: x.ball || null,
+                             tac: withShape(ev.tactics || null, ev, x.tactic), r: seeded((k + 1) * 97 + j), keep: ours === "def" && !x.replaced ? plan : null,
                              picked: x.tactic.picked });
         plans.push(plan);
       });
@@ -684,6 +686,7 @@
   }
   function ballAt(t, plan, pos) {
     if (!plan) return { x: 47, y: 25, holder: null };
+    if (plan.ballFrom && Math.abs(t - plan.t0) < 1e-8) return { ...plan.ballFrom }; // stay exactly where the coach paused it
     const pick = plan.ball.length && plan.ball[0].hold !== undefined ? Math.min(0.7, plan.ball[0].to - plan.t0) : 0;
     if (plan.ballFrom && t < plan.t0 + pick) {   // picked up where the last possession left it, before his first pass
       const h = pos[plan.ball[0].hold] || plan.basket, p = lerp(plan.ballFrom, { x: h.x + 0.6, y: h.y - 1.4 }, ease(Math.max(0, (t - plan.t0) / pick)));
@@ -902,12 +905,15 @@
     return true;
   }
   // A tactic changed in a timeout during a possession: from this moment the coach's five play it (they run into it once
-  // play resumes; the other team only reacts). True when the court changed (the engine plays it from the next possession).
-  function restartAt(t) {
+  // play resumes; the other team only reacts). Preserve the shown path when the server replaces the unfinished outcome.
+  function restartAt(t, replaced = false) {
     const at = planAt(t);
-    if (!(at && t > at.t0 && t < at.t1 - 1)) return false;
-    const same = restarts.find((x) => x.s === at.s && x.at === t), snap = JSON.parse(JSON.stringify(tactic));
-    if (same) same.tactic = snap; else restarts.push({ s: at.s, at: t, tactic: snap, events: G.events.length });
+    if (!at) return false;
+    const same = restarts.find((x) => x.s === at.s && x.at === t);
+    if (!same && !(t > at.t0 && t < at.t1)) return false;
+    const snap = JSON.parse(JSON.stringify(tactic));
+    if (same) { same.tactic = snap; same.replaced = replaced; } else restarts.push({ s: at.s, at: t, tactic: snap, events: G.events.length,
+      before: at, where: positionsIn(at, t), carrier: holderAt(at, t), ball: ballAt(t, at, positionsIn(at, t)), replaced });
     rebuild();
     return true;
   }

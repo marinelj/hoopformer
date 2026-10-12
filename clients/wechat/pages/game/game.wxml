@@ -14,12 +14,13 @@
   <view wx:if="{{ready}}" class="stage" style="width:{{courtW}}px">
     <view class="board">
       <view class="team"><text class="code">{{board.awayCode}}</text><text class="pts">{{board.awayPts}}</text></view>
-      <view class="clocks"><text class="period">{{period}}</text><text class="clock">{{clock}}</text><text class="shot">进攻 {{shot}} 秒</text></view>
+      <view class="clocks"><text class="period">{{period}}</text><text class="clock">{{clock}}</text><text class="shot">进攻 {{shot}} 秒</text>
+        <button class="play" hover-class="play-pressed" aria-role="button" aria-label="{{playLabel}}" disabled="{{requestBusy || timeoutDisabled || reconnectNeeded}}" bindtap="pressPlay"><view class="play-face"><text class="play-title">{{playTitle}}</text><text class="play-count">暂停剩 {{playCount}} 次</text></view></button>
+      </view>
       <view class="team home"><text class="code">{{board.homeCode}}</text><text class="pts">{{board.homePts}}</text></view>
     </view>
     <view class="court-box" style="height:{{courtH}}px">
-      <canvas type="2d" id="court" class="court" style="width:{{courtW}}px;height:{{courtH}}px" bindtap="tapCourt" bindtouchstart="pressCourt" bindtouchend="releaseControl" bindtouchcancel="releaseControl" aria-label="{{reply.show ? reply.name + '：' + reply.text : callout.show ? callout.big + '，' + callout.small : '比赛球场'}}"></canvas>
-      <cover-view wx:if="{{playBounds.clear}}" class="play" style="opacity:0;left:{{playBounds.x}}px;top:{{playBounds.y}}px;width:{{playBounds.w}}px;height:{{playBounds.h}}px" aria-role="button" bindtap="pressPlay" bindtouchstart="pressControl" bindtouchend="releaseControl" bindtouchcancel="releaseControl">{{requestBusy ? '正在确认…' : playLabel}}</cover-view>
+      <canvas type="2d" id="court" class="court" style="width:{{courtW}}px;height:{{courtH}}px" bindtap="tapCourt" aria-label="{{reply.show ? reply.name + '：' + reply.text : callout.show ? callout.big + '，' + callout.small : '比赛球场'}}"></canvas>
     </view>
     <view wx:if="{{strip}}" class="strip"><text>{{strip}}</text></view>
   </view>

@@ -923,27 +923,36 @@ class Game:
                                or abs(d.value["value"] if isinstance(d.value, dict) else d.value) >= levers.FORGOTTEN]
             self._refresh(side)
 
-    def _possession(self, off: Side, dfn: Side) -> bool:
+    def _possession(self, off: Side, dfn: Side, resume=None, capture=None) -> bool:
         """Play one possession. Returns False if the period clock ran out first."""
-        first = True
-        if (dfn.late_foul and self.period >= 4 and self.clock <= LATE_FOUL_SECONDS
-                and 0 < off.points - dfn.points <= LATE_FOUL_MARGIN and self.clock > 3):
-            if not self._intentional_foul(off, dfn):
+        first = resume[0] if resume else True
+        intentional = bool(resume and len(resume) > 2 and resume[2])
+        if (intentional or (resume is None and dfn.late_foul and self.period >= 4 and self.clock <= LATE_FOUL_SECONDS
+                and 0 < off.points - dfn.points <= LATE_FOUL_MARGIN and self.clock > 3)):
+            if not self._intentional_foul(off, dfn, resume[1] if intentional else None, capture):
                 return True
             first = False  # a missed free throw rebounded by the offense: play on
+            resume = None
         while True:
-            durations = self.league.first_chance_seconds if first else self.league.second_chance_seconds
-            seconds = self.rng.choice(durations)
-            if first and "pace" in off.tactics:
-                seconds /= self._lever(off, "pace")
-            seconds = max(seconds, self.min_first_seconds if first else self.min_second_seconds)
+            if resume is not None:
+                seconds = resume[1]  # only the unfinished part; never count elapsed time twice
+            else:
+                durations = self.league.first_chance_seconds if first else self.league.second_chance_seconds
+                seconds = self.rng.choice(durations)
+                if first and "pace" in off.tactics:
+                    seconds /= self._lever(off, "pace")
+                seconds = max(seconds, self.min_first_seconds if first else self.min_second_seconds)
             if seconds >= self.clock:
                 self._run_clock(self.clock)
                 return False
             doubled = dfn.double_team if dfn.double_team in off.lineup else None  # shown on the court as two defenders
-            self._log(off, "", "chance", other=doubled, zone="first" if first else "second", tactics=self._calls(off, dfn))
+            if resume is None:
+                self._log(off, "", "chance", other=doubled, zone="first" if first else "second", tactics=self._calls(off, dfn))
+                self.quick = first and seconds < QUICK_SECONDS
+            if capture is not None:
+                capture(first, seconds)
+            resume = None
             self._run_clock(seconds)
-            self.quick = first and seconds < QUICK_SECONDS
             if first:
                 off.possessions += 1
             breaking = first and self.leak_out is not None and self.leak_out[0] is off
@@ -955,13 +964,16 @@ class Game:
                 return True
             first = False
 
-    def _intentional_foul(self, off: Side, dfn: Side) -> bool:
+    def _intentional_foul(self, off: Side, dfn: Side, remaining=None, capture=None) -> bool:
         """Trailing late, the defense fouls at once and sends the worst free-throw shooter on the floor to the line.
 
         Returns True if the offense keeps the ball (a missed last free throw that they rebound).
         """
-        self._log(off, "", "chance", zone="first")
-        self._run_clock(3.0)
+        if remaining is None:
+            self._log(off, "", "chance", zone="first")
+        if capture is not None:
+            capture(True, 3.0 if remaining is None else remaining, True)
+        self._run_clock(3.0 if remaining is None else remaining)
         off.possessions += 1
         shooter = min(off.lineup, key=lambda p: off.athletes[p].profile.ft_pct)
         fouler = self._fouler(dfn)
@@ -997,7 +1009,7 @@ class Game:
         else:
             self.period += 1
 
-    def step(self) -> list[Event]:
+    def step(self, resume=None, capture=None) -> list[Event]:
         """Play until the next stop: one possession, then the coaches' timeouts and substitutions.
 
         Returns the events of this step. A live app calls this in a loop and lets the
@@ -1013,7 +1025,7 @@ class Game:
             self._start_period()
         offense, defense = self.offense, self.other(self.offense)
         before = offense.points
-        if self._possession(offense, defense):
+        if self._possession(offense, defense, resume, capture):
             self.offense = defense
             coach.between_possessions(self, offense if offense.points > before else None)
         else:

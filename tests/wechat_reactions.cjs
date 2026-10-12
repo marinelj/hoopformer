@@ -27,11 +27,8 @@ async function capture(page, name) {
   assert.equal(reply.target,'team');assert.equal((await page.$$('.row-reply')).length,0);await mp.pageScrollTo(500);await wait(100);assert.ok(await page.$('.team-card .row-reply'));await mp.pageScrollTo(0);await wait(100);
   assert.equal(await page.data('teamCallLabel'),label);await capture(page,'player-reply');
   console.log('CLOUD_ACTUAL_PLAYER_REPLY',JSON.stringify(reply));
-  const initial=await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0],h=p.playHit;return {clientX:p.canvasLeft+h.x+h.w/2,clientY:p.canvasPageTop-(p.pageScrollTop||0)+h.y+h.h/2};});
-  await (await page.$('#court')).touchstart({touches:[initial]});await wait(50);
-  assert.equal(await mp.evaluate(()=>getCurrentPages().slice(-1)[0].playPressed),true);
-  if(out)await mp.screenshot({path:path.join(out,'button-pressed.png')});
-  await (await page.$('#court')).touchend({touches:[]});await wait(150);
+  const control=await page.$('.board .play');assert.ok(control);assert.equal(await page.$('.court-box .play'),null);
+  const controlSize=await control.size();assert.ok(controlSize.height>=44);
   // Repeat the exact selection: the actual server must accumulate a second nudge.
   for(let n=0;n<2;n++){await (await page.$('.team-card .call-choice')).tap();await wait(120);const current=await page.data('menu');assert.ok(current, 'call menu should open: '+JSON.stringify({busy:await page.data('requestBusy'),sending:await page.data('sending'),phase:await page.data('phaseLabel')}));const again=current.options.findIndex(o=>o.label===label);assert.ok(again>=0);await (await page.$$('.choice-option'))[again].tap();await idle(page);}
   const levers=await mp.evaluate(()=>getCurrentPages().slice(-1)[0].monitor.directives);
@@ -54,11 +51,9 @@ async function capture(page, name) {
   assert.ok(evidence.length>=1);
   const score=await mp.evaluate(()=>getCurrentPages().slice(-1)[0].G.events.find(e=>e.kind==='shot'&&e.value&&e.t>getCurrentPages().slice(-1)[0].T));
   if(score){const flash=await mp.evaluate(event=>{const p=getCurrentPages().slice(-1)[0];const end=p.G.events.findIndex(e=>e.t===event.t&&e.kind===event.kind&&e.actor===event.actor&&e.value===event.value);while(p.S.applied<=end){p.hold=0;p.advance(.2);}p.drawCourt();return p.flash;},score);assert.equal(flash.value,score.value);await capture(page,'score-flash');}
-  await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0];p.setPlaying(true);for(let n=0;n<250;n++){p.hold=0;p.advance(.2);p.drawCourt();if(p.playHit&&p.playHit.vacant)break;}});await wait(120);
-  const hit=await page.data('playBounds');assert.ok(hit.clear);assert.equal(hit.vacant,true);
-  if(hit.side==='left')assert.ok((await mp.evaluate(()=>Object.values(getCurrentPages().slice(-1)[0].shown))).every(p=>p.x>49.5));
-  else assert.ok((await mp.evaluate(()=>Object.values(getCurrentPages().slice(-1)[0].shown))).every(p=>p.x<44.5));
-  await (await page.$('.play')).tap();await idle(page);assert.equal(await page.data('locked'),false);await capture(page,'vacant-half-timeout');
+  const hit={size:await control.size(),offset:await control.offset(),court:await (await page.$('#court')).offset()};
+  assert.ok(hit.offset.top+hit.size.height<=hit.court.top);assert.equal(await page.$('.court-box .play'),null);
+  await control.tap();await wait(300);await control.tap();await idle(page);assert.equal(await page.data('locked'),false);await capture(page,'scoreboard-timeout');
   const input=await page.$('.team-card input.command-input');
   await input.input('全队降低进攻节奏，保护好球，多给乔丹创造冲击篮筐的机会。');await wait(100);
   const own=await page.$('.team-card .send.own');await own.touchstart({touches:[{clientX:40,clientY:400}]});await wait(60);await own.touchend({touches:[]});await idle(page);await wait(700);

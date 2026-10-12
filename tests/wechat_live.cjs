@@ -71,14 +71,14 @@ async function rowsIntact(page) {
   const tactics = await page.data('tactics');
   for (let i = 0; i < tactics.length; i++) {
     await choose(page,'.team-card .tactic-choice',i);await rowsIntact(page);
-    assert.match(await page.data('notice'),/战术已调整/);
+    assert.match(await page.data('notice'),/战术已生效/);
   }
   evidence.tactics = tactics.map(t => t.name);
   for (let i = 0; i < 5; i++) {
     const rows=await rowsIntact(page), fields=await page.$$('.player-card .role-choice');
     await fields[i].tap();await wait(80);
     await (await page.$$('.choice-option'))[(rows[i].roleIndex+1)%rows[i].roles.length].tap();await settle(page);await rowsIntact(page);
-    assert.match(await page.data('notice'),/战术已调整/);
+    assert.match(await page.data('notice'),/战术已生效/);
   }
   console.log('CUSTOM_TACTICS_AND_ROLES', evidence.tactics);
 
@@ -103,30 +103,24 @@ async function rowsIntact(page) {
   await mp.pageScrollTo(500);await wait(250);assert.ok(Number(await page.scrollTop())>0,'whole page must scroll naturally');
   await mp.pageScrollTo(200);await wait(250);
   const courtPoint = await mp.evaluate(() => {
-    const p = getCurrentPages().slice(-1)[0], h = p.playHit;
-    return { x:p.canvasLeft+h.x+h.w/2, y:p.canvasPageTop-p.pageScrollTop+h.y+h.h/2 };
+    const p=getCurrentPages().slice(-1)[0], id=Number(Object.keys(p.shown)[0]), q=p.shown[id];
+    return {id,x:p.canvasLeft+q.x*p.cw/94,y:p.canvasPageTop-(p.pageScrollTop||0)+q.y*p.cw/94};
   });
-  await (await page.$('#court')).trigger('tap', courtPoint);await wait(250);
-  assert.equal(await page.data('locked'),true,'court control must remain clickable after page scroll');
-  await (await page.$('.play')).tap();await settle(page);
-  assert.equal(await page.data('locked'),false);
+  await (await page.$('#court')).trigger('tap',courtPoint);await wait(150);
+  assert.equal(await mp.evaluate(()=>getCurrentPages().slice(-1)[0].selected),courtPoint.id,'court player remains clickable after page scroll');
   page = await mp.reLaunch('/pages/game/game');
   for(let n=0;n<100&&!(await page.data('ready'));n++)await wait(100);
   await mp.pageScrollTo(0);await wait(250);
   console.log('INLINE_INPUTS_AND_PAGE_SCROLL',evidence.typed,evidence.inlineTrash);
 
   const play = await page.$('.play');
-  const pressPoint=await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0],h=p.playHit;return {clientX:p.canvasLeft+h.x+h.w/2,clientY:p.canvasPageTop-(p.pageScrollTop||0)+h.y+h.h/2};});
-  const court=await page.$('#court');await court.touchstart({touches:[pressPoint]});await wait(70);
-  assert.equal(await mp.evaluate(()=>getCurrentPages().slice(-1)[0].playPressed),true);
-  await court.touchend({touches:[]});await wait(160);
-  assert.equal(await mp.evaluate(()=>getCurrentPages().slice(-1)[0].playPressed),false);
+  assert.ok(await page.$('.board .play'));assert.equal(await page.$('.court-box .play'),null);
+  const controlSize=await play.size(),controlOffset=await play.offset(),courtOffset=await (await page.$('#court')).offset();
+  assert.ok(controlSize.height>=44);assert.ok(controlOffset.top+controlSize.height<=courtOffset.top,'button stays above the court');
+  assert.equal(await play.attribute('hover-class'),'play-pressed');
   await play.tap(); await wait(4500);
-  assert.equal(await page.data('locked'), true);
-  assert.match(await page.data('playLabel'), /叫暂停/);
-  evidence.control=await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0], h=p.playHit;return {hit:h,pos:p.shown};});
-  assert.ok(evidence.control.hit.vacant,'first possession has a vacant half');
-  assert.ok(Object.values(evidence.control.pos).every(p=>evidence.control.hit.side==='left'?p.x>49.5:p.x<44.5));
+  assert.equal(await page.data('locked'), true);assert.match(await page.data('playLabel'),/叫暂停/);
+  evidence.control={size:controlSize,offset:controlOffset,court: courtOffset,remaining:await page.data('playCount')};
   evidence.audio = await mp.evaluate(() => getCurrentPages().slice(-1)[0].sound.stats);
   assert.ok(evidence.audio.played.dribble > 0, 'actual audio onPlay must fire while holding the ball');
   assert.deepEqual(evidence.audio.errors, []);
@@ -136,6 +130,14 @@ async function rowsIntact(page) {
   assert.equal(await page.data('notice'), '');
   assert.match(await page.data('playLabel'), /继续比赛.*14次/);
   evidence.timeout = await page.data('playLabel');
+  const frozen=await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0];p.drawCourt();return {T:p.T,pos:p.shown,ball:p.lastBall,prefix:p.G.events.slice(0,p.S.applied)};});
+  const tacticsNow=await page.data('tactics'),nextTactic=tacticsNow.findIndex(t=>t.key==='iso'||t.key==='zone23');assert.ok(nextTactic>=0);
+  await choose(page,'.team-card .tactic-choice',nextTactic);await wait(150);
+  const immediate=await mp.evaluate(()=>{const p=getCurrentPages().slice(-1)[0];p.drawCourt();const plan=p.rules.planAt(p.T);return {T:p.T,pos:p.shown,ball:p.lastBall,plan:{t0:plan.t0,play:plan.play,scheme:plan.scheme},count:p.timeoutsLeft(),events:p.G.events};});
+  assert.equal(immediate.T,frozen.T);assert.equal(immediate.plan.t0,frozen.T);assert.ok(immediate.plan.play==='iso'||immediate.plan.scheme==='zone23');assert.equal(immediate.count,14);
+  for(const id of Object.keys(frozen.pos))assert.ok(Math.hypot(immediate.pos[id].x-frozen.pos[id].x,immediate.pos[id].y-frozen.pos[id].y)<1e-6,'tactic moved a paused player '+id);
+  assert.ok(Math.hypot(immediate.ball.x-frozen.ball.x,immediate.ball.y-frozen.ball.y)<1e-6);
+  evidence.immediate={T:immediate.T,plan:immediate.plan,count:immediate.count};console.log('CURRENT_CHANCE_TACTIC_APPLIED',JSON.stringify(evidence.immediate));
   evidence.audioAfterToggle = await mp.evaluate(() => getCurrentPages().slice(-1)[0].sound.stats);
   assert.ok(evidence.audioAfterToggle.played.whistle > 0);
   assert.deepEqual(evidence.audioAfterToggle.errors, []);

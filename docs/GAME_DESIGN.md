@@ -521,6 +521,11 @@ Decision: real players, for a private prototype. The risk to remember: analysing
   - **How the WeChat client was checked** (no WeChat DevTools on this machine): its page code ran in a browser against the live server, with stand-ins for WeChat's request, canvas and dialog APIs. It played 600 game seconds (40 possessions, no jumps) and called a timeout, set an isolation for Jordan (the possession continued in it), made a call and talked trash ("BRYANT RATTLED"). Its layout and styles still need a look in WeChat DevTools.
   - `hoopformer clients` copies the core into the Mini Program (it can only load its own files); `tests/test_clients.py` checks the copy matches, the web page carries the core, and the Mini Program has all its files.
 
+**Twentieth follow-up (Oct 12): tactics take effect in the current chance; WeChat controls move into the scoreboard.**
+- The live server saves the state before each unresolved chance. A tactic or role change during a timeout keeps every event already displayed, advances only the elapsed clock, preserves human calls/morale/timeouts, and recomputes the remaining chance with the new tactic. It does not wait for the next possession. Intentional late fouls and second chances retain their already completed events. Offline simulations still use the original possession loop and RNG.
+- Both clients send the playback time and event count; the server returns the boundary of the future events to replace. The court keeps its old path and exact paused positions/ball, then runs into the new shape after resume. Completed shots and scores remain final.
+- WeChat's play/timeout control is now a small native button inside the score/time panel above the court, with a 44px touch target, visible press feedback and remaining timeouts inside the button. The court contains no play/timeout hit region.
+
 ## 10. Open questions for marinelj
 
 1. ~~Fictional or real players?~~ Real players for now (§8).

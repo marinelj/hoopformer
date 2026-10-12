@@ -229,31 +229,6 @@ def test_packaged_audio_has_audible_pcm_without_clipping():
         assert .08 <= count / rate <= 2 and 500 < peak < 32767 and rms > .008
 
 
-def test_timeout_control_uses_the_vacant_half_without_hiding_players(chinese_game):
-    run_js(chinese_game, r"""
-const draw = require('./clients/wechat/utils/draw.js');
-rules.rebuild(); let frames=0,vacant=0,clear=0,sides=new Set();
-for(const plan of rules.plans()) for(let t=plan.t0;t<plan.t1;t+=.4) {
- const pos=rules.positionsAt(t,plan).pos;
- for(const width of [320,366,600]) {
-  const hit=draw.playBounds(width,pos),s=width/94;
-  const former=Math.min(178,width*.42)*Math.min(46,width*50/94*.25), ratio=hit.visual.w*hit.visual.h/former;
-  assert.ok(ratio>.30&&ratio<.37,'visual area shrinks by about two thirds');assert.ok(hit.h>=44,'small face retains a touch target');
-  assert.ok(hit.x>=0 && hit.x+hit.w<=width && hit.y>=0 && hit.y+hit.h<=width*50/94+1);
-  if(hit.vacant) {
-   const pts=Object.values(pos);assert.ok(pts.every(p=>hit.side==='left'?p.x>49.5:p.x<44.5),'count only in a vacant half');
-   assert.equal(hit.clear,true);vacant++;sides.add(hit.side);
-  }
-  if(hit.clear){clear++;for(const p of Object.values(pos))assert.ok(Math.hypot(Math.max(hit.x-p.x*s,0,p.x*s-hit.x-hit.w),Math.max(hit.y-p.y*s,0,p.y*s-hit.y-hit.h))>=Math.max(7,1.9*s)+3);}
-  frames++;
- }
-}
-const tip=draw.playBounds(366,rules.positionsAt(.1,rules.planAt(.1)).pos);assert.ok(tip.clear,'start remains reachable during tip-off');
-assert.deepEqual([...sides].sort(),['left','right']);assert.ok(vacant>1000);
-console.log('Real court positions / widths:',frames,'; vacant-half frames:',vacant,'; clear control frames:',clear,'; tip-off:',tip);
-""")
-
-
 def test_actual_server_replies_badges_and_credited_plays(fitted):
     model, _ = fitted
     model = with_legends(model, Path('data'))
