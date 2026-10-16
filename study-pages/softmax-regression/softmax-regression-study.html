@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="适合手机阅读的多分类 Softmax 回归推导：从 logits、交叉熵到 L2 正则化与梯度下降。所有内容离线可用。">
+  <title>Softmax 回归｜从分数到梯度下降</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f6f5f0;
+      --surface: #ffffff;
+      --ink: #182d38;
+      --muted: #576b73;
+      --accent: #006b63;
+      --accent-soft: #eaf4f0;
+      --formula: #f0f4f5;
+      --line: #d6dfe0;
+      --warm: #f8f2e4;
+      --warm-ink: #765009;
+      --focus: #008b80;
+      --shadow: 0 5px 22px rgb(24 45 56 / 4%);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --page: #121c22;
+        --surface: #1a282f;
+        --ink: #e1edf0;
+        --muted: #a9bdc5;
+        --accent: #83d7c5;
+        --accent-soft: #203b37;
+        --formula: #22323b;
+        --line: #35494f;
+        --warm: #3a3424;
+        --warm-ink: #efd099;
+        --focus: #83d7c5;
+        --shadow: none;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.8;
+      -webkit-text-size-adjust: 100%;
+    }
+    button, select { font: inherit; }
+    button, summary, select, a { -webkit-tap-highlight-color: transparent; }
+    a { color: var(--accent); text-underline-offset: 4px; }
+    :focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: .93em;
+      overflow-wrap: anywhere;
+    }
+    p code, li code, dd code, td code { color: var(--accent); }
+    sub, sup { font-size: .74em; line-height: 0; position: relative; vertical-align: baseline; }
+    sub { bottom: -.2em; }
+    sup { top: -.55em; }
+    .shell { width: min(100% - 40px, 740px); margin: 0 auto; }
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 28px 0 18px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .08em;
+    }
+    .masthead strong { color: var(--accent); font-weight: 650; }
+    .hero { padding: 28px 0 20px; }
+    .eyebrow { margin: 0 0 8px; color: var(--accent); font-size: 12px; font-weight: 650; letter-spacing: .08em; }
+    h1 { margin: 0; font-size: clamp(30px, 7.5vw, 42px); line-height: 1.25; letter-spacing: -.04em; font-weight: 700; }
+    h1 span { display: block; margin-top: 7px; font-size: .66em; font-weight: 550; letter-spacing: -.02em; }
+    .intro { margin: 17px 0; color: var(--muted); font-size: 15px; }
+    .pipeline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; }
+    .pipeline a { font-family: "SFMono-Regular", Consolas, monospace; text-decoration: none; font-weight: 650; min-height: 44px; display: inline-flex; align-items: center; }
+    .pipeline span { color: var(--muted); }
+    .notation { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 28px; }
+    summary { cursor: pointer; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    .notation > summary, .reference > summary {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      min-height: 54px; color: var(--accent); font-size: 15px; font-weight: 600;
+    }
+    .chevron { display: inline-block; width: 8px; height: 8px; flex: 0 0 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin: 0 4px 4px 0; }
+    details[open] > summary .chevron { transform: rotate(225deg); margin-bottom: -4px; }
+    .notation-content { padding: 0 0 21px; }
+    .notation-content > p { margin-top: 4px; }
+    .shape-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; line-height: 1.65; }
+    .shape-table th, .shape-table td { padding: 10px 4px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+    .shape-table th { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .shape-table th:nth-child(1) { width: 15%; }
+    .shape-table th:nth-child(2) { width: 29%; }
+    .shape-table tr:last-child td { border: 0; }
+    .shape-table code { white-space: nowrap; }
+    .small { color: var(--muted); font-size: 13px; line-height: 1.75; }
+    .flow { position: relative; padding-bottom: 8px; }
+    .flow::before { content: ""; position: absolute; left: 25px; top: 28px; bottom: 46px; width: 1px; background: var(--line); }
+    .step { position: relative; padding: 22px 24px 0; margin-bottom: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); scroll-margin-top: 20px; }
+    .step-header { display: flex; align-items: center; gap: 13px; }
+    .step-number { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; font-weight: 650; }
+    h2 { margin: 0; font-size: 19px; line-height: 1.4; font-weight: 650; }
+    .english { display: block; margin-top: 1px; font-size: 11px; color: var(--muted); letter-spacing: .04em; font-weight: 500; }
+    .core { margin: 17px 0 11px; padding: 15px 16px; border-radius: 9px; background: var(--formula); }
+    .equation { color: var(--ink); font-size: 18px; line-height: 1.9; overflow-wrap: anywhere; }
+    .equation + .equation { margin-top: 5px; }
+    .equation code { font-size: inherit; }
+    .equation .row { display: block; }
+    .shape-tag { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .frac { display: inline-flex; vertical-align: middle; flex-direction: column; align-items: center; margin: 2px 3px; line-height: 1.5; font-size: .95em; text-align: center; }
+    .frac > span:first-child { display: block; padding: 0 4px 3px; border-bottom: 1px solid currentColor; }
+    .frac > span:last-child { display: block; padding: 3px 4px 0; }
+    .core .key { color: var(--accent); font-weight: 650; }
+    .caption { margin: 0 0 5px; color: var(--muted); font-size: 14px; }
+    .derivation > summary { display: flex; gap: 12px; align-items: center; justify-content: space-between; min-height: 52px; color: var(--accent); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }
+    .close-label { display: none; }
+    details[open] > summary .open-label { display: none; }
+    details[open] > summary .close-label { display: inline; }
+    .panel { margin: 0 -24px; padding: 6px 24px 24px; border-top: 1px solid var(--line); }
+    h3 { margin: 24px 0 9px; font-size: 16px; line-height: 1.6; font-weight: 650; }
+    h4 { margin: 18px 0 7px; font-size: 15px; font-weight: 650; }
+    .panel p { margin: 10px 0; }
+    .panel ul { padding-left: 20px; margin: 10px 0; }
+    .panel li { margin: 6px 0; }
+    .back-to-flow { display: block; margin: 22px 0 0; min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--accent); font-size: 14px; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+    .work { margin: 12px 0; padding: 14px 15px; background: var(--formula); border-radius: 8px; }
+    .work .equation { font-size: 16px; line-height: 2; }
+    .reason { display: block; margin: 3px 0 9px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .work .reason:last-child { margin-bottom: 0; }
+    .takeaway { margin: 16px 0 0; padding: 11px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 14px; }
+    .caution { margin: 15px 0; padding: 12px 14px; border-radius: 8px; background: var(--warm); color: var(--warm-ink); font-size: 14px; }
+    .caution code { color: inherit; }
+    .branch { border-top: 1px solid var(--line); margin-top: 22px; }
+    .branch > summary { padding: 13px 0; min-height: 50px; color: var(--accent); font-size: 14px; text-decoration: underline; text-underline-offset: 4px; }
+    .branch > summary::after { content: " +"; }
+    .branch[open] > summary::after { content: " −"; }
+    .lab { margin-top: 15px; padding-top: 4px; border-top: 1px solid var(--line); }
+    .lab-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+    .lab-controls label { display: block; color: var(--muted); font-size: 13px; }
+    .lab-controls select { display: block; width: 100%; min-height: 46px; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 16px; }
+    .vector-line { display: grid; grid-template-columns: 72px 1fr; align-items: baseline; gap: 7px; margin: 7px 0; font-size: 14px; }
+    .vector-line code { font-size: 14px; }
+    .vector-value { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .lab-result { padding: 11px 12px; background: var(--accent-soft); border-radius: 7px; }
+    .lab-result .vector-line:last-child { margin-bottom: 0; }
+    .lab-result .vector-line:first-child { margin-top: 0; }
+    .reference { margin: 6px 0 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .reference-content { padding: 0 0 20px; }
+    pre { margin: 12px 0; padding: 16px; background: var(--formula); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.9; }
+    pre code { font-size: inherit; }
+    footer { padding: 6px 0 34px; color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    footer a { display: inline-flex; align-items: center; min-height: 44px; }
+    footer p { margin: 10px 0; }
+    @media (min-width: 640px) {
+      .hero { padding-top: 36px; }
+      .step { padding: 25px 30px 0; }
+      .panel { margin: 0 -30px; padding-left: 30px; padding-right: 30px; }
+      .equation { font-size: 20px; }
+      .shape-tag { display: inline-block; margin-left: 12px; }
+      .core { padding: 17px 20px; }
+    }
+    @media (max-width: 360px) {
+      .shell { width: calc(100% - 24px); }
+      .masthead { font-size: 11px; }
+      .step { padding-left: 16px; padding-right: 16px; }
+      .panel { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+      .core { padding-left: 12px; padding-right: 12px; }
+      .equation { font-size: 16px; }
+      .work { padding-left: 11px; padding-right: 11px; }
+      .work .equation { font-size: 14px; }
+      .vector-line { grid-template-columns: 64px 1fr; gap: 4px; }
+      .vector-line code, .vector-value { font-size: 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print {
+      :root { --page: white; --surface: white; --ink: #111; --muted: #444; --accent: #075d55; --formula: #f1f3f3; --line: #ccc; --accent-soft: #eef5f3; --warm: #f4f1e9; --warm-ink: #493611; --shadow: none; }
+      .shell { width: 100%; }
+      .step { break-inside: avoid; box-shadow: none; }
+      .pipeline, footer a { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="masthead" id="top">
+      <strong>ML / STUDY NOTE 01</strong>
+      <span>离线可读 · 点击展开推导</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">MULTICLASS SOFTMAX REGRESSION</p>
+        <h1 id="page-title">Softmax 回归<span>从分数到梯度下降</span></h1>
+        <p class="intro">先看核心公式；点开每一步，再看它为什么成立。</p>
+        <nav class="pipeline" aria-label="核心流程导航">
+          <a href="#step-z">Z</a><span aria-hidden="true">→</span>
+          <a href="#step-softmax">P</a><span aria-hidden="true">→</span>
+          <a href="#step-loss">L</a><span aria-hidden="true">→</span>
+          <a href="#step-objective">J</a><span aria-hidden="true">→</span>
+          <a href="#step-dz">D</a><span aria-hidden="true">→</span>
+          <a href="#step-params">∇J</a><span aria-hidden="true">→</span>
+          <a href="#step-update">更新</a>
+        </nav>
+      </section>
+
+      <details class="notation" id="notation">
+        <summary><span>先查符号与形状 <code>(n, d, K)</code></span><span class="chevron" aria-hidden="true"></span></summary>
+        <div class="notation-content">
+          <p><code>n</code> 个样本，<code>d</code> 个特征，<code>K</code> 个类别。每一行是一个样本；本页按完整训练集做 <strong>full-batch gradient descent</strong>。</p>
+          <table class="shape-table">
+            <thead><tr><th scope="col">符号</th><th scope="col">形状</th><th scope="col">含义</th></tr></thead>
+            <tbody>
+              <tr><td><code>X</code></td><td><code>(n, d)</code></td><td>特征矩阵；第 <code>i</code> 行为一个样本。</td></tr>
+              <tr><td><code>W</code></td><td><code>(d, K)</code></td><td>权重矩阵；每一列对应一个类别。</td></tr>
+              <tr><td><code>b</code></td><td><code>(1, K)</code></td><td>偏置；向每一行广播。</td></tr>
+              <tr><td><code>Z</code></td><td><code>(n, K)</code></td><td>原始分数，logits。</td></tr>
+              <tr><td><code>P</code></td><td><code>(n, K)</code></td><td>预测概率；每行之和为 1。</td></tr>
+              <tr><td><code>Y</code></td><td><code>(n, K)</code></td><td>one-hot 标签；真实类别为 1，其余为 0。</td></tr>
+            </tbody>
+          </table>
+          <p class="small"><code>i</code> 是样本索引；<code>j、k</code> 是类别索引；<code>a</code> 是特征索引。推导某个样本时，<code>c</code> 表示它的真实类别。所有索引从 1 开始。</p>
+          <p class="small"><code>ℓᵢ</code>：单样本损失；<code>L</code>：平均数据损失；<code>J</code>：加正则后的目标，三者都是标量。<code>log</code> 为自然对数；<code>Σᵢ</code> 遍历样本，<code>Σⱼ / Σₖ</code> 遍历类别。</p>
+          <p class="small"><code>C &gt; 0</code> 控制正则强度；<code>η &gt; 0</code> 是学习率。<code>∇</code> 表示梯度，<code>∂</code> 表示偏导，<code>⊤</code> 表示转置。</p>
+        </div>
+      </details>
+
+      <div class="flow" aria-label="七步核心流程">
+        <section class="step" id="step-z" aria-labelledby="title-z">
+          <div class="step-header"><span class="step-number" aria-hidden="true">01</span><h2 id="title-z">线性分数 <span class="english">LOGITS</span></h2></div>
+          <div class="core">
+            <div class="equation"><code>Z = XW + b</code></div>
+            <span class="shape-tag"><code>(n, d) · (d, K) → (n, K)</code></span>
+          </div>
+          <p class="caption">每个样本，对每个类别计算一个分数。</p>
+          <details class="derivation">
+            <summary><span><span class="open-label">展开详细推导</span><span class="close-label">收起详细推导</span></span><span class="chevron" aria-hidden="true"></span></summary>
+            <div class="panel">
+              <h3>把矩阵乘法展开到一个元素</h3>
+              <div class="work"><div class="equation"><code>Z<sub>ik</sub> = Σₐ X<sub>ia</sub>W<sub>ak</sub> + b<sub>k</sub></code></div><span class="reason"><code>a = 1, …, d</code>。同一个类别的权重列与样本特征做点积。</span></div>
+              <p>例如有两个特征、三个类别，样本 <code>xᵢ = [2, 3]</code>，第 2 类的权重向量为 <code>[0.5, −1]</code>，偏置为 <code>b₂ = 0.2</code>：</p>
+              <div class="work"><div class="equation"><code>Z<sub>i2</sub> = 2 × 0.5 + 3 × (−1) + 0.2</code><br><code>　　 = −1.8</code></div></div>
+              <p>这个分数可以为负，也不要求所有类别分数之和为 1。下一步用 softmax 把一行分数转换成概率。</p>
+              <div class="takeaway"><code>b</code> 的形状是 <code>(1, K)</code>，广播到 <code>n</code> 行；等价于 <code>Z = XW + 1ₙb</code>，其中 <code>1ₙ</code> 是形状为 <code>(n, 1)</code> 的全 1 列向量。</div>
+            </div>
+          </details>
+        </section>
+
+        <section class="step" id="step-softmax" aria-labelledby="title-softmax">
+          <div class="step-header"><span class="step-number" aria-hidden="true">02</span><h2 id="title-softmax">分数变概率 <span class="english">SOFTMAX</span></h2></div>
+          <div class="core">
+            <div class="equation"><code>P<sub>ik</sub> = </code><span class="frac"><span><code>exp(Z<sub>ik</sub>)</code></span><span><code>Σⱼ exp(Z<sub>ij</sub>)</code></span></span></div>
+            <span class="shape-tag"><code>P: (n, K)</code> · 沿类别方向计算</span>
+          </div>
+          <p class="caption">一行是一组概率：每个值大于 0，行和为 1。</p>
+          <details class="derivation">
+            <summary><span><span class="open-label">展开定义与例子</span><span class="close-label">收起定义与例子</span></span><span class="chevron" aria-hidden="true"></span></summary>
+            <div class="panel">
+              <h3>先取指数，再按行归一化</h3>
+              <p>固定样本 <code>i</code>。令 <code>Sᵢ = Σⱼ exp(Zᵢⱼ)</code>，它是这一行所有指数值的总和。</p>
+              <div class="work">
+                <div class="equation"><code>Zᵢ = [0, log 2, 0]</code><br><code>exp(Zᵢ) = [1, 2, 1]</code><br><code>Sᵢ = 1 + 2 + 1 = 4</code><br><code>Pᵢ = [0.25, 0.50, 0.25]</code></div>
+              </div>
+              <p>因为每项 <code>exp(Zᵢₖ) &gt; 0</code>，而分母是它们的总和，所以 <code>Σₖ Pᵢₖ = Sᵢ / Sᵢ = 1</code>。</p>
+              <div class="takeaway">softmax 在每个样本内部、沿 <code>K</code> 个类别归一化。它不会跨 <code>n</code> 个样本做归一化，因此这里没有 <code>/ n</code>。</div>
+              <h3>实际计算：减去行最大值</h3>
+              <p>令 <code>mᵢ = maxⱼ Zᵢⱼ</code>，使用完全等价的稳定写法：</p>
+              <div class="work"><div class="equation"><code>P<sub>ik</sub> = </code><span class="frac"><span><code>exp(Z<sub>ik</sub> − mᵢ)</code></span><span><code>Σⱼ exp(Z<sub>ij</sub> − mᵢ)</code></span></span></div></div>
+              <p>分子和分母都乘了同一个 <code>exp(−mᵢ)</code>，比例不变，同时避免大正数取指数导致溢出。</p>
+            </div>
+          </details>
+        </section>
+
+        <section class="step" id="step-loss" aria-labelledby="title-loss">
+          <div class="step-header"><span class="step-number" aria-hidden="true">03</span><h2 id="title-loss">交叉熵损失 <span class="english">CROSS-ENTROPY LOSS</span></h2></div>
+          <div class="core">
+            <div class="equation"><code>ℓᵢ = −Σₖ Y<sub>ik</sub> log P<sub>ik</sub></code></div>
+            <div class="equation"><code>L = </code><span class="frac"><span>1</span><span><code>n</code></span></span><code> Σᵢ ℓᵢ</code></div>
+            <span class="shape-tag"><code>ℓᵢ、L</code> 都是标量</span>
+          </div>
+          <p class="caption">先算每个样本的损失，再对样本取平均。</p>
+          <details class="derivation">
+            <summary><span><span class="open-label">展开：从概率改写为 Z</span><span class="close-label">收起详细推导</span></span><span class="chevron" aria-hidden="true"></span></summary>
+            <div class="panel">
+              <h3>one-hot 只选中真实类别</h3>
+              <p>对当前样本，真实类别是 <code>c</code>：<code>Y<sub>ic</sub> = 1</code>，其余位置为 0。于是：</p>
+              <div class="work"><div class="equation"><code>ℓᵢ = −log P<sub>ic</sub></code></div><span class="reason">真实类别的概率越大，负对数损失越小。</span></div>
+              <h3>代入 softmax</h3>
+              <div class="work">
+                <div class="equation"><code>P<sub>ic</sub> = exp(Z<sub>ic</sub>) / Sᵢ</code></div>
+                <div class="equation"><code>ℓᵢ = −log[exp(Z<sub>ic</sub>) / Sᵢ]</code></div>
+                <span class="reason">用 <code>log(a / b) = log a − log b</code>。</span>
+                <div class="equation"><code>　 = −[Z<sub>ic</sub> − log Sᵢ]</code></div>
+                <div class="equation"><code>　 = −Z<sub>ic</sub> + log Sᵢ</code></div>
+                <div class="equation"><code>　 = −Z<sub>ic</sub> + log Σⱼ exp(Z<sub>ij</sub>)</code></div>
+              </div>
+              <div class="takeaway">接下来只需对两项求导：<code>−Z<sub>ic</sub></code> 产生 <code>−Yᵢₖ</code>，<code>log Σⱼ exp(Zᵢⱼ)</code> 产生 <code>Pᵢₖ</code>。</div>
+              <h3>平均损失从哪里开始出现？</h3>
+              <div class="work"><div class="equation"><code>L = (ℓ₁ + ℓ₂ + … + ℓₙ) / n</code></div></div>
+              <p>这里第一次引入 <code>1 / n</code>。它是平均操作的系数，求导时作为常数保留下来。若定义的是损失总和，就没有这个系数。</p>
+              <p class="small">上面的概率例子中，若 <code>c = 2</code>，则 <code>ℓᵢ = −log 0.5 ≈ 0.6931</code>。实际计算可直接用稳定写法 <code>ℓᵢ = −Z<sub>ic</sub> + mᵢ + log Σⱼ exp(Zᵢⱼ − mᵢ)</code>，避免先算极小概率再取对数。</p>
+            </div>
+          </details>
+        </section>
+
+        <section class="step" id="step-objective" aria-labelledby="title-objective">
+          <div class="step-header"><span class="step-number" aria-hidden="true">04</span><h2 id="title-objective">加上 L2 正则 <span class="english">REGULARIZED OBJECTIVE</span></h2></div>
+          <div class="core">
+            <div class="equation"><code>J = L + </code><span class="frac"><span><code>‖W‖<sub>F</sub><sup>2</sup></code></span><span><code>2Cn</code></span></span></div>
+            <span class="shape-tag"><code>J</code> 是最终要最小化的标量</span>
+          </div>
+          <p class="caption">拟合数据，同时约束权重大小；偏置不正则化。</p>
+          <details class="derivation">
+            <summary><span><span class="open-label">展开：L2 为什么得到 W / (Cn)</span><span class="close-label">收起 L2 推导</span></span><span class="chevron" aria-hidden="true"></span></summary>
+            <div class="panel">
+              <h3>先把平方范数展开</h3>
+              <p><code>‖W‖²<sub>F</sub></code> 是 Frobenius norm 的平方，即所有权重元素的平方和：</p>
+              <div class="work">
+                <div class="equation"><code>‖W‖<sub>F</sub><sup>2</sup> = Σₐ Σₖ W<sub>ak</sub><sup>2</sup></code></div>
+                <div class="equation"><code>R(W) = </code><span class="frac"><span>1</span><span><code>2Cn</code></span></span><code> Σₐ Σₖ W<sub>ak</sub><sup>2</sup></code></div>
+              </div>
+              <h3>对其中一个权重求导</h3>
+              <p>只有 <code>Wₐₖ²</code> 这一项与当前求导的 <code>Wₐₖ</code> 有关，其他权重的平方项都是常数。</p>
+              <div class="work">
+                <div class="equation"><code>∂R / ∂W<sub>ak</sub></code></div>
+                <div class="equation"><code>= </code><span class="frac"><span>1</span><span><code>2Cn</code></span></span><code> × 2W<sub>ak</sub></code></div>
+                <span class="reason">因为 <code>d(w²) / dw = 2w</code>，系数中的 2 被抵消。</span>
+                <div class="equation"><code>= W<sub>ak</sub> / (Cn)</code></div>
+              </div>
+              <p>每个元素都成立，组合成同形状的矩阵：</p>
+              <div class="work"><div class="equation"><code>∇<sub>W</sub>R = W / (Cn)</code></div><span class="reason">形状为 <code>(d, K)</code>。由于 <code>R</code> 不含 <code>b</code>，所以 <code>∇<sub>b</sub>R = 0</code>。</span></div>
+              <div class="takeaway"><code>C</code> 越大，正则越弱。本页固定采用 <code>R = ‖W‖²<sub>F</sub> / (2Cn)</code>；若写成 <code>R = λ‖W‖²<sub>F</sub> / 2</code>，对应 <code>λ = 1 / (Cn)</code>。</div>
+              <div class="caution">这里的 <code>n</code> 是完整目标中的训练样本数。若改成 minibatch，数据损失按 batch 大小 <code>B</code> 取平均；正则系数仍应与原目标一致，不能直接把正则分母中的 <code>n</code> 也替换成 <code>B</code>。</div>
+            </div>
+          </details>
+        </section>
+
+        <section class="step" id="step-dz" aria-labelledby="title-dz">
+          <div class="step-header"><span class="step-number" aria-hidden="true">05</span><h2 id="title-dz">对分数求梯度 <span class="english">GRADIENT WITH RESPECT TO Z</span></h2></div>
+          <div class="core">
+            <div class="equation"><code>D ≡ </code><span class="frac"><span><code>∂L</code></span><span><code>∂Z</code></span></span><code> = </code><span class="frac key"><span><code>P − Y</code></span><span><code>n</code></span></span></div>
+            <span class="shape-tag"><code>D: (n, K)</code></span>
+          </div>
+          <p class="caption"><code>P − Y</code> 来自求导；<code>/ n</code> 来自平均。</p>
+          <details class="derivation">
+            <summary><span><span class="open-label">展开：逐项推导 P − Y 与 / n</span><span class="close-label">收起详细推导</span></span><span class="chevron" aria-hidden="true"></span></summary>
+            <div class="panel">
+              <h3>① 第一项：为什么只有真实类别得到 −1？</h3>
+              <p>固定一个样本 <code>i</code>，从上一节的等式出发：</p>
+              <div class="work"><div class="equation"><code>ℓᵢ = −Z<sub>ic</sub> + log Sᵢ</code><br><code>Sᵢ = Σⱼ exp(Z<sub>ij</sub>)</code></div></div>
+              <p>对第 <code>k</code> 个 logit 求偏导：</p>
+              <div class="work">
+                <div class="equation"><code>∂(−Z<sub>ic</sub>) / ∂Z<sub>ik</sub></code></div>
+                <div class="equation"><code>= −1　当 k = c</code><br><code>=　0　当 k ≠ c</code></div>
+                <span class="reason"><code>k = c</code> 时是 <code>d(−x) / dx = −1</code>；<code>k ≠ c</code> 时该变量没有出现在这一项中，导数为 0。</span>
+                <div class="equation"><code>= −Y<sub>ik</sub></code></div>
+              </div>
+              <h3>② 第二项：log-sum-exp 的导数</h3>
+              <p>先用链式法则（chain rule）：外层对数的导数是 <code>1 / Sᵢ</code>，再乘内层的导数。</p>
+              <div class="work">
+                <div class="equation"><span class="frac"><span><code>∂ log Sᵢ</code></span><span><code>∂Z<sub>ik</sub></code></span></span><code> = </code><span class="frac"><span>1</span><span><code>Sᵢ</code></span></span><code> · </code><span class="frac"><span><code>∂Sᵢ</code></span><span><code>∂Z<sub>ik</sub></code></span></span></div>
+              </div>
+              <p>将内层总和展开，只有第 <code>k</code> 项与 <code>Zᵢₖ</code> 有关：</p>
+              <div class="work">
+                <div class="equation"><code>Sᵢ = exp(Z<sub>i1</sub>) + …</code><br><code>　　 + exp(Z<sub>ik</sub>) + …</code></div>
+                <div class="equation"><code>∂Sᵢ / ∂Z<sub>ik</sub> = exp(Z<sub>ik</sub>)</code></div>
+                <span class="reason">其他项导数为 0；而 <code>d(exp x) / dx = exp x</code>。</span>
+              </div>
+              <p>代回链式法则，恰好就是 softmax 概率：</p>
+              <div class="work">
+                <div class="equation"><code>∂ log Sᵢ / ∂Z<sub>ik</sub></code></div>
+                <div class="equation"><code>= exp(Z<sub>ik</sub>) / Sᵢ</code><br><code>= P<sub>ik</sub></code></div>
+              </div>
+              <h3>③ 合并两项，得到 P − Y</h3>
+              <div class="work"><div class="equation"><code>∂ℓᵢ / ∂Z<sub>ik</sub></code><br><code>= −Y<sub>ik</sub> + P<sub>ik</sub></code><br><code>= P<sub>ik</sub> − Y<sub>ik</sub></code></div></div>
+              <p>把该样本所有类别排成一行：<code>∂ℓᵢ / ∂Zᵢ = Pᵢ − Yᵢ</code>。这还是<strong>单样本损失</strong>的梯度，没有 <code>/ n</code>。</p>
+              <h3>④ 对平均损失求导，得到 / n</h3>
+              <div class="work">
+                <div class="equation"><code>L = (1 / n) Σᵣ ℓᵣ</code></div>
+                <div class="equation"><code>∂L / ∂Z<sub>ik</sub></code></div>
+                <div class="equation"><code>= (1 / n) Σᵣ ∂ℓᵣ / ∂Z<sub>ik</sub></code></div>
+                <span class="reason"><code>1 / n</code> 是常数。这里用 <code>r</code> 遍历样本，避免与固定的 <code>i</code> 混淆。</span>
+                <div class="equation"><code>= (1 / n) ∂ℓᵢ / ∂Z<sub>ik</sub></code></div>
+                <span class="reason"><code>r ≠ i</code> 时，<code>ℓᵣ</code> 不依赖第 <code>i</code> 行的分数，所以对应偏导为 0。</span>
+                <div class="equation"><code>= (P<sub>ik</sub> − Y<sub>ik</sub>) / n</code></div>
+              </div>
+              <div class="takeaway"><strong>把所有位置排回矩阵：</strong><code>D = (P − Y) / n</code>。<code>P − Y</code> 来自 softmax 与交叉熵的组合求导；<code>/ n</code> 只来自 loss 的 mean reduction。</div>
+
+              <div class="lab" aria-labelledby="lab-title">
+                <h3 id="lab-title">用一行数字核对</h3>
+                <p class="small">固定 <code>Pᵢ = [0.25, 0.50, 0.25]</code>。切换真实类别，观察哪个位置减去 1；切换样本数，观察平均系数。</p>
+                <div class="lab-controls">
+                  <label for="true-class">真实类别 c
+                    <select id="true-class"><option value="0">第 1 类</option><option value="1" selected>第 2 类</option><option value="2">第 3 类</option></select>
+                  </label>
+                  <label for="sample-count">样本数 n
+                    <select id="sample-count"><option value="1">1</option><option value="4" selected>4</option><option value="8">8</option></select>
+                  </label>
+                </div>
+                <div class="lab-result" id="lab-results" role="status" aria-live="polite" aria-atomic="true">
+                  <div class="vector-line"><code>Yᵢ</code><code class="vector-value" id="demo-y">[0, 1, 0]</code></div>
+                  <div class="vector-line"><code>Pᵢ − Yᵢ</code><code class="vector-value" id="demo-residual">[0.25, −0.5, 0.25]</code></div>
+                  <div class="vector-line"><code>Dᵢ</code><code class="vector-value" id="demo-d">[0.0625, −0.125, 0.0625]</code></div>
+                </div>
+                <p class="small" id="demo-comment">真实类别的梯度为负，其余类别为正。若直接更新这行 logits，减去梯度会提高真实类别分数、降低其余分数。</p>
+                <p class="small">这里只展示平均损失对其中一行 logits 的偏导；<code>n &gt; 1</code> 时，其他样本的行没有列出。实际训练通过 <code>W、b</code> 更新，最终方向还受其他样本与正则项影响。</p>
+              </div>
+
+              <details class="branch">
+                <summary>另一路推导：softmax Jacobian × 交叉熵</summary>
+                <p>若从 <code>P</code> 直接套链式法则，需要考虑每个概率与所有 logits 的关系。令 <code>δⱼₖ</code> 为 Kronecker delta：<code>j = k</code> 时为 1，否则为 0。</p>
+                <div class="work">
+                  <div class="equation"><code>∂P<sub>ij</sub> / ∂Z<sub>ik</sub></code><br><code>= P<sub>ij</sub>(δ<sub>jk</sub> − P<sub>ik</sub>)</code></div>
+                  <div class="equation"><code>∂ℓᵢ / ∂P<sub>ij</sub> = −Y<sub>ij</sub> / P<sub>ij</sub></code></div>
+                </div>
+                <p>softmax 的导数来自商法则：</p>
+                <div class="work">
+                  <div class="equation"><code>∂P<sub>ij</sub> / ∂Z<sub>ik</sub></code><br><code>= [δ<sub>jk</sub> exp(Z<sub>ij</sub>) Sᵢ</code><br><code>　 − exp(Z<sub>ij</sub>) exp(Z<sub>ik</sub>)]</code><br><code>　 / Sᵢ²</code><br><code>= P<sub>ij</sub>δ<sub>jk</sub> − P<sub>ij</sub>P<sub>ik</sub></code></div>
+                </div>
+                <p>然后对所有中间概率求和：</p>
+                <div class="work">
+                  <div class="equation"><code>∂ℓᵢ / ∂Z<sub>ik</sub></code><br><code>= Σⱼ (−Y<sub>ij</sub> / P<sub>ij</sub>)</code><br><code>　 × P<sub>ij</sub>(δ<sub>jk</sub> − P<sub>ik</sub>)</code><br><code>= −Σⱼ Y<sub>ij</sub>δ<sub>jk</sub> + P<sub>ik</sub>Σⱼ Y<sub>ij</sub></code><br><code>= −Y<sub>ik</sub> + P<sub>ik</sub></code></div>
+                  <span class="reason">因为 <code>Σⱼ Yᵢⱼ = 1</code>。这是目标分布归一化的条件；本页使用 one-hot 标签。</span>
+                </div>
+                <p class="small">不要再把已经得到的 <code>P − Y</code> 额外乘一次 softmax 导数；这里已经完成了整个组合的链式求导。</p>
+              </details>
+              <p class="small">L2 是一条从 <code>W</code> 直接进入 <code>J</code> 的支路。这里的 <code>D</code> 只负责 <code>Z → P → L</code> 路径；下一步在 <code>W</code> 的梯度处加上正则梯度。</p>
+            </div>
+          </details>
+        </section>
+
+        <section class="step" id="step-params" aria-labelledby="title-params">
+          <div class="step-header"><span class="step-number" aria-hidden="true">06</span><h2 id="title-params">传回权重与偏置 <span class="english">PARAMETER GRADIENTS</span></h2></div>
+          <div class="core">
+            <div class="equation"><code>∇<sub>W</sub>J = X<sup>⊤</sup>D + </code><span class="frac"><span><code>W</code></span><span><code>Cn</code></span></span></div>
+            <div class="equation"><code>∇<sub>b</sub>J = Σᵢ D<sub>i:</sub></code></div>
+            <span class="shape-tag"><code>∇<sub>W</sub>J: (d, K)</code> · <code>∇<sub>b</sub>J: (1, K)</code></span>
+          </div>
+          <p class="caption">先用链式法则回传，再加上 L2 的权重梯度。</p>
+          <details class="derivation">
+            <summary><span><span class="open-label">展开：为什么是 X⊤D 与按行求和</span><span class="close-label">收起详细推导</span></span><span class="chevron" aria-hidden="true"></span></summary>
+            <div class="panel">
+              <h3>① 对一个权重 Wₐₖ 求导</h3>
+              <p>从 <code>Zᵢₖ = Σₐ XᵢₐWₐₖ + bₖ</code> 可知，<code>∂Zᵢₖ / ∂Wₐₖ = Xᵢₐ</code>。这个权重会影响<strong>所有样本的第 k 类分数</strong>。</p>
+              <div class="work">
+                <div class="equation"><code>∂L / ∂W<sub>ak</sub></code><br><code>= Σᵢ (∂L / ∂Z<sub>ik</sub>)</code><br><code>　 × (∂Z<sub>ik</sub> / ∂W<sub>ak</sub>)</code><br><code>= Σᵢ D<sub>ik</sub>X<sub>ia</sub></code></div>
+              </div>
+              <p>而矩阵 <code>X⊤D</code> 的第 <code>(a, k)</code> 个元素正是这项总和：</p>
+              <div class="work"><div class="equation"><code>(X<sup>⊤</sup>D)<sub>ak</sub> = Σᵢ X<sub>ia</sub>D<sub>ik</sub></code></div><div class="equation"><code>∇<sub>W</sub>L = X<sup>⊤</sup>D</code></div><span class="reason">形状检查：<code>(d, n) · (n, K) = (d, K)</code>，与 <code>W</code> 一致。</span></div>
+              <h3>② 对偏置 bₖ 求导</h3>
+              <p>每个样本的第 <code>k</code> 个分数都加了同一个 <code>bₖ</code>，因此 <code>∂Zᵢₖ / ∂bₖ = 1</code>：</p>
+              <div class="work"><div class="equation"><code>∂L / ∂b<sub>k</sub></code><br><code>= Σᵢ D<sub>ik</sub> × 1</code><br><code>= Σᵢ D<sub>ik</sub></code></div></div>
+              <p>对每一列分别加总所有样本的贡献，保留一行：</p>
+              <div class="work"><div class="equation"><code>∇<sub>b</sub>L = Σᵢ D<sub>i:</sub></code></div><span class="reason">代码对应 <code>D.sum(axis=0, keepdims=True)</code>，输出 <code>(1, K)</code>；<code>Dᵢ:</code> 表示第 <code>i</code> 行。</span></div>
+              <h3>③ 加上正则梯度，得到 J 的梯度</h3>
+              <div class="work">
+                <div class="equation"><code>∇<sub>W</sub>J = ∇<sub>W</sub>L + ∇<sub>W</sub>R</code><br><code>　　 = X<sup>⊤</sup>D + W / (Cn)</code></div>
+                <div class="equation"><code>∇<sub>b</sub>J = ∇<sub>b</sub>L + 0</code><br><code>　　 = Σᵢ D<sub>i:</sub></code></div>
+              </div>
+              <p>如果不引入中间变量 <code>D</code>，同样可以直接写：</p>
+              <div class="work"><div class="equation"><code>∇<sub>W</sub>J = X<sup>⊤</sup>(P − Y) / n</code><br><code>　　　 + W / (Cn)</code></div><div class="equation"><code>∇<sub>b</sub>J = Σᵢ (P<sub>i:</sub> − Y<sub>i:</sub>) / n</code></div></div>
+              <div class="takeaway"><code>D</code> 已经除过 <code>n</code>。接着用 <code>X⊤D</code> 和 <code>sum(D)</code>，不要再除一次 <code>n</code>。偏置也应使用求和，避免对 <code>D</code> 再取一次 mean。</div>
+            </div>
+          </details>
+        </section>
+
+        <section class="step" id="step-update" aria-labelledby="title-update">
+          <div class="step-header"><span class="step-number" aria-hidden="true">07</span><h2 id="title-update">沿负梯度更新 <span class="english">GRADIENT DESCENT</span></h2></div>
+          <div class="core">
+            <div class="equation"><code>W ← W − η∇<sub>W</sub>J</code></div>
+            <div class="equation"><code>b ← b − η∇<sub>b</sub>J</code></div>
+            <span class="shape-tag">回到第 1 步，用新参数重新计算</span>
+          </div>
+          <p class="caption">同一轮先算完所有梯度，再更新两个参数。</p>
+          <details class="derivation">
+            <summary><span><span class="open-label">展开：更新方向与正则的作用</span><span class="close-label">收起详细推导</span></span><span class="chevron" aria-hidden="true"></span></summary>
+            <div class="panel">
+              <h3>为什么要减去梯度？</h3>
+              <p>梯度指向目标局部增长最快的方向。用正学习率 <code>η</code> 沿反方向走一小步，能在步长足够小时降低目标。</p>
+              <div class="work"><div class="equation"><code>若 ∂J / ∂w = 0.3，η = 0.1：</code><br><code>w<sub>new</sub> = w<sub>old</sub> − 0.03</code></div><div class="equation"><code>若 ∂J / ∂w = −0.3：</code><br><code>w<sub>new</sub> = w<sub>old</sub> + 0.03</code></div></div>
+              <h3>将 L2 梯度代入更新式</h3>
+              <div class="work">
+                <div class="equation"><code>W<sub>new</sub> = W − η[X<sup>⊤</sup>D + W / (Cn)]</code></div>
+                <div class="equation"><code>　　 = (1 − η / (Cn))W</code><br><code>　　　 − ηX<sup>⊤</sup>D</code></div>
+                <div class="equation"><code>b<sub>new</sub> = b − ηΣᵢ D<sub>i:</sub></code></div>
+              </div>
+              <p>普通梯度下降中，L2 项额外贡献 <code>−ηW / (Cn)</code>。当 <code>0 &lt; η / (Cn) &lt; 1</code> 时，这部分把权重按比例向 0 收缩。</p>
+              <div class="takeaway">右侧的 <code>W、b、P、D</code> 都来自同一轮的旧参数。先保存 <code>grad_W</code> 和 <code>grad_b</code>，再分别更新；下一轮重新计算 <code>Z → P → L → J</code>。</div>
+              <p class="small">学习率过大会导致目标上升或震荡。观察的是正则化目标 <code>J</code>；降低 <code>J</code> 时，数据损失 <code>L</code> 不一定每轮都下降。</p>
+            </div>
+          </details>
+        </section>
+      </div>
+
+      <details class="reference" id="code-reference">
+        <summary><span>对照：一轮 NumPy 训练代码</span><span class="chevron" aria-hidden="true"></span></summary>
+        <div class="reference-content">
+          <p class="small">与七步公式一一对应。<code>Y</code> 为 one-hot，<code>b</code> 为 <code>(1, K)</code>；此代码按完整训练集更新。</p>
+          <pre><code class="language-python"># X: (n, d), W: (d, K)
+# b: (1, K), Y: (n, K)
+import numpy as np
+
+n = X.shape[0]
+
+# 1. Logits
+Z = X @ W + b
+
+# 2. Stable softmax
+A = Z - Z.max(axis=1, keepdims=True)
+E = np.exp(A)
+S = E.sum(axis=1, keepdims=True)
+P = E / S
+
+# 3. Mean cross-entropy
+log_P = A - np.log(S)
+L = -(Y * log_P).sum(axis=1).mean()
+
+# 4. Regularized objective (C &gt; 0)
+R = (W * W).sum() / (2 * C * n)
+J = L + R
+
+# 5. Gradient through logits
+D = (P - Y) / n
+
+# 6. Both gradients use old parameters
+grad_W = X.T @ D + W / (C * n)
+grad_b = D.sum(axis=0, keepdims=True)
+
+# 7. Update (eta &gt; 0)
+W = W - eta * grad_W
+b = b - eta * grad_b</code></pre>
+          <p class="small"><code>log_P</code> 直接由稳定的 log-softmax 计算，避免对已经下溢到 0 的概率取 <code>log</code>。网页本身无需安装或运行 Python。</p>
+        </div>
+      </details>
+    </main>
+
+    <footer>
+      <p>单文件 · 无外部依赖 · 所有推导离线可读</p>
+      <a href="#top">回到顶部 ↑</a>
+    </footer>
+  </div>
+  <script>
+    (() => {
+      'use strict';
+      const classSelect = document.getElementById('true-class');
+      const sampleSelect = document.getElementById('sample-count');
+      const format = value => {
+        if (Object.is(value, -0) || value === 0) return '0';
+        return String(Number(value.toFixed(5))).replace('-', '−');
+      };
+      const vector = values => '[' + values.map(format).join(', ') + ']';
+      const updateExample = () => {
+        const c = Number(classSelect.value);
+        const n = Number(sampleSelect.value);
+        const p = [0.25, 0.5, 0.25];
+        const y = p.map((_, k) => Number(k === c));
+        const residual = p.map((v, k) => v - y[k]);
+        document.getElementById('demo-y').textContent = vector(y);
+        document.getElementById('demo-residual').textContent = vector(residual);
+        document.getElementById('demo-d').textContent = vector(residual.map(v => v / n));
+        document.getElementById('demo-comment').textContent =
+          '当前 c = ' + (c + 1) + '，n = ' + n + '。第 ' + (c + 1) +
+          ' 类先减去 1；所有位置再除以 ' + n +
+          '。真实类别的梯度为负，其余为正；这一行的梯度之和为 0。';
+      };
+      classSelect.addEventListener('change', updateExample);
+      sampleSelect.addEventListener('change', updateExample);
+      updateExample();
+      document.querySelectorAll('.derivation').forEach(details => {
+        const panel = details.querySelector('.panel');
+        const summary = details.querySelector('summary');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'back-to-flow';
+        button.textContent = '收起推导，回到本步 ↑';
+        button.addEventListener('click', () => {
+          details.open = false;
+          summary.focus({ preventScroll: true });
+          details.closest('.step').scrollIntoView({ block: 'start' });
+        });
+        panel.appendChild(button);
+      });
+    })();
+  </script>
+</body>
+</html>

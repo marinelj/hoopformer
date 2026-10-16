@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-09. v0.1 (data pipeline, RAPM, season simulator, pre-registered 2026-27 predictions) is due before opening night, around Oct 20.
+Updated 2026-10-16. v0.1 (data pipeline, RAPM, season simulator, pre-registered 2026-27 predictions) is due before opening night, around Oct 20.
 
 ## Done
 
@@ -10,6 +10,11 @@ Updated 2026-10-09. v0.1 (data pipeline, RAPM, season simulator, pre-registered 
 | Lineups | `src/hoopformer/lineups.py` | On all 11,979 games from 2016-17 through 2025-26, every player's rebuilt minutes match the official box score to the second |
 | Possessions and points per stint | `src/hoopformer/possessions.py` | All 11,979 games add up to the final score; 2,397,244 possession ends pass the alternation check |
 | RAPM baseline | `hoopformer rapm`, `src/hoopformer/rapm.py` | Ridge strength chosen on the latest 20% of games; 2025-26 league rate is 114.6 per 100 and 2024-25 is 113.6 |
+
+## Study pages (2026-10-16)
+
+- Added `study-pages/softmax-regression/softmax-regression-study.html`, a standalone Chinese study page that connects the softmax baseline's logits, cross-entropy, regularized objective, parameter gradients and gradient descent. The main view keeps seven core steps; expandable panels explain the derivation, shapes, `P - Y`, mean reduction, and the L2 derivative. Includes an interactive numeric example and a matching NumPy step, with embedded styles/scripts and no external dependencies.
+- Validation: all panels fit at 320/375/390/768/1024px; seven panel toggles, keyboard access, collapse-and-return, and nine numeric-example combinations passed. No external requests or browser errors. Finite differences on the embedded NumPy example agree with logits, parameter and L2 gradients within `2 × 10⁻¹¹`. An authenticated local Jupyter `/files/` preview also passed; that temporary server has been shut down. Mac Studio deployment is pending there, using the included `MACSTUDIO_PROMPT.md` handoff instructions.
 
 ## 10-season download complete (Mac Studio)
 
